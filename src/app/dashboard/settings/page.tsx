@@ -15,7 +15,9 @@ import {
     Mail,
     X,
     Tag,
-    Package
+    Package,
+    Edit2,
+    Trash2
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -28,7 +30,10 @@ export default function SettingsPage() {
         addCustomCategory,
         removeCustomCategory,
         availableBusinessTypes,
-        addCustomBusinessType
+        addCustomBusinessType,
+        updateBusinessType,
+        deleteBusinessType,
+        updateCustomCategory
     } = useInventory();
 
     const [activeTab, setActiveTab] = useState('general');
@@ -40,6 +45,10 @@ export default function SettingsPage() {
     // Team Management State
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [editingMember, setEditingMember] = useState<any>(null);
+
+    // Edit State for Types/Categories
+    const [editingType, setEditingType] = useState<string | null>(null);
+    const [editingCategory, setEditingCategory] = useState<string | null>(null);
 
     useEffect(() => {
         setSmsConfig(getSMSConfig());
@@ -382,15 +391,60 @@ export default function SettingsPage() {
                                         <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Business Types</label>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                             {availableBusinessTypes.map((type) => (
-                                                <label key={type} className="flex items-center gap-2 p-3 rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-750">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={businessTypes.includes(type)}
-                                                        onChange={() => toggleBusinessType(type)}
-                                                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                                    />
-                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
-                                                </label>
+                                                <div key={type} className="group relative">
+                                                    {editingType === type ? (
+                                                        <input
+                                                            autoFocus
+                                                            className="w-full p-3 rounded-lg border border-indigo-500 bg-white text-sm outline-none ring-2 ring-indigo-200"
+                                                            defaultValue={type}
+                                                            onBlur={(e) => {
+                                                                const newVal = e.currentTarget.value.trim();
+                                                                if (newVal && newVal !== type) updateBusinessType(type, newVal);
+                                                                setEditingType(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const newVal = e.currentTarget.value.trim();
+                                                                    if (newVal && newVal !== type) updateBusinessType(type, newVal);
+                                                                    setEditingType(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <label className="flex items-center gap-2 p-3 rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-750">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={businessTypes.includes(type)}
+                                                                onChange={() => toggleBusinessType(type)}
+                                                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                            />
+                                                            <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{type}</span>
+
+                                                            <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        setEditingType(type);
+                                                                    }}
+                                                                    className="p-1 text-slate-400 hover:text-indigo-600"
+                                                                    title="Edit"
+                                                                >
+                                                                    <Edit2 className="h-3 w-3" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        if (confirm('Delete this business type?')) deleteBusinessType(type);
+                                                                    }}
+                                                                    className="p-1 text-slate-400 hover:text-red-600"
+                                                                    title="Delete"
+                                                                >
+                                                                    <Trash2 className="h-3 w-3" />
+                                                                </button>
+                                                            </div>
+                                                        </label>
+                                                    )}
+                                                </div>
                                             ))}
                                         </div>
                                         <div className="flex gap-2 max-w-md mt-3">
@@ -429,14 +483,41 @@ export default function SettingsPage() {
                                         <div className="flex flex-wrap gap-2 mb-6">
                                             {activeCategories.map((category) => (
                                                 <div key={category} className="group flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800">
-                                                    {category}
-                                                    {customCategories.includes(category) && (
-                                                        <button
-                                                            onClick={() => removeCustomCategory(category)}
-                                                            className="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-200"
-                                                        >
-                                                            <X className="h-3 w-3" />
-                                                        </button>
+                                                    {editingCategory === category ? (
+                                                        <input
+                                                            autoFocus
+                                                            className="w-24 bg-transparent outline-none border-b border-indigo-500 text-xs"
+                                                            defaultValue={category}
+                                                            onBlur={(e) => {
+                                                                const newVal = e.currentTarget.value.trim();
+                                                                if (newVal && newVal !== category) updateCustomCategory(category, newVal);
+                                                                setEditingCategory(null);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const newVal = e.currentTarget.value.trim();
+                                                                    if (newVal && newVal !== category) updateCustomCategory(category, newVal);
+                                                                    setEditingCategory(null);
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <>
+                                                            <span
+                                                                onClick={() => setEditingCategory(category)}
+                                                                className="cursor-pointer hover:underline"
+                                                                title="Click to edit"
+                                                            >
+                                                                {category}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => removeCustomCategory(category)}
+                                                                className="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-200"
+                                                                title="Remove"
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </button>
+                                                        </>
                                                     )}
                                                 </div>
                                             ))}
