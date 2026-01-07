@@ -27,9 +27,12 @@ interface InventoryContextType {
     businessTypes: string[];
     availableBusinessTypes: string[];
     addCustomBusinessType: (type: string) => void;
+    updateBusinessType: (oldType: string, newType: string) => void;
+    deleteBusinessType: (type: string) => void;
     toggleBusinessType: (type: string) => void;
     customCategories: string[];
     addCustomCategory: (category: string) => void;
+    updateCustomCategory: (oldCategory: string, newCategory: string) => void;
     removeCustomCategory: (category: string) => void;
     refreshProducts: () => Promise<void>;
     processSale: (saleData: any) => Promise<any>;
@@ -57,6 +60,21 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (!availableBusinessTypes.includes(type)) {
             setAvailableBusinessTypes([...availableBusinessTypes, type]);
         }
+    };
+
+    const updateBusinessType = (oldType: string, newType: string) => {
+        setAvailableBusinessTypes(prev => prev.map(t => t === oldType ? newType : t));
+        setBusinessTypes(prev => prev.map(t => t === oldType ? newType : t));
+    };
+
+    const deleteBusinessType = (type: string) => {
+        setAvailableBusinessTypes(prev => prev.filter(t => t !== type));
+        setBusinessTypes(prev => prev.filter(t => t !== type));
+    };
+
+    const updateCustomCategory = (oldCategory: string, newCategory: string) => {
+        setCustomCategories(prev => prev.map(c => c === oldCategory ? newCategory : c));
+        setActiveCategories(prev => prev.map(c => c === oldCategory ? newCategory : c));
     };
 
     useEffect(() => {
@@ -88,10 +106,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 image: p.image || ''
             }));
             setProducts(mappedProducts);
-
-            // Extract unique categories
-            // const uniqueCats = Array.from(new Set(data.map((p: any) => p.category))) as string[];
-            // Optionally update predefined categories based on data
         }
     };
 
@@ -153,7 +167,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         if (error) {
             console.error("Error updating product:", error);
-            // Revert might be complex, simplified for now: refresh
             fetchProducts();
         }
     };
@@ -166,7 +179,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         if (error) {
             console.error("Error deleting product:", error);
-            // Revert? Hard to revert delete without re-fetching or keeping backup.
             fetchProducts();
         }
     };
@@ -285,9 +297,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             businessTypes,
             availableBusinessTypes,
             addCustomBusinessType,
+            updateBusinessType,
+            deleteBusinessType,
             toggleBusinessType,
             customCategories,
             addCustomCategory,
+            updateCustomCategory,
             removeCustomCategory,
             refreshProducts: fetchProducts,
             processSale,
@@ -307,4 +322,3 @@ export function useInventory() {
     }
     return context;
 }
-
