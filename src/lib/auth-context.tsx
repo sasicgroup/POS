@@ -64,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Load Stores based on User Access
                 let validStores: any[] = [];
+                let accessIds: any[] = [];
 
                 if (currentUser.id !== 'owner-1') {
                     // 1. Get Access IDs from Junction Table
