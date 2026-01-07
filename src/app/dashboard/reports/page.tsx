@@ -28,6 +28,21 @@ export default function ReportsPage() {
     const { activeStore } = useAuth();
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
+    // State for Real Data
+    const [hourlySalesData, setHourlySalesData] = useState<any[]>([]);
+    const [weeklySalesData, setWeeklySalesData] = useState<any[]>([]);
+    const [categoryData, setCategoryData] = useState<any[]>([]);
+    const [recentBigSales, setRecentBigSales] = useState<any[]>([]);
+    const [totalRevenue, setTotalRevenue] = useState(0);
+    const [totalGrossProfit, setTotalGrossProfit] = useState(0);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (activeStore) {
+            fetchReportsData();
+        }
+    }, [activeStore]);
+
     if (!activeStore) return null;
 
     const handleExportCSV = () => {
@@ -88,21 +103,6 @@ export default function ReportsPage() {
 
         doc.save('weekly_sales_report.pdf');
     };
-
-    // State for Real Data
-    const [hourlySalesData, setHourlySalesData] = useState<any[]>([]);
-    const [weeklySalesData, setWeeklySalesData] = useState<any[]>([]);
-    const [categoryData, setCategoryData] = useState<any[]>([]);
-    const [recentBigSales, setRecentBigSales] = useState<any[]>([]);
-    const [totalRevenue, setTotalRevenue] = useState(0);
-    const [totalGrossProfit, setTotalGrossProfit] = useState(0);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        if (activeStore) {
-            fetchReportsData();
-        }
-    }, [activeStore]);
 
     const fetchReportsData = async () => {
         setLoading(true);
