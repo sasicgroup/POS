@@ -33,12 +33,16 @@ export interface SMSConfig {
     };
 }
 
-// Mock storage for config (in a real app, this would be in a DB)
+import { supabase } from '@/lib/supabase';
+
+// ... interface ...
+
+// Local cache
 let smsConfig: SMSConfig = {
     provider: 'hubtel',
     whatsappProvider: 'meta',
-    hubtel: { clientId: '', clientSecret: '', senderId: 'STORE' },
-    mnotify: { apiKey: '', senderId: 'STORE' },
+    hubtel: { clientId: '', clientSecret: '', senderId: '' },
+    mnotify: { apiKey: '', senderId: '' },
     meta: { accessToken: '', phoneNumberId: '', businessAccountId: '' },
     notifications: {
         owner: { sms: true, email: true, whatsapp: false },
@@ -50,8 +54,24 @@ let smsConfig: SMSConfig = {
     }
 };
 
+export const loadSMSConfigFromDB = async (storeId: string) => {
+    const { data, error } = await supabase
+        .from('app_settings')
+        .select('sms_config')
+        .eq('store_id', storeId)
+        .single();
+
+    if (data && data.sms_config) {
+        smsConfig = { ...smsConfig, ...data.sms_config };
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('sms_config', JSON.stringify(smsConfig));
+        }
+        return smsConfig;
+    }
+    return null;
+}
+
 export const getSMSConfig = (): SMSConfig => {
-    // In client-side logic, we might need to read this from localStorage or context
     if (typeof window !== 'undefined') {
         const stored = localStorage.getItem('sms_config');
         if (stored) {
@@ -65,10 +85,22 @@ export const getSMSConfig = (): SMSConfig => {
     return smsConfig;
 };
 
-export const updateSMSConfig = (config: SMSConfig) => {
+export const updateSMSConfig = async (config: SMSConfig, storeId?: string) => {
     smsConfig = config;
     if (typeof window !== 'undefined') {
         localStorage.setItem('sms_config', JSON.stringify(config));
+    }
+
+    if (storeId) {
+        // Upsert to DB
+        const { error } = await supabase
+            .from('app_settings')
+            .upsert({
+                store_id: storeId,
+                sms_config: config
+            });
+
+        if (error) console.error("Failed to save SMS config to DB", error);
     }
 };
 
@@ -214,4 +246,29 @@ export const sendNotification = async (type: 'sale' | 'welcome', data: any) => {
     }
 
     return true;
+};
+
+export const getSMSBalance = async (): Promise<number> => {
+    const config = getSMSConfig();
+
+    if (config.provider === 'mnotify' && config.mnotify?.apiKey) {
+        try {
+            const res = await fetch(`https://api.mnotify.com/api/balance/sms?key=${config.mnotify.apiKey}`);
+            const data = await res.json();
+            // mNotify returns { balance: "10.50", ... } or similar
+            return parseFloat(data?.balance || '0');
+        } catch (e) {
+            console.error("Failed to fetch mNotify balance", e);
+            return 0;
+        }
+    }
+
+    if (config.provider === 'hubtel') {
+        // Hubtel balance check often requires complex auth or is strictly merchant-portal based 
+        // depending on the API version (v1 vs v2).
+        // Returning 0 for now unless specific endpoint is provided by user docs.
+        return 0;
+    }
+
+    return 0;
 };

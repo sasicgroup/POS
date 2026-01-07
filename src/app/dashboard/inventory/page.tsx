@@ -7,9 +7,7 @@ import { useState, useRef, useEffect } from 'react';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
-    const { products, addProduct, activeCategories, deleteProduct } = useInventory(); // Assuming deleteProduct exists or will be added
-
-    if (!activeStore) return null;
+    const { products, addProduct, activeCategories, deleteProduct, updateProduct } = useInventory(); // Assuming deleteProduct exists or will be added
 
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
     const [newProduct, setNewProduct] = useState({
@@ -29,6 +27,7 @@ export default function InventoryPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterCategory, setFilterCategory] = useState('All');
 
+    const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
 
     const filteredProducts = products.filter(product => {
@@ -60,6 +59,7 @@ export default function InventoryPage() {
     };
 
     const handleBulkBarcode = () => {
+        if (!activeStore) return;
         const selectedItems = products.filter(p => selectedProducts.includes(p.id));
         if (selectedItems.length === 0) return;
 
@@ -111,6 +111,7 @@ export default function InventoryPage() {
     };
 
     const handlePrintBarcode = (product: any) => {
+        if (!activeStore) return;
         const printWindow = window.open('', '_blank', 'width=300,height=200');
         if (!printWindow) return;
 
@@ -191,13 +192,23 @@ export default function InventoryPage() {
         setIsScanning(false);
     };
 
+    const [editingId, setEditingId] = useState<any | null>(null);
+
     const handleAddProduct = (e: React.FormEvent) => {
         e.preventDefault();
-        addProduct({
+        const productData = {
             ...newProduct,
             status: newProduct.stock === 0 ? 'Out of Stock' : newProduct.stock < 10 ? 'Low Stock' : 'In Stock'
-        });
+        };
+
+        if (editingId) {
+            updateProduct({ ...productData, id: editingId });
+        } else {
+            addProduct(productData);
+        }
+
         setIsAddProductOpen(false);
+        setEditingId(null);
         setNewProduct({
             name: '',
             sku: '',
@@ -206,10 +217,12 @@ export default function InventoryPage() {
             price: 0,
             costPrice: 0,
             status: 'In Stock',
-            image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7', // Default placeholder
+            image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
             video: ''
         });
     };
+
+    if (!activeStore) return null;
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
@@ -241,7 +254,7 @@ export default function InventoryPage() {
                     <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                         <div className="mb-6 flex items-center justify-between">
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add New Product</h2>
-                            <button onClick={() => setIsAddProductOpen(false)} className="rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <button onClick={() => { setIsAddProductOpen(false); setEditingId(null); }} className="rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 <span className="sr-only">Close</span>
                                 <svg className="h-5 w-5 text-slate-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                             </button>
@@ -250,6 +263,70 @@ export default function InventoryPage() {
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product Name</label>
                                 <input required type="text" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product Image</label>
+                                <div className="flex gap-2 mb-2 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
+                                    <button
+                                        type="button"
+                                        onClick={() => setImageInputType('url')}
+                                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${imageInputType === 'url'
+                                            ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
+                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                                            }`}
+                                    >
+                                        Image URL
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setImageInputType('upload')}
+                                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${imageInputType === 'upload'
+                                            ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
+                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                                            }`}
+                                    >
+                                        Upload Image
+                                    </button>
+                                </div>
+
+                                {imageInputType === 'url' ? (
+                                    <input
+                                        type="text"
+                                        placeholder="https://example.com/image.jpg"
+                                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                                        value={newProduct.image}
+                                        onChange={e => setNewProduct({ ...newProduct, image: e.target.value })}
+                                    />
+                                ) : (
+                                    <div className="w-full">
+                                        <div className="relative flex items-center justify-center w-full">
+                                            <label htmlFor="dropzone-file" className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 hover:bg-slate-100 dark:border-slate-600 dark:hover:border-slate-500">
+                                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                                    <svg className="w-8 h-8 mb-4 text-slate-500 dark:text-slate-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
+                                                    </svg>
+                                                    <p className="mb-2 text-sm text-slate-500 dark:text-slate-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400">SVG, PNG, JPG or GIF (MAX. 2MB)</p>
+                                                </div>
+                                                <input id="dropzone-file" type="file" className="hidden" accept="image/*" onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        const reader = new FileReader();
+                                                        reader.onloadend = () => {
+                                                            setNewProduct({ ...newProduct, image: reader.result as string });
+                                                        };
+                                                        reader.readAsDataURL(file);
+                                                    }
+                                                }} />
+                                            </label>
+                                        </div>
+                                        {newProduct.image && newProduct.image.startsWith('data:image') && (
+                                            <div className="mt-2 flex items-center justify-center p-2 border border-slate-200 rounded-lg dark:border-slate-700">
+                                                <img src={newProduct.image} alt="Preview" className="h-20 object-contain rounded-md" />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Video URL (Optional)</label>
@@ -267,19 +344,31 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">SKU</label>
-                                    <div className="relative">
-                                        <input required type="text" value={newProduct.sku} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white pr-10" onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })} />
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <input required type="text" value={newProduct.sku} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white pr-10" onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })} />
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setIsScanning(true);
+                                                }}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors z-10 cursor-pointer"
+                                                title="Scan Barcode"
+                                            >
+                                                <Scan className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                         <button
                                             type="button"
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                setIsScanning(true);
+                                            onClick={() => {
+                                                const randomSku = 'SKU-' + Math.floor(100000 + Math.random() * 900000);
+                                                setNewProduct({ ...newProduct, sku: randomSku });
                                             }}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors z-10 cursor-pointer"
-                                            title="Scan Barcode"
+                                            className="px-3 py-2 mt-1 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50 transition-colors"
                                         >
-                                            <Scan className="h-4 w-4" />
+                                            Generate
                                         </button>
                                     </div>
                                 </div>
@@ -419,7 +508,9 @@ export default function InventoryPage() {
                                             <Video className="h-5 w-5" />
                                         </button>
                                     ) : (
-                                        <span className="text-xs text-slate-400 italic">No video</span>
+                                        <div className="flex justify-center w-9">
+                                            <Video className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                        </div>
                                     )}
                                 </td>
                                 <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
@@ -460,10 +551,11 @@ export default function InventoryPage() {
                                                     stock: product.stock,
                                                     price: product.price,
                                                     costPrice: product.costPrice || 0,
-                                                    status: product.status,
-                                                    image: product.image,
+                                                    status: product.status || 'In Stock',
+                                                    image: product.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
                                                     video: product.video || ''
                                                 });
+                                                setEditingId(product.id);
                                                 setIsAddProductOpen(true);
                                             }}
                                             className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 rounded-lg dark:hover:bg-blue-900/30"

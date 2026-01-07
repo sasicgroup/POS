@@ -24,16 +24,19 @@ import {
     Sparkles,
     Award,
     CalendarClock,
-    ShieldCheck
+    ShieldCheck,
+    Receipt
 } from 'lucide-react';
 
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const { user, logout, activeStore, stores, switchStore } = useAuth();
+    const { user, logout, activeStore, stores, switchStore, createStore } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+    const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
 
     useEffect(() => {
         if (!localStorage.getItem('sms_user')) {
@@ -52,11 +55,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award },
         { name: 'Customers', href: '/dashboard/customers', icon: Users },
         { name: 'Employees', href: '/dashboard/employees', icon: CreditCard },
+        { name: 'Expenses', href: '/dashboard/expenses', icon: Receipt },
         { name: 'Reports', href: '/dashboard/reports', icon: TrendingUp },
         { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck },
         { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
     ];
+
 
     return (
         <InventoryProvider>
@@ -103,7 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         {/* User Profile & Logout */}
                         <div className="border-t border-slate-200 p-4 dark:border-slate-800">
                             <div className="flex items-center gap-3 mb-4">
-                                <img src={user.avatar} alt="User" className="h-10 w-10 rounded-full bg-slate-200 ring-2 ring-indigo-500/20" />
+                                <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`} alt="User" className="h-10 w-10 rounded-full bg-slate-200 ring-2 ring-indigo-500/20" />
                                 <div className="overflow-hidden">
                                     <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{user.name}</p>
                                     <p className="truncate text-xs text-slate-500 dark:text-slate-400 capitalize">{user.role}</p>
@@ -176,11 +181,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                         </button>
                                     ))}
                                     <div className="my-1 border-t border-slate-100 dark:border-slate-800"></div>
-                                    {user.role === 'super_admin' && (
-                                        <button className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30">
-                                            + Add New Store
-                                        </button>
-                                    )}
+                                    <button
+                                        onClick={() => {
+                                            setIsStoreMenuOpen(false);
+                                            setIsAddStoreModalOpen(true);
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30"
+                                    >
+                                        + Add New Store
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -236,6 +245,64 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </main>
                 </div>
             </div>
+
+            {/* Add New Store Modal */}
+            {isAddStoreModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
+                    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-slate-900 animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Add New Store</h2>
+                            <button onClick={() => setIsAddStoreModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Store Name</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Downtown Branch"
+                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    id="new-store-name"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Location</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. 123 Main St, Accra"
+                                    className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    id="new-store-location"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                onClick={() => setIsAddStoreModalOpen(false)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const nameInput = document.getElementById('new-store-name') as HTMLInputElement;
+                                    const locInput = document.getElementById('new-store-location') as HTMLInputElement;
+
+                                    if (nameInput.value && locInput.value) {
+                                        await createStore(nameInput.value, locInput.value);
+                                        setIsAddStoreModalOpen(false);
+                                    }
+                                }}
+                                className="px-4 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700"
+                            >
+                                Create Store
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </InventoryProvider>
     );
 }

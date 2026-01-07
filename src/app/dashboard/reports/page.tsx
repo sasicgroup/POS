@@ -19,45 +19,16 @@ import {
     Cell
 } from 'recharts';
 import { Calendar, TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star, Download, FileText, FileSpreadsheet, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase } from '@/lib/supabase';
 
 export default function ReportsPage() {
     const { activeStore } = useAuth();
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
     if (!activeStore) return null;
-
-    // Mock Data for "Time of High Sales" (Hourly Heatmap/Bar)
-    const hourlySalesData = [
-        { hour: '6am', sales: 1200 },
-        { hour: '7am', sales: 800 },
-        { hour: '8am', sales: 1500 },
-        { hour: '9am', sales: 3200 },
-        { hour: '10am', sales: 4500 },
-        { hour: '11am', sales: 5100 },
-        { hour: '12pm', sales: 6200 },
-        { hour: '1pm', sales: 5800 },
-        { hour: '2pm', sales: 4200 },
-        { hour: '3pm', sales: 3900 },
-        { hour: '4pm', sales: 5500 },
-        { hour: '5pm', sales: 6800 },
-        { hour: '6pm', sales: 7500 },
-        { hour: '7pm', sales: 5200 },
-        { hour: '8pm', sales: 3000 },
-    ];
-
-    // Mock Data for Weekly Overview
-    const weeklySalesData = [
-        { day: 'Mon', revenue: 4500, profit: 1200, orders: 45 },
-        { day: 'Tue', revenue: 5200, profit: 1500, orders: 52 },
-        { day: 'Wed', revenue: 4800, profit: 1300, orders: 49 },
-        { day: 'Thu', revenue: 6100, profit: 1800, orders: 60 },
-        { day: 'Fri', revenue: 8500, profit: 2500, orders: 88 },
-        { day: 'Sat', revenue: 9200, profit: 3000, orders: 95 },
-        { day: 'Sun', revenue: 7400, profit: 2200, orders: 72 },
-    ];
 
     const handleExportCSV = () => {
         const headers = ['Day', 'Revenue', 'Profit', 'Orders'];
@@ -118,35 +89,169 @@ export default function ReportsPage() {
         doc.save('weekly_sales_report.pdf');
     };
 
-    // Mock Data for Top Categories
-    // AI Service Integration
+    // State for Real Data
+    const [hourlySalesData, setHourlySalesData] = useState<any[]>([]);
+    const [weeklySalesData, setWeeklySalesData] = useState<any[]>([]);
+    const [categoryData, setCategoryData] = useState<any[]>([]);
+    const [recentBigSales, setRecentBigSales] = useState<any[]>([]);
+    const [totalRevenue, setTotalRevenue] = useState(0);
+    const [totalGrossProfit, setTotalGrossProfit] = useState(0);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (activeStore) {
+            fetchReportsData();
+        }
+    }, [activeStore]);
+
+    const fetchReportsData = async () => {
+        setLoading(true);
+        try {
+            // 1. Fetch Sales
+            const { data: sales, error: salesError } = await supabase
+                .from('sales')
+                .select(`
+                    *,
+                    sale_items (
+                        quantity,
+                        price_at_sale,
+                        product_id,
+                        products ( name, category, price, cost_price ) 
+                    ),
+                    customers ( name )
+                `)
+                .eq('store_id', activeStore.id)
+                .order('created_at', { ascending: false });
+
+            // 2. Fetch Expenses
+            const { data: expensesData, error: expenseError } = await supabase
+                .from('expenses')
+                .select('amount')
+                .eq('store_id', activeStore.id);
+
+            if (salesError) throw salesError;
+            if (!sales) return;
+
+            // --- Process: Key Metrics ---
+            const revenue = sales.reduce((acc, sale) => acc + Number(sale.total_amount), 0);
+
+            // Total Expenses
+            const totalExpenses = expensesData ? expensesData.reduce((acc, exp) => acc + Number(exp.amount), 0) : 0;
+
+            // Calculate Gross Profit
+            const grossProfit = sales.reduce((acc, sale) => {
+                const saleProfit = sale.sale_items.reduce((sAcc: number, item: any) => {
+                    const cost = item.products?.cost_price || 0;
+                    const price = item.price_at_sale || 0;
+                    return sAcc + ((price - cost) * item.quantity);
+                }, 0);
+                return acc + saleProfit;
+            }, 0);
+
+            const netProfit = grossProfit - totalExpenses;
+
+            setTotalRevenue(revenue);
+            setTotalGrossProfit(grossProfit);
+
+            // --- Process: Hourly Sales (Heatmap) ---
+            const hoursMap = new Array(24).fill(0).map((_, i) => ({ hour: `${i}:00`, sales: 0 }));
+            sales.forEach(sale => {
+                const date = new Date(sale.created_at);
+                const hour = date.getHours();
+                hoursMap[hour].sales += Number(sale.total_amount);
+            });
+            // Filter to show somewhat relevant 8am-8pm or just all non-zero? Let's show all for correctness or a range.
+            // Let's show 6am to 10pm for retail relevance
+            const relevantHours = hoursMap.slice(6, 22);
+            setHourlySalesData(relevantHours.map(h => ({
+                ...h,
+                hour: new Date(0, 0, 0, parseInt(h.hour)).toLocaleTimeString([], { hour: 'numeric', hour12: true }).toLowerCase()
+            })));
+
+            // --- Process: Weekly Overview (Last 7 Days) ---
+            const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const last7DaysMap = new Map();
+            // Initialize last 7 days keys
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dayKey = daysMap[d.getDay()];
+                last7DaysMap.set(dayKey, { day: dayKey, revenue: 0, orders: 0, profit: 0 });
+            }
+
+            sales.forEach(sale => {
+                const d = new Date(sale.created_at);
+                // Check if within last 7 days? Simple logic: just map day name if recent
+                // For accuracy we should check date diff, but for this demo, matching day name is 'okay' if data is sparse/recent.
+                // Better: Check timestamp
+                const now = new Date();
+                const diffTime = Math.abs(now.getTime() - d.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 7) {
+                    const dayName = daysMap[d.getDay()];
+                    if (last7DaysMap.has(dayName)) {
+                        const entry = last7DaysMap.get(dayName);
+                        entry.revenue += Number(sale.total_amount);
+                        entry.orders += 1;
+
+                        const saleProfit = sale.sale_items.reduce((sAcc: number, item: any) => {
+                            const cost = item.products?.cost_price || 0;
+                            const price = item.price_at_sale || 0;
+                            return sAcc + ((price - cost) * item.quantity);
+                        }, 0);
+                        entry.profit += saleProfit;
+                    }
+                }
+            });
+            setWeeklySalesData(Array.from(last7DaysMap.values()));
+
+            // --- Process: Top Categories ---
+            const catMap = new Map();
+            sales.forEach(sale => {
+                sale.sale_items.forEach((item: any) => {
+                    const cat = item.products?.category || 'Uncategorized';
+                    const val = catMap.get(cat) || 0;
+                    catMap.set(cat, val + item.quantity);
+                });
+            });
+            const COLORS = ['#6366f1', '#ec4899', '#8b5cf6', '#10b981', '#f59e0b'];
+            const processedCats = Array.from(catMap.entries()).map(([name, value], idx) => ({
+                name,
+                value,
+                color: COLORS[idx % COLORS.length]
+            }));
+            setCategoryData(processedCats);
+
+            // --- Process: High Value Transactions ---
+            const bigSales = sales.filter(s => Number(s.total_amount) > 100).slice(0, 10); // > 100 GHS considered 'Big' for this context? Or top 10 regardless.
+            setRecentBigSales(bigSales);
+
+        } catch (error) {
+            console.error("Error fetching report data", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Constants
+    const operatingExpenses = totalRevenue * 0.15; // Mock 15% expenses logic maintained
+    const netProfit = totalGrossProfit - operatingExpenses;
+
+    // AI Forecast Mock (Keep simplistic for now as requested)
+    // We can base it on actual totalRevenue to make scale look correct
+    const avgDailyRev = totalRevenue / 30; // approx
     const forecastData = [
-        { date: 'Jan 1', predicted: 4000, actual: 4000 },
-        { date: 'Jan 2', predicted: 4200, actual: 4150 },
-        { date: 'Jan 3', predicted: 4500, actual: 4600 },
-        { date: 'Jan 4', predicted: 4800, actual: 4750 },
-        { date: 'Jan 5', predicted: 5100, actual: 5200 }, // Today
-        { date: 'Jan 6', predicted: 5300, actual: null },
-        { date: 'Jan 7', predicted: 5500, actual: null },
-        { date: 'Jan 8', predicted: 5800, actual: null },
+        { date: 'Today', predicted: avgDailyRev * 1.1, actual: avgDailyRev * 1.05 },
+        { date: 'Tomorrow', predicted: avgDailyRev * 1.2, actual: null },
+        { date: 'Next Day', predicted: avgDailyRev * 0.9, actual: null },
     ];
 
     const aiInsights = [
-        { title: 'Holiday Spike', description: 'Predicted 25% sales increase due to upcoming festival.', type: 'positive' },
-        { title: 'Inventory Alert', description: 'Stock levels for "Footwear" may run low by Friday.', type: 'alert' },
+        { title: 'Sales Trend', description: `Revenue is tracking ${totalRevenue > 0 ? 'steady' : 'low'} this week.`, type: totalRevenue > 0 ? 'positive' : 'alert' },
+        { title: 'Inventory', description: 'Check stock on top selling items.', type: 'alert' },
     ];
 
-    // ... category data ...
-    const categoryData = [
-        { name: 'Apparel', value: 45, color: '#6366f1' },
-        { name: 'Footwear', value: 30, color: '#ec4899' },
-        { name: 'Accessories', value: 25, color: '#8b5cf6' },
-    ];
-
-    const totalRevenue = weeklySalesData.reduce((acc, curr) => acc + curr.revenue, 0);
-    const totalGrossProfit = weeklySalesData.reduce((acc, curr) => acc + curr.profit, 0);
-    const operatingExpenses = totalRevenue * 0.15; // Mock 15% expenses (Rent, Staff, Utilities)
-    const netProfit = totalGrossProfit - operatingExpenses;
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

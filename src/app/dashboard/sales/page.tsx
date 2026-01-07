@@ -10,6 +10,24 @@ export default function SalesPage() {
     const { activeStore } = useAuth();
     const { products, processSale } = useInventory();
     const [cart, setCart] = useState<any[]>([]);
+
+    // Load Cart from LocalStorage
+    useEffect(() => {
+        const savedCart = localStorage.getItem('sms_cart');
+        if (savedCart) {
+            try {
+                setCart(JSON.parse(savedCart));
+            } catch (e) {
+                console.error("Failed to parse cart", e);
+            }
+        }
+    }, []);
+
+    // Save Cart to LocalStorage
+    useEffect(() => {
+        localStorage.setItem('sms_cart', JSON.stringify(cart));
+    }, [cart]);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [isScanning, setIsScanning] = useState(false);
     const [scanMode, setScanMode] = useState<'sell' | 'check'>('sell');
@@ -20,7 +38,27 @@ export default function SalesPage() {
 
     if (!activeStore) return null;
 
+
+    // Audio Refs
+    const beepAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3') : null;
+    const successAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3') : null;
+
+    const playBeep = () => {
+        if (beepAudio) {
+            beepAudio.currentTime = 0;
+            beepAudio.play().catch(e => console.error("Audio play failed", e));
+        }
+    };
+
+    const playSuccess = () => {
+        if (successAudio) {
+            successAudio.currentTime = 0;
+            successAudio.play().catch(e => console.error("Audio play failed", e));
+        }
+    }
+
     const addToCart = (product: any) => {
+        playBeep();
         setCart(current => {
             const existing = current.find(item => item.id === product.id);
             if (existing) {
@@ -33,7 +71,7 @@ export default function SalesPage() {
     };
 
     const handleScan = (query: string) => {
-        // Simulated scan logic: find product by checking if query matches SKU or Name roughly
+        // Find product by checking if query matches SKU or Name roughly
         const product = products.find(p =>
             p.sku.toLowerCase() === query.toLowerCase() ||
             p.name.toLowerCase().includes(query.toLowerCase())
@@ -171,47 +209,48 @@ export default function SalesPage() {
         }, 500);
     };
 
-    // Mock Customer Database Check
+    // Customer Lookup
     const checkCustomer = (phone: string) => {
-        // In real app, call API
-        if (phone === '0555000000') {
-            setCustomerName('John Doe (Loyal)');
-            setLoyaltyPoints(500); // Has points
-        } else {
-            setLoyaltyPoints(0);
-            if (customerName === 'John Doe (Loyal)') setCustomerName(''); // Reset if changed
-        }
+        // In future, call Supabase customers table
+        // For now, minimal local check or leave empty until backend hook is ready
+        // Removing mock logic for "John Doe"
+        setLoyaltyPoints(0);
+        if (customerName === 'John Doe (Loyal)') setCustomerName('');
     };
 
-    // This tool call is actually to update sms.ts, but I must select a target file.
-    // I will split this into two tool calls. One for sms.ts, one for page.tsx.
-    // This call is for page.tsx, but I need to update sms.ts first.
-    // I'll update sms.ts in the Next step. For now I will focus on updating page.tsx assuming sms.ts will support 'welcome'.
-    // Actually, I can't assume. I should do sms.ts first.
-    // Wait, I am in the `replace_file_content` of page.tsx. I should probably cancel and do sms.ts first?
-    // No, I can do page.tsx now and use a type that I WILL add.
 
-    // ... Logic for handleCheckout ...
     const handleCheckout = async () => {
-        // Here you would process payment
+        // Process Payment Logic would go here
+
         const trxId = `TRX-${Date.now().toString().slice(-4)}`;
 
-        // Process Inventory Sync
-        processSale(cart.map(item => ({ id: item.id, quantity: item.quantity })));
+        // Process Inventory Sync & DB Save
+        const saleId = await processSale({
+            items: cart.map(item => ({
+                id: item.id,
+                quantity: item.quantity,
+                price: item.price
+            })),
+            totalAmount: grandTotal,
+            paymentMethod: paymentMethod!,
+            customer: (customerName || customerPhone) ? {
+                name: customerName,
+                phone: customerPhone
+            } : undefined
+        });
 
-        // Loyalty Logic
+        if (!saleId) {
+            alert("Failed to process sale. Please try again.");
+            return;
+        }
+
         const pointsEarned = Math.floor(grandTotal);
         const finalPoints = redeemPoints ? (loyaltyPoints - 100) + pointsEarned : loyaltyPoints + pointsEarned;
-
-        // Determine if New Customer (Mock Logic: if phone was valid but name was manually entered/empty initially)
-        // In this mock, checkCustomer sets name if existing. If we manually typed it, it's new.
-        // We can check if loyaltyPoints was 0 and name is present.
         const isNewCustomer = customerPhone.length >= 10 && customerName && loyaltyPoints === 0;
 
-        console.log(`Customer: ${customerName || 'Guest'} (${customerPhone})`);
-        console.log(`Points Earned: ${pointsEarned}. New Balance: ${finalPoints}`);
+        console.log(`Processing Sale: ${trxId}`);
 
-        // Trigger Notifications (Fire and Forget)
+        // Trigger Notifications
         if (customerPhone) {
             // New Customer Welcome
             if (isNewCustomer) {
@@ -235,9 +274,13 @@ export default function SalesPage() {
         // Trigger Print
         handlePrintReceipt(trxId);
 
+        // Play Success Sound
+        playSuccess();
+
         setShowCheckoutSuccess(true);
         setTimeout(() => {
             setCart([]);
+            localStorage.removeItem('sms_cart');
             setCustomerName('');
             setCustomerPhone('');
             setLoyaltyPoints(0);
@@ -245,6 +288,7 @@ export default function SalesPage() {
             setShowCheckoutSuccess(false);
         }, 3000);
     };
+
 
     const filteredProducts = products.filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

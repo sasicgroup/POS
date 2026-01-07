@@ -1,75 +1,255 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from './supabase';
+import { useAuth } from './auth-context';
 
-export interface Product {
-    id: number;
+interface Product {
+    id: any;
     name: string;
-    sku: string;
     category: string;
-    stock: number;
     price: number;
-    costPrice?: number;
-    status: 'In Stock' | 'Low Stock' | 'Out of Stock';
+    stock: number;
+    sku: string;
     image: string;
+    costPrice?: number;
+    status?: string;
     video?: string;
 }
 
 interface InventoryContextType {
     products: Product[];
-    addProduct: (product: Omit<Product, 'id'>) => void;
-    deleteProduct: (id: number) => void;
-    updateStock: (id: number, newStock: number) => void;
-    processSale: (items: { id: number; quantity: number }[]) => void;
-    businessTypes: string[];
+    searchQuery: string;
+    setSearchQuery: (query: string) => void;
+    filteredProducts: Product[];
     activeCategories: string[];
-    customCategories: string[];
+    setActiveCategories: (categories: string[]) => void;
+    businessTypes: string[];
+    availableBusinessTypes: string[];
     toggleBusinessType: (type: string) => void;
+    customCategories: string[];
     addCustomCategory: (category: string) => void;
     removeCustomCategory: (category: string) => void;
-    availableBusinessTypes: string[];
+    refreshProducts: () => Promise<void>;
+    processSale: (saleData: any) => Promise<any>;
+    addProduct: (product: any) => Promise<void>;
+    deleteProduct: (id: any) => Promise<void>;
+    updateProduct: (product: any) => Promise<void>;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
-export function InventoryProvider({ children }: { children: ReactNode }) {
-    const [products, setProducts] = useState<Product[]>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('inventory_products');
-            if (saved) return JSON.parse(saved);
+export function InventoryProvider({ children }: { children: React.ReactNode }) {
+    const { activeStore, user } = useAuth();
+    const [products, setProducts] = useState<Product[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [activeCategories, setActiveCategories] = useState<string[]>(['All']);
+
+    // UI states
+    const [businessTypes, setBusinessTypes] = useState<string[]>([]);
+    const [customCategories, setCustomCategories] = useState<string[]>([]);
+    const availableBusinessTypes = [
+        "Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"
+    ];
+
+    useEffect(() => {
+        if (activeStore?.id) {
+            fetchProducts();
+        } else {
+            setProducts([]);
         }
-        return [
-            { id: 1, name: 'Premium Leather Bag', sku: 'ACC-001', category: 'Accessories', stock: 45, price: 120.00, costPrice: 80.00, status: 'In Stock', image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7' },
-            { id: 2, name: 'Slim Fit Denim Jeans', sku: 'APP-004', category: 'Apparel', stock: 12, price: 49.99, costPrice: 25.00, status: 'Low Stock', image: 'https://images.unsplash.com/photo-1542272617-08f086303294' },
-            { id: 3, name: 'Classic White T-Shirt', sku: 'APP-009', category: 'Apparel', stock: 156, price: 19.99, costPrice: 8.00, status: 'In Stock', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab' },
-            { id: 4, name: 'Running Sneakers', sku: 'FTW-021', category: 'Footwear', stock: 0, price: 89.95, costPrice: 45.00, status: 'Out of Stock', image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff' },
-            { id: 5, name: 'Silver Wrist Watch', sku: 'ACC-005', category: 'Accessories', stock: 8, price: 299.00, costPrice: 150.00, status: 'Low Stock', image: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314' },
-            { id: 6, name: 'Sunglasses', sku: 'ACC-012', category: 'Accessories', stock: 25, price: 150.00, costPrice: 60.00, status: 'In Stock', image: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083' },
-        ];
-    });
+    }, [activeStore?.id]);
 
-    React.useEffect(() => {
-        localStorage.setItem('inventory_products', JSON.stringify(products));
-    }, [products]);
+    const fetchProducts = async () => {
+        if (!activeStore?.id) return;
 
-    // Category Management
-    const PRESET_CATEGORIES: Record<string, string[]> = {
-        'Retail (General)': ['Apparel', 'Accessories', 'Footwear', 'Consumer Electronics'],
-        'Construction': ['Cement', 'Sand & Stone', 'Steel', 'Tools', 'Plumbing', 'Electricals', 'Paints'],
-        'Electricals': ['Cables & Wires', 'Lighting', 'Switches', 'Circuit Breakers', 'Batteries'],
-        'Home Appliances': ['Kitchen', 'Laundry', 'Air Conditioning', 'TV & Audio', 'Refrigeration'],
-        'Pharmacy': ['Medicines', 'Personal Care', 'Baby Care', 'Vitamins', 'First Aid'],
-        'Grocery': ['Produce', 'Dairy', 'Beverages', 'Bakery', 'Canned Goods', 'Snacks'],
-        'Automotive': ['Spare Parts', 'Oil & Fluids', 'Tires', 'Car Care', 'Tools'],
+        const { data, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('store_id', activeStore.id);
+
+        if (error) {
+            console.error('Error fetching products:', error);
+        } else if (data) {
+            // Map database snake_case to frontend camelCase
+            const mappedProducts = data.map((p: any) => ({
+                ...p,
+                costPrice: p.cost_price || 0,
+                // Ensure other fields are present or default
+                status: p.status || 'In Stock',
+                video: p.video || '',
+                image: p.image || ''
+            }));
+            setProducts(mappedProducts);
+
+            // Extract unique categories
+            // const uniqueCats = Array.from(new Set(data.map((p: any) => p.category))) as string[];
+            // Optionally update predefined categories based on data
+        }
     };
 
-    const [businessTypes, setBusinessTypes] = useState<string[]>(['Retail (General)']);
-    const [customCategories, setCustomCategories] = useState<string[]>([]);
+    const addProduct = async (product: any) => {
+        if (!activeStore?.id) return;
 
-    const activeCategories = Array.from(new Set([
-        ...businessTypes.flatMap(type => PRESET_CATEGORIES[type] || []),
-        ...customCategories
-    ])).sort();
+        // Optimistic update (with temporary ID)
+        const tempId = Date.now();
+        const newProduct = { ...product, id: tempId, store_id: activeStore.id };
+        setProducts(prev => [...prev, newProduct]);
+
+        const { data, error } = await supabase.from('products').insert({
+            store_id: activeStore.id,
+            name: product.name,
+            category: product.category,
+            price: product.price,
+            stock: product.stock,
+            sku: product.sku,
+            image: product.image,
+            video: product.video,
+            status: product.status,
+            cost_price: product.costPrice
+        }).select().single();
+
+        if (error) {
+            console.error("Error adding product:", error);
+            // Revert optimistic update on error
+            setProducts(prev => prev.filter(p => p.id !== tempId));
+        } else if (data) {
+            // Replace temp product with real one and map back
+            const mappedProduct = {
+                ...data,
+                costPrice: data.cost_price || 0,
+                status: data.status || 'In Stock',
+                video: data.video || '',
+                image: data.image || ''
+            };
+            setProducts(prev => prev.map(p => p.id === tempId ? mappedProduct : p));
+        }
+    };
+
+    const updateProduct = async (product: any) => {
+        if (!activeStore?.id) return;
+
+        // Optimistic update
+        setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+
+        const { error } = await supabase.from('products').update({
+            name: product.name,
+            category: product.category,
+            price: product.price,
+            stock: product.stock,
+            sku: product.sku,
+            image: product.image,
+            video: product.video,
+            status: product.status,
+            cost_price: product.costPrice
+        }).eq('id', product.id);
+
+        if (error) {
+            console.error("Error updating product:", error);
+            // Revert might be complex, simplified for now: refresh
+            fetchProducts();
+        }
+    };
+
+    const deleteProduct = async (id: any) => {
+        // Optimistic delete
+        setProducts(prev => prev.filter(p => p.id !== id));
+
+        const { error } = await supabase.from('products').delete().eq('id', id);
+
+        if (error) {
+            console.error("Error deleting product:", error);
+            // Revert? Hard to revert delete without re-fetching or keeping backup.
+            fetchProducts();
+        }
+    };
+
+    const processSale = async (saleData: any) => {
+        if (!activeStore?.id) return null;
+
+        // 1. Handle Customer (Find or Create)
+        let customerId = null;
+        if (saleData.customer && saleData.customer.phone) {
+            // Check if exists
+            const { data: existing } = await supabase
+                .from('customers')
+                .select('id')
+                .eq('store_id', activeStore.id)
+                .eq('phone', saleData.customer.phone)
+                .single();
+
+            if (existing) {
+                customerId = existing.id;
+            } else {
+                // Create new
+                const { data: newCustomer } = await supabase.from('customers').insert({
+                    store_id: activeStore.id,
+                    name: saleData.customer.name || 'Unknown',
+                    phone: saleData.customer.phone,
+                    total_spent: 0,
+                    points: 0
+                }).select().single();
+                if (newCustomer) customerId = newCustomer.id;
+            }
+        }
+
+        // 2. Insert Sale
+        const { data: sale, error: saleError } = await supabase.from('sales').insert({
+            store_id: activeStore.id,
+            total_amount: saleData.totalAmount,
+            payment_method: saleData.paymentMethod,
+            employee_id: user?.id,
+            customer_id: customerId,
+            status: 'completed'
+        }).select().single();
+
+        if (saleError || !sale) {
+            console.error("Sale insert failed", saleError);
+            return null;
+        }
+
+        // 3. Insert Sale Items
+        if (saleData.items && saleData.items.length > 0) {
+            const saleItems = saleData.items.map((item: any) => ({
+                sale_id: sale.id,
+                product_id: item.id,
+                quantity: item.quantity,
+                price_at_sale: item.price,
+                subtotal: item.quantity * item.price
+            }));
+            const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
+            if (itemsError) console.error("Sale items insert failed", itemsError);
+
+            // 4. Update Stock (Local & DB)
+            // Optimistic update
+            setProducts(prev => prev.map(p => {
+                const item = saleData.items.find((i: any) => i.id === p.id);
+                if (item) {
+                    return { ...p, stock: p.stock - item.quantity };
+                }
+                return p;
+            }));
+
+            // DB Update loop (Sequential to be safe)
+            for (const item of saleData.items) {
+                const product = products.find(p => p.id === item.id);
+                if (product) {
+                    await supabase.from('products')
+                        .update({ stock: product.stock - item.quantity })
+                        .eq('id', item.id);
+                }
+            }
+        }
+
+        return sale.id;
+    };
+
+    const filteredProducts = products.filter(product => {
+        const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            product.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = activeCategories.includes('All') || activeCategories.includes(product.category);
+        return matchesSearch && matchesCategory;
+    });
 
     const toggleBusinessType = (type: string) => {
         setBusinessTypes(prev =>
@@ -79,61 +259,33 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
     const addCustomCategory = (category: string) => {
         if (!customCategories.includes(category)) {
-            setCustomCategories(prev => [...prev, category]);
+            setCustomCategories([...customCategories, category]);
         }
     };
 
     const removeCustomCategory = (category: string) => {
-        setCustomCategories(prev => prev.filter(c => c !== category));
-    };
-
-    const addProduct = (product: Omit<Product, 'id'>) => {
-        setProducts(prev => [
-            ...prev,
-            { ...product, id: Math.max(0, ...prev.map(p => p.id)) + 1 }
-        ]);
-    };
-
-    const updateStock = (id: number, newStock: number) => {
-        setProducts(prev => prev.map(p => {
-            if (p.id === id) {
-                const status = newStock === 0 ? 'Out of Stock' : newStock < 10 ? 'Low Stock' : 'In Stock';
-                return { ...p, stock: newStock, status };
-            }
-            return p;
-        }));
-    };
-
-    const processSale = (items: { id: number; quantity: number }[]) => {
-        setProducts(prev => prev.map(p => {
-            const saleItem = items.find(i => i.id === p.id);
-            if (saleItem) {
-                const newStock = Math.max(0, p.stock - saleItem.quantity);
-                const status = newStock === 0 ? 'Out of Stock' : newStock < 10 ? 'Low Stock' : 'In Stock';
-                return { ...p, stock: newStock, status };
-            }
-            return p;
-        }));
-    };
-
-    const deleteProduct = (id: number) => {
-        setProducts(prev => prev.filter(p => p.id !== id));
+        setCustomCategories(customCategories.filter(c => c !== category));
     };
 
     return (
         <InventoryContext.Provider value={{
             products,
-            addProduct,
-            deleteProduct,
-            updateStock,
-            processSale,
-            businessTypes,
+            searchQuery,
+            setSearchQuery,
+            filteredProducts,
             activeCategories,
-            customCategories,
+            setActiveCategories,
+            businessTypes,
+            availableBusinessTypes,
             toggleBusinessType,
+            customCategories,
             addCustomCategory,
             removeCustomCategory,
-            availableBusinessTypes: Object.keys(PRESET_CATEGORIES)
+            refreshProducts: fetchProducts,
+            processSale,
+            addProduct,
+            deleteProduct,
+            updateProduct
         }}>
             {children}
         </InventoryContext.Provider>
@@ -143,7 +295,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 export function useInventory() {
     const context = useContext(InventoryContext);
     if (context === undefined) {
-        throw new Error('useInventory must be used within a InventoryProvider');
+        throw new Error('useInventory must be used within an InventoryProvider');
     }
     return context;
 }
+

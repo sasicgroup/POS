@@ -32,15 +32,40 @@ export default function SettingsPage() {
 
     const [activeTab, setActiveTab] = useState('general');
     const [smsConfig, setSmsConfig] = useState<SMSConfig | null>(null);
+    const [storeName, setStoreName] = useState('');
+    const [storeLocation, setStoreLocation] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         setSmsConfig(getSMSConfig());
-    }, []);
+        if (activeStore) {
+            setStoreName(activeStore.name);
+            setStoreLocation(activeStore.location);
+        }
+    }, [activeStore]);
 
-    const handleSave = () => {
-        if (smsConfig) {
-            updateSMSConfig(smsConfig);
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            // Save SMS Config
+            if (smsConfig && activeStore?.id) {
+                await updateSMSConfig(smsConfig, activeStore.id);
+            }
+
+            // Save Store Settings
+            if (activeStore) {
+                await updateStoreSettings({
+                    name: storeName,
+                    location: storeLocation
+                });
+            }
+
             alert('Settings saved successfully!');
+        } catch (error) {
+            console.error("Failed to save settings:", error);
+            alert('Failed to save settings. Please try again.');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -62,10 +87,11 @@ export default function SettingsPage() {
                 </div>
                 <button
                     onClick={handleSave}
-                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30"
+                    disabled={isSaving}
+                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <Save className="h-4 w-4" />
-                    Save Changes
+                    {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
             </div>
 
@@ -104,7 +130,8 @@ export default function SettingsPage() {
                                             <Building2 className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                                             <input
                                                 type="text"
-                                                defaultValue={activeStore.name}
+                                                value={storeName}
+                                                onChange={(e) => setStoreName(e.target.value)}
                                                 className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                                             />
                                         </div>
@@ -122,7 +149,8 @@ export default function SettingsPage() {
                                         <div className="relative">
                                             <Globe className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
                                             <textarea
-                                                defaultValue={activeStore.location}
+                                                value={storeLocation}
+                                                onChange={(e) => setStoreLocation(e.target.value)}
                                                 rows={3}
                                                 className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
                                             />

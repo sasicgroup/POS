@@ -15,7 +15,8 @@ import {
     Search,
     Bell
 } from 'lucide-react';
-import { sendNotification, getSMSConfig, updateSMSConfig, type SMSConfig } from '@/lib/sms';
+import { sendNotification, getSMSConfig, updateSMSConfig, type SMSConfig, getSMSBalance } from '@/lib/sms';
+import { supabase } from '@/lib/supabase';
 import { useEffect } from 'react';
 
 export default function CommunicationPage() {
@@ -30,6 +31,47 @@ export default function CommunicationPage() {
         setConfig(getSMSConfig());
     }, []);
 
+    // ... earlier code ...
+    const [balance, setBalance] = useState<number>(0);
+    const [recipientCount, setRecipientCount] = useState(0);
+
+    useEffect(() => {
+        const initData = async () => {
+            setConfig(getSMSConfig());
+
+            // Fetch Balance
+            const bal = await getSMSBalance();
+            setBalance(bal);
+
+            // Fetch Recipient Count (Total Customers)
+            const { count } = await supabase.from('customers').select('*', { count: 'exact', head: true });
+            if (count) setRecipientCount(count);
+        };
+        initData();
+    }, []);
+
+    // ... inside render ... 
+
+    // Cost Calculation
+    const smsCostPerUnit = 0.12; // GHS
+    const segments = Math.ceil(Math.max(messageContent.length, 1) / 160);
+    // If 'all', use total count. If 'group', mock partial count (e.g. 20% of total). If 'manual', count commas.
+    const actualRecipients =
+        recipientType === 'all' ? recipientCount :
+            recipientType === 'manual' ? (messageContent ? 1 : 0) : // Rough estimate for now
+                Math.floor(recipientCount * 0.3); // Group estimate
+
+    const estimatedCost = (actualRecipients * segments * smsCostPerUnit).toFixed(2);
+
+    // Credits UI section replacement
+    // <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{balance.toFixed(2)}</div>
+
+    // Estimated Cost UI section replacement
+    // GHS {estimatedCost}
+
+    // Applying the changes to the file structure below:
+
+
     const handleSaveConfig = () => {
         if (config) {
             updateSMSConfig(config);
@@ -37,12 +79,9 @@ export default function CommunicationPage() {
         }
     };
 
-    // Mock Data
-    const [templates, setTemplates] = useState([
-        { id: 1, title: 'Welcome Message', content: 'Hi {Name}, welcome to {StoreName}! We are glad to have you.' },
-        { id: 2, title: 'Promotional Sale', content: 'Hello {Name}, big sale starting tomorrow at {StoreName}! up to 50% off.' },
-        { id: 3, title: 'Happy Birthday', content: 'Happy Birthday {Name}! Here is a special gift for you.' },
-    ]);
+    // Templates State
+    const [templates, setTemplates] = useState<any[]>([]);
+
 
     const placeholders = ['{Name}', '{StoreName}', '{Points}', '{LastVisit}'];
 
@@ -130,7 +169,7 @@ export default function CommunicationPage() {
                             </div>
                         </div>
                         <div className="flex justify-between items-end border-t border-indigo-100 dark:border-indigo-800/50 pt-3 mt-3">
-                            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">1,250</div>
+                            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{balance.toFixed(2)}</div>
                             <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 underline dark:text-indigo-400">Top Up</button>
                         </div>
                     </div>
@@ -171,7 +210,7 @@ export default function CommunicationPage() {
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Recipients</label>
                                     <div className="flex flex-wrap gap-2 mb-3">
                                         {[
-                                            { id: 'all', label: 'All Customers' },
+                                            { id: 'all', label: `All Customers (${recipientCount})` },
                                             { id: 'group', label: 'Customer Groups' },
                                             { id: 'manual', label: 'Manual Input' }
                                         ].map(type => (
@@ -216,7 +255,7 @@ export default function CommunicationPage() {
                                             className="w-full h-40 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
                                         />
                                         <div className="absolute bottom-3 right-3 text-xs text-slate-400">
-                                            {messageContent.length} chars
+                                            {messageContent.length} chars • {segments} SMS
                                         </div>
                                     </div>
 
@@ -240,7 +279,7 @@ export default function CommunicationPage() {
                                 {/* Actions */}
                                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                                     <div className="text-sm text-slate-500 mr-auto">
-                                        Estimated cost: <span className="font-bold text-slate-900 dark:text-white">GHS {recipientType === 'all' ? '45.20' : '0.00'}</span>
+                                        Estimated cost: <span className="font-bold text-slate-900 dark:text-white">GHS {estimatedCost}</span>
                                     </div>
                                     <button className="px-6 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
                                         Schedule Later
