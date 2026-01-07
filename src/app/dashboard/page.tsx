@@ -17,7 +17,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, isLoading } = useAuth();
     const [stats, setStats] = useState({
         revenue: 0,
         orders: 0,
@@ -60,7 +60,19 @@ export default function DashboardPage() {
         }
     };
 
-    if (!activeStore) return <div>Loading...</div>;
+    if (isLoading) return <div className="p-8 text-center text-slate-500 animate-pulse">Loading dashboard...</div>;
+
+    if (!activeStore) return (
+        <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+            <div className="bg-indigo-50 p-6 rounded-full dark:bg-slate-800 mb-6">
+                <ShoppingBag className="w-12 h-12 text-indigo-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Store Selected</h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                You don't have any active stores selected. Please select a store from the dropdown menu in the header, or create a new one to get started.
+            </p>
+        </div>
+    );
 
     const cards = [
         {
