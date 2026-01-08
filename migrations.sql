@@ -81,26 +81,31 @@ create table if not exists public.activity_logs (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 10. Rename 'associate' role to 'staff'
--- First, update the data in employees table
-UPDATE public.employees SET role = 'staff' WHERE role = 'associate';
+-- 10. Rename 'associate' role to 'staff' (Correct Order)
 
--- Update data in employee_access table
-UPDATE public.employee_access SET role = 'staff' WHERE role = 'associate';
-
--- Drop the old constraint on employee_access if it exists
+-- A. Drop existing constraints first to allow data modification
 DO $$
 BEGIN
+    -- Drop constraint on employees table
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employees_role_check') THEN
+        ALTER TABLE public.employees DROP CONSTRAINT employees_role_check;
+    END IF;
+
+    -- Drop constraint on employee_access table
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employee_access_role_check') THEN
         ALTER TABLE public.employee_access DROP CONSTRAINT employee_access_role_check;
     END IF;
 END $$;
 
--- Add new constraint with 'staff' instead of 'associate'
+-- B. Now it is safe to update the data (no constraints blocking 'staff')
+UPDATE public.employees SET role = 'staff' WHERE role = 'associate';
+UPDATE public.employee_access SET role = 'staff' WHERE role = 'associate';
+
+-- C. Apply new constraints with 'staff' included
+ALTER TABLE public.employees 
+ADD CONSTRAINT employees_role_check 
+CHECK (role IN ('owner', 'manager', 'staff'));
+
 ALTER TABLE public.employee_access 
 ADD CONSTRAINT employee_access_role_check 
 CHECK (role IN ('owner', 'manager', 'staff'));
-
--- If employees table has a check constraint (it might not, but good to check/add)
--- We will just try to add a valid one or replace it only if we knew the name.
--- For now, the data update is the most critical part.
