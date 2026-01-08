@@ -38,7 +38,11 @@ export default function ActivityLogsPage() {
 
         const { data, error } = await query;
         if (error) {
-            console.error('Error fetching logs:', error);
+            console.error('Error fetching logs:', JSON.stringify(error, null, 2));
+            if (error.code === 'PGRST116') {
+                // JSON object requested, multiple (or no) rows returned
+            }
+            // If table does not exist (404/42P01), it might fail silently or with code
         } else {
             setLogs(data || []);
         }

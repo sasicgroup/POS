@@ -34,11 +34,16 @@ export const logActivity = async (
             // actually, we might want to log even anonymous actions if needed, but for now strict.
         }
 
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+        const safeUserId = effectiveUserId && isUUID(effectiveUserId) ? effectiveUserId : null;
+        const safeStoreId = effectiveStoreId && isUUID(effectiveStoreId) ? effectiveStoreId : null;
+
         const { error } = await supabase.from('activity_logs').insert({
             action,
             details,
-            user_id: effectiveUserId,
-            store_id: effectiveStoreId
+            user_id: safeUserId,
+            store_id: safeStoreId
         });
 
         if (error) {

@@ -3,6 +3,7 @@
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { getSMSConfig, updateSMSConfig, SMSConfig } from '@/lib/sms';
+import { useToast } from '@/lib/toast-context';
 import { useState, useEffect } from 'react';
 import {
     Building2,
@@ -22,6 +23,7 @@ import {
 
 export default function SettingsPage() {
     const { activeStore, user, updateStoreSettings, teamMembers, addTeamMember, updateTeamMember, removeTeamMember } = useAuth();
+    const { showToast } = useToast();
     const {
         businessTypes,
         activeCategories,
@@ -45,6 +47,7 @@ export default function SettingsPage() {
     // Team Management State
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [editingMember, setEditingMember] = useState<any>(null);
+    const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<{ id: string, name: string } | null>(null);
 
     // Edit State for Types/Categories
     const [editingType, setEditingType] = useState<string | null>(null);
@@ -74,10 +77,10 @@ export default function SettingsPage() {
                 });
             }
 
-            alert('Settings saved successfully!');
+            showToast('success', 'Settings saved successfully!');
         } catch (error) {
             console.error("Failed to save settings:", error);
-            alert('Failed to save settings. Please try again.');
+            showToast('error', 'Failed to save settings. Please try again.');
         } finally {
             setIsSaving(false);
         }
@@ -289,9 +292,7 @@ export default function SettingsPage() {
                                                     {/* Delete Button */}
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm('Are you sure you want to remove this member?')) {
-                                                                removeTeamMember(member.id);
-                                                            }
+                                                            setDeleteMemberConfirm({ id: member.id, name: member.name });
                                                         }}
                                                         className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Remove Member">
                                                         <X className="h-4 w-4" />
@@ -773,6 +774,38 @@ export default function SettingsPage() {
                     )}
                 </div>
             </div>
+            {/* Delete Member Confirmation Modal */}
+            {deleteMemberConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
+                            <Users className="h-6 w-6 text-red-600 dark:text-red-400" />
+                        </div>
+                        <h3 className="text-lg font-bold text-center text-slate-900 dark:text-white mb-2">Remove Team Member?</h3>
+                        <p className="text-sm text-center text-slate-500 mb-6">
+                            Are you sure you want to remove <span className="font-semibold text-slate-900 dark:text-slate-100">{deleteMemberConfirm.name}</span>? They will no longer have access.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteMemberConfirm(null)}
+                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    removeTeamMember(deleteMemberConfirm.id);
+                                    setDeleteMemberConfirm(null);
+                                    showToast('success', 'Team member removed successfully');
+                                }}
+                                className="flex-1 rounded-xl bg-red-600 py-3 font-bold text-white hover:bg-red-700"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

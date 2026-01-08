@@ -11,10 +11,12 @@ import {
     MessageSquare,
     Zap
 } from 'lucide-react';
+import { useToast } from '@/lib/toast-context';
 import { useState } from 'react';
 
 export default function AiInsightsPage() {
     const { activeStore } = useAuth();
+    const { showToast } = useToast();
 
     // Mock AI Recommendations Data
     const [insights, setInsights] = useState([
@@ -66,7 +68,9 @@ export default function AiInsightsPage() {
 
     const handleAction = (id: number) => {
         // In real app, this would trigger a function or redirect
-        alert('Action triggered! In a connected system, this would modify data automatically.');
+        showToast('success', 'Optimization applied successfully! System is updating...');
+        // Remove the item to simulate action taken
+        setTimeout(() => handleDismiss(id), 1000);
     };
 
     if (!activeStore) return null;
@@ -92,12 +96,12 @@ export default function AiInsightsPage() {
                     >
                         {/* Status Indicator stripe */}
                         <div className={`absolute left-0 top-0 h-full w-1 ${insight.type === 'opportunity' ? 'bg-emerald-500' :
-                                insight.type === 'alert' ? 'bg-amber-500' : 'bg-indigo-500'
+                            insight.type === 'alert' ? 'bg-amber-500' : 'bg-indigo-500'
                             }`} />
 
                         <div className="flex items-start gap-4">
                             <div className={`mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${insight.type === 'opportunity' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                                    insight.type === 'alert' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400'
+                                insight.type === 'alert' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400'
                                 }`}>
                                 {insight.type === 'opportunity' ? <TrendingUp className="h-5 w-5" /> :
                                     insight.type === 'alert' ? <AlertTriangle className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
@@ -126,7 +130,7 @@ export default function AiInsightsPage() {
                                 <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
                                     <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
                                         <span className={`flex items-center gap-1 ${insight.type === 'opportunity' ? 'text-emerald-600 dark:text-emerald-400' :
-                                                insight.type === 'alert' ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'
+                                            insight.type === 'alert' ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'
                                             }`}>
                                             Possible Impact: {insight.impact}
                                         </span>

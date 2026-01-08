@@ -35,6 +35,7 @@ export default function ReportsPage() {
     const [recentBigSales, setRecentBigSales] = useState<any[]>([]);
     const [totalRevenue, setTotalRevenue] = useState(0);
     const [totalGrossProfit, setTotalGrossProfit] = useState(0);
+    const [totalExpenses, setTotalExpenses] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -152,6 +153,7 @@ export default function ReportsPage() {
 
             setTotalRevenue(revenue);
             setTotalGrossProfit(grossProfit);
+            setTotalExpenses(totalExpenses);
 
             // --- Process: Hourly Sales (Heatmap) ---
             const hoursMap = new Array(24).fill(0).map((_, i) => ({ hour: `${i}:00`, sales: 0 }));
@@ -224,7 +226,7 @@ export default function ReportsPage() {
             setCategoryData(processedCats);
 
             // --- Process: High Value Transactions ---
-            const bigSales = sales.filter(s => Number(s.total_amount) > 100).slice(0, 10); // > 100 GHS considered 'Big' for this context? Or top 10 regardless.
+            const bigSales = sales.filter(s => Number(s.total_amount) > 500).slice(0, 10); // > 500 GHS considered 'Big' for this context
             setRecentBigSales(bigSales);
 
         } catch (error) {
@@ -235,8 +237,7 @@ export default function ReportsPage() {
     };
 
     // Constants
-    const operatingExpenses = totalRevenue * 0.15; // Mock 15% expenses logic maintained
-    const netProfit = totalGrossProfit - operatingExpenses;
+    const netProfit = totalGrossProfit - totalExpenses;
 
     // AI Forecast Mock (Keep simplistic for now as requested)
     // We can base it on actual totalRevenue to make scale look correct
@@ -350,9 +351,9 @@ export default function ReportsPage() {
                             <Clock className="h-6 w-6" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Op. Expenses</p>
-                            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">GHS {operatingExpenses.toLocaleString()}</h3>
-                            <p className="text-xs text-slate-500">Est. 15% of Rev</p>
+                            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Expenses</p>
+                            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">GHS {totalExpenses.toLocaleString()}</h3>
+                            <p className="text-xs text-slate-500">Total Recorded</p>
                         </div>
                     </div>
                 </div>
@@ -509,24 +510,36 @@ export default function ReportsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {[
-                                    { id: '#TRX-9981', customer: 'John Doe', time: 'Today, 2:45 PM', amount: 1250.00, status: 'Completed' },
-                                    { id: '#TRX-9982', customer: 'Alice Smith', time: 'Today, 1:20 PM', amount: 890.50, status: 'Completed' },
-                                    { id: '#TRX-9983', customer: 'Bob Johnson', time: 'Yesterday', amount: 2400.00, status: 'Completed' },
-                                    { id: '#TRX-9984', customer: 'Emma Wilson', time: 'Yesterday', amount: 650.00, status: 'Completed' },
-                                ].map((tx) => (
-                                    <tr key={tx.id}>
-                                        <td className="py-3 font-medium text-slate-900 dark:text-white">{tx.id}</td>
-                                        <td className="py-3 text-slate-600 dark:text-slate-400">{tx.customer}</td>
-                                        <td className="py-3 text-slate-600 dark:text-slate-400">{tx.time}</td>
-                                        <td className="py-3 text-right font-medium text-slate-900 dark:text-white">GHS {tx.amount.toFixed(2)}</td>
-                                        <td className="py-3 text-right">
-                                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                                {tx.status}
-                                            </span>
+                                {recentBigSales.length > 0 ? (
+                                    recentBigSales.map((tx) => (
+                                        <tr key={tx.id}>
+                                            <td className="py-3 font-medium text-slate-900 dark:text-white" title={tx.id}>
+                                                #{tx.id.slice(0, 8)}
+                                            </td>
+                                            <td className="py-3 text-slate-600 dark:text-slate-400">
+                                                {tx.customers?.name || 'Guest'}
+                                            </td>
+                                            <td className="py-3 text-slate-600 dark:text-slate-400">
+                                                {new Date(tx.created_at).toLocaleDateString()} {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="py-3 text-right font-medium text-slate-900 dark:text-white">
+                                                GHS {Number(tx.total_amount).toFixed(2)}
+                                            </td>
+                                            <td className="py-3 text-right">
+                                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tx.status === 'completed' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-600'
+                                                    }`}>
+                                                    {tx.status || 'Completed'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={5} className="py-8 text-center text-slate-500">
+                                            No major transactions found recently.
                                         </td>
                                     </tr>
-                                ))}
+                                )}
                             </tbody>
                         </table>
                     </div>

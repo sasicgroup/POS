@@ -2,12 +2,14 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
+import { useToast } from '@/lib/toast-context';
 import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
     const { products, addProduct, activeCategories, deleteProduct, updateProduct } = useInventory(); // Assuming deleteProduct exists or will be added
+    const { showToast } = useToast();
 
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
     const [newProduct, setNewProduct] = useState({
@@ -29,6 +31,24 @@ export default function InventoryPage() {
 
     const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
+    const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+
+    const getEmbedUrl = (url: string) => {
+        if (!url) return '';
+        // Handle YouTube
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+            // Extract ID
+            let videoId = '';
+            if (url.includes('v=')) {
+                videoId = url.split('v=')[1]?.split('&')[0];
+            } else {
+                videoId = url.split('/').pop() || '';
+            }
+            return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+        }
+        // Return original for direct MP4 links etc (browsers handle many via iframe or we could use <video> tag if needed, but iframe is safer for generic URLs)
+        return url;
+    };
 
     const filteredProducts = products.filter(product => {
         const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -55,6 +75,7 @@ export default function InventoryPage() {
         if (selectedProducts.length === 0) return;
         if (!confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) return;
         selectedProducts.forEach(id => deleteProduct(id));
+        showToast('success', `Deleted ${selectedProducts.length} products successfully`);
         setSelectedProducts([]);
     };
 
@@ -193,6 +214,7 @@ export default function InventoryPage() {
     };
 
     const [editingId, setEditingId] = useState<any | null>(null);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: number, name: string } | null>(null);
 
     const handleAddProduct = (e: React.FormEvent) => {
         e.preventDefault();
@@ -203,8 +225,10 @@ export default function InventoryPage() {
 
         if (editingId) {
             updateProduct({ ...productData, id: editingId });
+            showToast('success', 'Product updated successfully');
         } else {
             addProduct(productData);
+            showToast('success', 'Product created successfully');
         }
 
         setIsAddProductOpen(false);
@@ -253,7 +277,7 @@ export default function InventoryPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                         <div className="mb-6 flex items-center justify-between">
-                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add New Product</h2>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">{editingId ? 'Edit Product' : 'Add New Product'}</h2>
                             <button onClick={() => { setIsAddProductOpen(false); setEditingId(null); }} className="rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 <span className="sr-only">Close</span>
                                 <svg className="h-5 w-5 text-slate-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -374,7 +398,7 @@ export default function InventoryPage() {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Category</label>
-                                    <select className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" onChange={e => setNewProduct({ ...newProduct, category: e.target.value })}>
+                                    <select className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.category} onChange={e => setNewProduct({ ...newProduct, category: e.target.value })}>
                                         <option value="">Select...</option>
                                         {activeCategories.map(category => (
                                             <option key={category} value={category}>{category}</option>
@@ -385,23 +409,23 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Cost Price (GHS)</label>
-                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" onChange={e => setNewProduct({ ...newProduct, costPrice: parseFloat(e.target.value) })} />
+                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.costPrice} onChange={e => setNewProduct({ ...newProduct, costPrice: parseFloat(e.target.value) })} />
                                     <p className="text-xs text-slate-500 mt-1">For profit calc</p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Selling Price (GHS)</label>
-                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" onChange={e => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) })} />
+                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.price} onChange={e => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) })} />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Stock</label>
-                                    <input required type="number" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" onChange={e => setNewProduct({ ...newProduct, stock: parseInt(e.target.value) })} />
+                                    <input required type="number" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.stock} onChange={e => setNewProduct({ ...newProduct, stock: parseInt(e.target.value) })} />
                                 </div>
                             </div>
                             <div className="pt-4">
                                 <button type="submit" className="w-full rounded-xl bg-indigo-600 py-3 font-bold text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-700">
-                                    Create Product
+                                    {editingId ? 'Update Product' : 'Create Product'}
                                 </button>
                             </div>
                         </form>
@@ -500,7 +524,7 @@ export default function InventoryPage() {
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                window.open(product.video, '_blank');
+                                                setActiveVideoUrl(product.video || null);
                                             }}
                                             className="text-pink-600 hover:text-pink-900 dark:text-pink-400 dark:hover:text-pink-300 p-2 hover:bg-pink-50 rounded-lg dark:hover:bg-pink-900/30 transition-colors"
                                             title="Watch Video"
@@ -567,9 +591,10 @@ export default function InventoryPage() {
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                if (confirm('Are you sure you want to delete this product?')) {
-                                                    deleteProduct(product.id);
+                                                if (selectedProducts.length > 0 && selectedProducts.includes(product.id)) {
+                                                    // Allow single delete even if bulk selected? simpler to just use confirmation
                                                 }
+                                                setDeleteConfirmation({ id: product.id, name: product.name });
                                             }}
                                             className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 rounded-lg dark:hover:bg-red-900/30"
                                             title="Delete Product"
@@ -733,6 +758,58 @@ export default function InventoryPage() {
                     </div>
                 )
             }
-        </div >
+
+            {/* Video Player Modal */}
+            {activeVideoUrl && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+                    <div className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                        <button
+                            onClick={() => setActiveVideoUrl(null)}
+                            className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                        <iframe
+                            src={getEmbedUrl(activeVideoUrl)}
+                            className="w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                        ></iframe>
+                    </div>
+                </div>
+            )}
+            {/* Delete Confirmation Modal */}
+            {deleteConfirmation && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
+                            <Trash2 className="h-6 w-6 text-red-600 dark:text-red-400" />
+                        </div>
+                        <h3 className="text-lg font-bold text-center text-slate-900 dark:text-white mb-2">Delete Product?</h3>
+                        <p className="text-sm text-center text-slate-500 mb-6">
+                            Are you sure you want to delete <span className="font-semibold text-slate-900 dark:text-slate-100">{deleteConfirmation.name}</span>? This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteConfirmation(null)}
+                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    deleteProduct(deleteConfirmation.id);
+                                    setDeleteConfirmation(null);
+                                    showToast('success', 'Product deleted successfully');
+                                }}
+                                className="flex-1 rounded-xl bg-red-600 py-3 font-bold text-white hover:bg-red-700"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

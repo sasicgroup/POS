@@ -3,12 +3,14 @@
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { sendNotification } from '@/lib/sms';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users } from 'lucide-react';
+import { useToast } from '@/lib/toast-context';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 export default function SalesPage() {
     const { activeStore } = useAuth();
     const { products, processSale } = useInventory();
+    const { showToast } = useToast();
     const [cart, setCart] = useState<any[]>([]);
 
     // Load Cart from LocalStorage
@@ -35,6 +37,20 @@ export default function SalesPage() {
     const [scannedProduct, setScannedProduct] = useState<any | null>(null);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
+
+    // Price Edit Modal State
+    const [priceEditItem, setPriceEditItem] = useState<{ id: number, name: string, currentPrice: number } | null>(null);
+    const [priceEditValue, setPriceEditValue] = useState('');
+
+    const [customerName, setCustomerName] = useState('');
+    const [customerPhone, setCustomerPhone] = useState('');
+    const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+    const [redeemPoints, setRedeemPoints] = useState(false);
+
+    const [showCheckoutSuccess, setShowCheckoutSuccess] = useState(false);
+    const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | null>(null);
+    const [showMobileCart, setShowMobileCart] = useState(false);
 
     if (!activeStore) return null;
 
@@ -115,18 +131,21 @@ export default function SalesPage() {
         });
     };
 
+    const updateItemPrice = (id: number, newPrice: number) => {
+        setCart(current => {
+            return current.map(item => {
+                if (item.id === id) {
+                    return { ...item, price: newPrice };
+                }
+                return item;
+            });
+        });
+    };
+
     const removeFromCart = (id: number) => {
         setCart(current => current.filter(item => item.id !== id));
     };
 
-    const [customerName, setCustomerName] = useState('');
-    const [customerPhone, setCustomerPhone] = useState('');
-    const [loyaltyPoints, setLoyaltyPoints] = useState(0);
-    const [redeemPoints, setRedeemPoints] = useState(false);
-
-    const [showCheckoutSuccess, setShowCheckoutSuccess] = useState(false);
-    const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | null>(null);
 
     const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -240,7 +259,7 @@ export default function SalesPage() {
         });
 
         if (!saleId) {
-            alert("Failed to process sale. Please try again.");
+            showToast('error', "Failed to process sale. Please try again.");
             return;
         }
 
@@ -296,7 +315,7 @@ export default function SalesPage() {
         p.sku.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const [showMobileCart, setShowMobileCart] = useState(false);
+
 
     // ... (keep existing scanner/modal logic)
 
@@ -600,9 +619,37 @@ export default function SalesPage() {
                                                     <Plus className="h-3 w-3" />
                                                 </button>
                                             </div>
-                                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                                {`GHS ${(item.price * item.quantity).toFixed(2)}`}
-                                            </p>
+                                            <div className="flex flex-col items-end">
+                                                <button
+                                                    onClick={() => {
+                                                        setPriceEditItem({
+                                                            id: item.id,
+                                                            name: item.name,
+                                                            currentPrice: item.price
+                                                        });
+                                                        setPriceEditValue(item.price.toString());
+                                                    }}
+                                                    className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 border-b border-dashed border-slate-300 hover:border-indigo-500 hover:text-indigo-600 dark:text-slate-100 dark:border-slate-600"
+                                                >
+                                                    {`GHS ${(item.price * item.quantity).toFixed(2)}`}
+                                                    <Edit2 className="h-3 w-3 opacity-50" />
+                                                </button>
+                                                {item.costPrice && item.price <= item.costPrice && (
+                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-red-600">
+                                                        <AlertTriangle className="h-3 w-3" /> Below Cost
+                                                    </span>
+                                                )}
+                                                {item.costPrice && item.price > item.costPrice && item.price < item.costPrice * 1.05 && (
+                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600">
+                                                        <AlertTriangle className="h-3 w-3" /> Low Margin
+                                                    </span>
+                                                )}
+                                                {item.price !== products.find((p: any) => p.id === item.id)?.price && (
+                                                    <span className="text-[10px] text-slate-400 line-through">
+                                                        {`Std: ${(products.find((p: any) => p.id === item.id)?.price || 0).toFixed(2)}`}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -745,6 +792,49 @@ export default function SalesPage() {
                     )}
                 </div>
             </div>
+            {/* Price Edit Modal */}
+            {
+                priceEditItem && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Edit Price</h3>
+                            <p className="text-sm text-slate-500 mb-4">Set new price for <span className="font-semibold">{priceEditItem.name}</span></p>
+
+                            <div className="relative mb-6">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">GHS</span>
+                                <input
+                                    type="number"
+                                    autoFocus
+                                    className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-12 pr-4 text-lg font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    value={priceEditValue}
+                                    onChange={(e) => setPriceEditValue(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setPriceEditItem(null)}
+                                    className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const val = parseFloat(priceEditValue);
+                                        if (!isNaN(val) && val >= 0) {
+                                            updateItemPrice(priceEditItem.id, val);
+                                            setPriceEditItem(null);
+                                        }
+                                    }}
+                                    className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
+                                >
+                                    Update
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
         </div>
     );
 }

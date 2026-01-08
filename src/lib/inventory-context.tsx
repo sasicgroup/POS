@@ -213,17 +213,20 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         }
 
         // 2. Insert Sale
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        const safeEmployeeId = user?.id && isUUID(user.id) ? user.id : null;
+
         const { data: sale, error: saleError } = await supabase.from('sales').insert({
             store_id: activeStore.id,
             total_amount: saleData.totalAmount,
             payment_method: saleData.paymentMethod,
-            employee_id: user?.id,
+            employee_id: safeEmployeeId,
             customer_id: customerId,
             status: 'completed'
         }).select().single();
 
         if (saleError || !sale) {
-            console.error("Sale insert failed", saleError);
+            console.error("Sale insert failed", JSON.stringify(saleError, null, 2));
             return null;
         }
 
