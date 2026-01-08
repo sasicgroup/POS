@@ -151,8 +151,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                             <div className="flex h-6 w-6 items-center justify-center rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
                                                 <Store className="h-4 w-4" />
                                             </div>
-                                            <span className="hidden sm:inline-block">{activeStore.name}</span>
-                                            <span className="sm:hidden">Store</span>
+                                            <span className="font-semibold truncate max-w-[120px] sm:max-w-[200px]">{activeStore.name}</span>
                                         </>
                                     ) : (
                                         'Select Store'
@@ -244,10 +243,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         </header>
 
                         {/* Page Content */}
-                        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 dark:bg-slate-900 lg:p-8">
+                        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 pb-24 dark:bg-slate-900 lg:p-8 lg:pb-8">
                             {children}
                         </main>
                     </div>
+                </div>
+
+                {/* Mobile Bottom Navigation */}
+                <div className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 px-1 dark:border-slate-800 dark:bg-slate-950/95 lg:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] pb-safe">
+                    {[
+                        { name: 'Home', href: '/dashboard', icon: LayoutDashboard },
+                        { name: 'Inventory', href: '/dashboard/inventory', icon: Package },
+                        { name: 'Sales', href: '/dashboard/sales', icon: ShoppingBag },
+                        { name: 'Customers', href: '/dashboard/customers', icon: Users },
+                        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+                    ].map((item) => {
+                        const isActive = pathname === item.href;
+                        return (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                className={`flex flex-col items-center justify-center w-full h-full rounded-lg transition-colors active:scale-95 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                            >
+                                <item.icon className={`h-6 w-6 mb-1 ${isActive ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+                                <span className="text-[10px] font-medium leading-none">{item.name}</span>
+                            </Link>
+                        );
+                    })}
                 </div>
 
                 {/* Add New Store Modal */}
