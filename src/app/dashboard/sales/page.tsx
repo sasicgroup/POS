@@ -99,11 +99,18 @@ export default function SalesPage() {
                 html5QrCode.start(
                     { facingMode: "environment" },
                     config,
-                    (decodedText, decodedResult) => {
+                    async (decodedText, decodedResult) => {
+                        // Stop scanning first to prevent errors when unmounting
+                        if (scannerRef.current && scannerRef.current.isScanning) {
+                            try {
+                                await scannerRef.current.stop();
+                                scannerRef.current.clear();
+                            } catch (e) {
+                                console.error("Stop error", e);
+                            }
+                        }
+
                         handleScan(decodedText);
-                        // Optional: Keep scanning or close? 
-                        // If auto-add is on, maybe just beep and keep scanning?
-                        // For now let's behave like inventory and close it to prevent accidental double-scans
                         setIsScanning(false);
                     },
                     (errorMessage) => {
@@ -115,21 +122,28 @@ export default function SalesPage() {
                 });
             }, 100);
         } else {
+            // Cleanup if closed via button (state change triggered not by scan success)
             if (scannerRef.current) {
-                scannerRef.current.stop().then(() => {
-                    scannerRef.current?.clear();
-                    scannerRef.current = null;
-                }).catch(err => console.error("Stop failed", err));
+                // We don't wait for promise here as we might be unmounting, but we try
+                try {
+                    if (scannerRef.current.isScanning) {
+                        scannerRef.current.stop().then(() => {
+                            scannerRef.current?.clear();
+                        }).catch(err => console.error("Stop failed", err));
+                    }
+                } catch (e) { console.error(e); }
             }
         }
 
         return () => {
+            // Cleanup on unmount
             if (scannerRef.current) {
-                if (scannerRef.current.isScanning) {
-                    scannerRef.current.stop().then(() => {
-                        scannerRef.current?.clear();
-                    }).catch(console.error);
-                }
+                try {
+                    if (scannerRef.current.isScanning) {
+                        scannerRef.current.stop().catch(console.error);
+                    }
+                    scannerRef.current.clear();
+                } catch (e) { console.error("Cleanup error", e); }
             }
         };
     }, [isScanning]);
@@ -149,11 +163,15 @@ export default function SalesPage() {
     };
 
     const handleScan = (query: string) => {
-        // Find product by checking if query matches SKU or Name roughly
-        const product = products.find(p =>
-            p.sku.toLowerCase() === query.toLowerCase() ||
-            p.name.toLowerCase().includes(query.toLowerCase())
-        );
+        if (!query) return;
+
+        // Safely find product
+        const product = products.find(p => {
+            const sku = p.sku ? p.sku.toLowerCase() : '';
+            const name = p.name ? p.name.toLowerCase() : '';
+            const q = query.toLowerCase();
+            return sku === q || name.includes(q);
+        });
 
         if (product) {
             if (scanMode === 'check') {
@@ -161,12 +179,13 @@ export default function SalesPage() {
             } else {
                 if (autoAdd) {
                     addToCart(product);
-                    // Clear search after auto-add nicely
                     setSearchQuery('');
                 } else {
-                    setScannedProduct(product); // Show it to confirm
+                    setScannedProduct(product);
                 }
             }
+        } else {
+            showToast('error', 'Product not found');
         }
     };
 
