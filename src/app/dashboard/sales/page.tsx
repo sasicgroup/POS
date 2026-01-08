@@ -743,7 +743,6 @@ export default function SalesPage() {
                                         onChange={(e) => {
                                             const val = e.target.value.replace(/\D/g, '');
                                             setCustomerPhone(val);
-                                            checkCustomer(val);
                                         }}
                                     />
                                 </div>
