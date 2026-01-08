@@ -184,7 +184,12 @@ export default function InventoryPage() {
         });
 
         // Save back
-        localStorage.setItem('sms_cart', JSON.stringify(currentCart));
+        try {
+            localStorage.setItem('sms_cart', JSON.stringify(currentCart));
+        } catch (e) {
+            console.error('Failed to save cart', e);
+            showToast('error', 'Cart storage full');
+        }
 
         showToast('success', `${addedCount} items added to cart`);
         setSelectedProducts([]);
@@ -211,7 +216,12 @@ export default function InventoryPage() {
         }
 
         // Save back
-        localStorage.setItem('sms_cart', JSON.stringify(currentCart));
+        try {
+            localStorage.setItem('sms_cart', JSON.stringify(currentCart));
+        } catch (e) {
+            console.error('Failed to save cart', e);
+            showToast('error', 'Cart storage full');
+        }
         showToast('success', `Added ${product.name} to cart`);
     };
 
