@@ -144,16 +144,27 @@ export default function SettingsPage() {
             }
 
             // Save Store Settings
+            // Save Store Settings
             if (activeStore) {
-                await updateStoreSettings({
+                const result = await updateStoreSettings({
                     name: storeName,
                     location: storeLocation,
                     receiptPrefix,
                     receiptSuffix
                 });
-            }
 
-            showToast('success', 'Settings saved successfully!');
+                if (result && !result.success) {
+                    throw result.error;
+                }
+
+                if (result && result.error && typeof result.error === 'string') {
+                    showToast('error', result.error);
+                } else {
+                    showToast('success', 'Settings saved successfully!');
+                }
+            } else {
+                showToast('success', 'Settings saved successfully!');
+            }
         } catch (error) {
             console.error("Failed to save settings:", error);
             showToast('error', 'Failed to save settings. Please try again.');

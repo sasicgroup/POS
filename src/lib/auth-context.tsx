@@ -73,7 +73,7 @@ interface AuthContextType {
     unlockAccount: (userId: any) => Promise<boolean>;
     logout: () => void;
     switchStore: (storeId: any) => void;
-    updateStoreSettings: (settings: Partial<Store>) => void;
+    updateStoreSettings: (settings: Partial<Store>) => Promise<{ success: boolean; error?: any }>;
     createStore: (name: string, location: string) => Promise<void>;
     addTeamMember: (member: Omit<User, 'id'>) => Promise<void>;
     updateTeamMember: (id: any, updates: Partial<User>) => Promise<void>;
@@ -583,7 +583,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchTeamMembers();
     };
 
-    const updateStoreSettings = async (settings: Partial<Store>) => {
+    const updateStoreSettings = async (settings: Partial<Store>): Promise<{ success: boolean; error?: any }> => {
         if (activeStore?.id) {
             // Map camelCase to snake_case for DB
             const dbUpdates: any = { ...settings };
@@ -608,13 +608,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const { error } = await supabase.from('stores').update(dbUpdates).eq('id', activeStore.id);
 
             if (error) {
-                console.error("Failed to update store settings in DB", error);
-                return; // Don't update local state if DB failed
+                console.error("Failed to update store settings in DB:", error.message || error);
+
+                // Fallback: If column missing (code 42703), try saving WITHOUT the new columns to at least save other settings
+                if (error.code === '42703' || (error.message && error.message.includes('column'))) { // undefined_column
+                    console.warn("Attempting fallback save without new columns...");
+                    delete dbUpdates.receipt_prefix;
+                    delete dbUpdates.receipt_suffix;
+
+                    // If there are still properties to update
+                    if (Object.keys(dbUpdates).length > 0) {
+                        const { error: retryError } = await supabase.from('stores').update(dbUpdates).eq('id', activeStore.id);
+                        if (!retryError) {
+                            // Update local state even though DB partial save worked
+                            setActiveStore(prev => prev ? { ...prev, ...settings } : null);
+                            setStores(prev => prev.map(s => s.id === activeStore.id ? { ...s, ...settings } : s));
+                            return { success: true, error: "Partial save: New Receipt ID settings require a database update. Please run the migration script." };
+                        }
+                    }
+                }
+
+                return { success: false, error };
             }
 
             setActiveStore(prev => prev ? { ...prev, ...settings } : null);
             setStores(prev => prev.map(s => s.id === activeStore.id ? { ...s, ...settings } : s));
+            return { success: true };
         }
+        return { success: false, error: "No active store" };
     };
 
     const createStore = async (name: string, location: string) => {
