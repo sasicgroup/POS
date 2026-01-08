@@ -101,8 +101,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             const { data, error } = await supabase
                 .from('products')
                 .select('*')
-                .eq('store_id', activeStore.id)
-                .order('created_at', { ascending: false }); // Most recent first
+                .eq('store_id', activeStore.id);
 
             if (error) {
                 console.error('[Inventory] Error fetching products:', error);
