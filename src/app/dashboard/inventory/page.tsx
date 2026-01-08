@@ -254,8 +254,37 @@ export default function InventoryPage() {
     };
 
     const handleScan = (code: string) => {
-        setNewProduct({ ...newProduct, sku: code });
-        setIsScanning(false);
+        if (!code) return;
+
+        // Try to find existing product by SKU
+        const existingProduct = products.find(p =>
+            p.sku && p.sku.toLowerCase().trim() === code.toLowerCase().trim()
+        );
+
+        if (existingProduct) {
+            // Product found - open it for editing
+            setNewProduct({
+                name: existingProduct.name,
+                sku: existingProduct.sku,
+                category: existingProduct.category,
+                stock: existingProduct.stock,
+                price: existingProduct.price,
+                costPrice: existingProduct.costPrice || 0,
+                status: existingProduct.status || 'In Stock',
+                image: existingProduct.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
+                video: existingProduct.video || ''
+            });
+            setEditingId(existingProduct.id);
+            setIsAddProductOpen(true);
+            setIsScanning(false);
+            showToast('success', `Product found: ${existingProduct.name}`);
+        } else {
+            // Product not found - pre-fill SKU for new product
+            setNewProduct({ ...newProduct, sku: code });
+            setIsAddProductOpen(true);
+            setIsScanning(false);
+            showToast('info', 'Product not found. Create a new one with this SKU.');
+        }
     };
 
     const [editingId, setEditingId] = useState<any | null>(null);
