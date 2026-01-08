@@ -275,8 +275,21 @@ export const getSMSBalance = async (): Promise<number> => {
     const config = getSMSConfig();
 
     if (config.provider === 'mnotify' && config.mnotify?.apiKey) {
+        const apiKey = config.mnotify.apiKey.trim();
         try {
-            const res = await fetch(`https://api.mnotify.com/api/balance/sms?key=${config.mnotify.apiKey}`);
+            const res = await fetch(`https://api.mnotify.com/api/balance/sms?key=${apiKey}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!res.ok) {
+                console.error(`mNotify Balance Check Failed: ${res.status} ${res.statusText}`);
+                if (res.status === 401) console.error("Please verify your mNotify API Key.");
+                return 0;
+            }
+
             const data = await res.json();
             // mNotify returns { balance: "10.50", ... } or similar
             return parseFloat(data?.balance || '0');
