@@ -39,6 +39,39 @@ export default function CustomersPage() {
     const [editPoints, setEditPoints] = useState(0);
     const [showOptions, setShowOptions] = useState(false);
 
+    // History State
+    const [customerHistory, setCustomerHistory] = useState<any[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+
+    useEffect(() => {
+        if (selectedCustomer) {
+            fetchHistory(selectedCustomer.id);
+        } else {
+            setCustomerHistory([]);
+        }
+    }, [selectedCustomer]);
+
+    const fetchHistory = async (customerId: string) => {
+        setHistoryLoading(true);
+        const { data, error } = await supabase
+            .from('sales')
+            .select(`
+                id,
+                created_at,
+                total_amount,
+                sale_items (
+                    quantity,
+                    price_at_sale,
+                    product:products (name)
+                )
+            `)
+            .eq('customer_id', customerId)
+            .order('created_at', { ascending: false });
+
+        if (data) setCustomerHistory(data);
+        setHistoryLoading(false);
+    };
+
     // Reset edit state when customer changes
     useEffect(() => {
         setEditingField(null);
@@ -350,6 +383,52 @@ export default function CustomersPage() {
                                 <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
                                     <Calendar className="h-4 w-4" /> Last Visit: {selectedCustomer.last_visit ? new Date(selectedCustomer.last_visit).toLocaleDateString() : 'Never'}
                                 </div>
+                            </div>
+
+                            <div className="mt-8 border-t border-slate-100 pt-6 dark:border-slate-800">
+                                <h4 className="font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                    <ShoppingBag className="h-4 w-4" /> Purchase History
+                                </h4>
+
+                                {historyLoading ? (
+                                    <div className="text-center py-4 text-sm text-slate-500">Loading history...</div>
+                                ) : customerHistory.length === 0 ? (
+                                    <div className="text-center py-4 text-sm text-slate-500 bg-slate-50 rounded-lg dark:bg-slate-800/50">
+                                        No purchase history found.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {customerHistory.map((sale: any) => (
+                                            <div key={sale.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50 text-sm">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div>
+                                                        <p className="font-medium text-slate-900 dark:text-white">
+                                                            {new Date(sale.created_at).toLocaleDateString()}
+                                                        </p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </p>
+                                                    </div>
+                                                    <p className="font-bold text-indigo-600 dark:text-indigo-400">
+                                                        {activeStore?.currency || 'GHS'} {sale.total_amount.toFixed(2)}
+                                                    </p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    {sale.sale_items?.map((item: any, idx: number) => (
+                                                        <div key={idx} className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                                                            <span>
+                                                                {item.quantity}x {item.product?.name || 'Unknown Item'}
+                                                            </span>
+                                                            <span>
+                                                                {(item.price_at_sale * item.quantity).toFixed(2)}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ) : (

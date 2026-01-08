@@ -804,49 +804,48 @@ export default function SalesPage() {
                                                     {qty}
                                                 </div>
                                             ) : (
-                                            ): (
-                                                    <button
-                                                    onClick = { (e) => {
+                                                <button
+                                                    onClick={(e) => {
                                                         e.stopPropagation();
-                                            addToCart(product);
+                                                        addToCart(product);
                                                     }}
-                                            disabled={product.stock <= 0}
-                                            className={`rounded-lg p-2 transition-colors hidden sm:inline-block ${product.stock <= 0
-                                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
-                                                : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40'}`}
+                                                    disabled={product.stock <= 0}
+                                                    className={`rounded-lg p-2 transition-colors hidden sm:inline-block ${product.stock <= 0
+                                                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
+                                                        : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40'}`}
                                                 >
-                                            <Plus className="h-4 w-4" />
-                                        </button>
+                                                    <Plus className="h-4 w-4" />
+                                                </button>
                                             )}
                                             )}
+                                        </div>
                                     </div>
-                                    </div>
-                    );
+                                );
                             })
                         )}
+                    </div>
                 </div>
             </div>
-        </div>
 
-            {/* Mobile Bottom Cart Bar */ }
-    <div className={`fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-[60] dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
-        <div className="flex gap-4">
-            <div className="flex-1">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{cart.length} items in cart</p>
-                <p className="text-lg font-bold text-slate-900 dark:text-white">GHS {grandTotal.toFixed(2)}</p>
+            {/* Mobile Bottom Cart Bar */}
+            <div className={`fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-[60] dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
+                <div className="flex gap-4">
+                    <div className="flex-1">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{cart.length} items in cart</p>
+                        <p className="text-lg font-bold text-slate-900 dark:text-white">GHS {grandTotal.toFixed(2)}</p>
+                    </div>
+                    <button
+                        onClick={() => setShowMobileCart(true)}
+                        disabled={cart.length === 0}
+                        className="flex items-center gap-2 px-6 py-2 rounded-xl bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:shadow-none"
+                    >
+                        <ShoppingCart className="h-5 w-5" />
+                        View Cart
+                    </button>
+                </div>
             </div>
-            <button
-                onClick={() => setShowMobileCart(true)}
-                disabled={cart.length === 0}
-                className="flex items-center gap-2 px-6 py-2 rounded-xl bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:shadow-none"
-            >
-                <ShoppingCart className="h-5 w-5" />
-                View Cart
-            </button>
-        </div>
-    </div>
 
-    {/* Right Side: Cart/Checkout - Responsive Sidebar/Modal */ }
+            {/* Right Side: Cart/Checkout - Responsive Sidebar/Modal */}
             <div className={`
                 fixed inset-0 z-[60] bg-white/50 backdrop-blur-sm lg:hidden
                 ${showMobileCart ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none delay-200'}
@@ -1164,49 +1163,49 @@ export default function SalesPage() {
                     )}
                 </div>
             </div>
-    {/* Price Edit Modal */ }
-    {
-        priceEditItem && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
-                <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Edit Price</h3>
-                    <p className="text-sm text-slate-500 mb-4">Set new price for <span className="font-semibold">{priceEditItem.name}</span></p>
+            {/* Price Edit Modal */}
+            {
+                priceEditItem && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Edit Price</h3>
+                            <p className="text-sm text-slate-500 mb-4">Set new price for <span className="font-semibold">{priceEditItem.name}</span></p>
 
-                    <div className="relative mb-6">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">GHS</span>
-                        <input
-                            type="number"
-                            autoFocus
-                            className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-12 pr-4 text-lg font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                            value={priceEditValue}
-                            onChange={(e) => setPriceEditValue(e.target.value)}
-                        />
-                    </div>
+                            <div className="relative mb-6">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">GHS</span>
+                                <input
+                                    type="number"
+                                    autoFocus
+                                    className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-12 pr-4 text-lg font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    value={priceEditValue}
+                                    onChange={(e) => setPriceEditValue(e.target.value)}
+                                />
+                            </div>
 
-                    <div className="flex gap-3">
-                        <button
-                            onClick={() => setPriceEditItem(null)}
-                            className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={() => {
-                                const val = parseFloat(priceEditValue);
-                                if (!isNaN(val) && val >= 0) {
-                                    updateItemPrice(priceEditItem.id, val);
-                                    setPriceEditItem(null);
-                                }
-                            }}
-                            className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
-                        >
-                            Update
-                        </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setPriceEditItem(null)}
+                                    className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const val = parseFloat(priceEditValue);
+                                        if (!isNaN(val) && val >= 0) {
+                                            updateItemPrice(priceEditItem.id, val);
+                                            setPriceEditItem(null);
+                                        }
+                                    }}
+                                    className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
+                                >
+                                    Update
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        )
-    }
+                )
+            }
         </div >
     );
 }
