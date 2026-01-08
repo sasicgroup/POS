@@ -71,6 +71,12 @@ export default function LoyaltyPage() {
             return;
         }
 
+        // Apply Min Redemption Limit
+        if (customer.points < settings.minRedemptionPoints) {
+            setErrorMsg(`Customer must have at least ${settings.minRedemptionPoints} points to redeem.`);
+            return;
+        }
+
         if (points > (customer.points || 0)) {
             setErrorMsg('Insufficient points balance');
             return;
@@ -87,6 +93,15 @@ export default function LoyaltyPage() {
                 .eq('id', customer.id);
 
             if (updateError) throw updateError;
+
+            // Log Transaction
+            await supabase.from('loyalty_logs').insert({
+                store_id: activeStore.id,
+                customer_id: customer.id,
+                points: -points, // Negative for redemption
+                type: 'redeemed',
+                description: reason || 'Redemption'
+            });
 
             setSuccessMsg(`Successfully redeemed ${points} points for ${customer.name}. New Balance: ${newPoints}`);
             setCustomer({ ...customer, points: newPoints });
@@ -471,6 +486,23 @@ export default function LoyaltyPage() {
                                 </div>
                                 <p className="mt-1 text-xs text-slate-500">Customer earns {settings.pointsPerCurrency} point for every 1 GHS spent.</p>
                             </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Min. Points to Redeem</label>
+                                <div className="mt-1 relative rounded-md shadow-sm">
+                                    <input
+                                        type="number"
+                                        value={settings.minRedemptionPoints}
+                                        onChange={e => setSettings({ ...settings, minRedemptionPoints: parseInt(e.target.value) || 0 })}
+                                        className="block w-full rounded-md border-slate-300 pl-3 pr-12 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-slate-800 dark:border-slate-700 py-2 border"
+                                    />
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                        <span className="text-slate-500 sm:text-sm">Pts</span>
+                                    </div>
+                                </div>
+                                <p className="mt-1 text-xs text-slate-500">Minimum balance required to start redeeming.</p>
+                            </div>
+
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Redemption Value</label>

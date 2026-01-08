@@ -170,6 +170,17 @@ CREATE TABLE IF NOT EXISTS public.loyalty_programs (
     UNIQUE(store_id)
 );
 
+-- 16.5 Create Loyalty Logs Table
+CREATE TABLE IF NOT EXISTS public.loyalty_logs (
+    id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+    store_id uuid REFERENCES public.stores(id) ON DELETE CASCADE,
+    customer_id uuid REFERENCES public.customers(id) ON DELETE CASCADE,
+    points int NOT NULL, -- Positive for earned, negative for redeemed
+    type text NOT NULL, -- 'earned', 'redeemed', 'adjustment'
+    description text,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_loyalty_logs_customer_id ON public.loyalty_logs(customer_id);
 
 -- 17. Create SMS Logs Table
 CREATE TABLE IF NOT EXISTS public.sms_logs (

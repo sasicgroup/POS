@@ -41,7 +41,9 @@ export default function CustomersPage() {
 
     // History State
     const [customerHistory, setCustomerHistory] = useState<any[]>([]);
+    const [loyaltyHistory, setLoyaltyHistory] = useState<any[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyTab, setHistoryTab] = useState<'purchases' | 'loyalty'>('purchases');
 
     useEffect(() => {
         if (selectedCustomer) {
@@ -53,7 +55,8 @@ export default function CustomersPage() {
 
     const fetchHistory = async (customerId: string) => {
         setHistoryLoading(true);
-        const { data, error } = await supabase
+        // Sales
+        const { data: sales } = await supabase
             .from('sales')
             .select(`
                 id,
@@ -68,7 +71,17 @@ export default function CustomersPage() {
             .eq('customer_id', customerId)
             .order('created_at', { ascending: false });
 
-        if (data) setCustomerHistory(data);
+        if (sales) setCustomerHistory(sales);
+
+        // Loyalty Logs
+        const { data: logs } = await supabase
+            .from('loyalty_logs')
+            .select('*')
+            .eq('customer_id', customerId)
+            .order('created_at', { ascending: false });
+
+        if (logs) setLoyaltyHistory(logs);
+
         setHistoryLoading(false);
     };
 
@@ -386,48 +399,88 @@ export default function CustomersPage() {
                             </div>
 
                             <div className="mt-8 border-t border-slate-100 pt-6 dark:border-slate-800">
-                                <h4 className="font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                    <ShoppingBag className="h-4 w-4" /> Purchase History
-                                </h4>
+                                <div className="flex items-center gap-4 mb-4">
+                                    <button
+                                        onClick={() => setHistoryTab('purchases')}
+                                        className={`text-sm font-semibold pb-1 border-b-2 transition-colors ${historyTab === 'purchases' ? 'text-indigo-600 border-indigo-600' : 'text-slate-500 border-transparent hover:text-slate-700'}`}
+                                    >
+                                        Purchases
+                                    </button>
+                                    <button
+                                        onClick={() => setHistoryTab('loyalty')}
+                                        className={`text-sm font-semibold pb-1 border-b-2 transition-colors ${historyTab === 'loyalty' ? 'text-indigo-600 border-indigo-600' : 'text-slate-500 border-transparent hover:text-slate-700'}`}
+                                    >
+                                        Loyalty History
+                                    </button>
+                                </div>
 
                                 {historyLoading ? (
                                     <div className="text-center py-4 text-sm text-slate-500">Loading history...</div>
-                                ) : customerHistory.length === 0 ? (
-                                    <div className="text-center py-4 text-sm text-slate-500 bg-slate-50 rounded-lg dark:bg-slate-800/50">
-                                        No purchase history found.
-                                    </div>
-                                ) : (
-                                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                        {customerHistory.map((sale: any) => (
-                                            <div key={sale.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50 text-sm">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div>
-                                                        <p className="font-medium text-slate-900 dark:text-white">
-                                                            {new Date(sale.created_at).toLocaleDateString()}
-                                                        </p>
-                                                        <p className="text-xs text-slate-500">
-                                                            {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                ) : historyTab === 'purchases' ? (
+                                    customerHistory.length === 0 ? (
+                                        <div className="text-center py-4 text-sm text-slate-500 bg-slate-50 rounded-lg dark:bg-slate-800/50">
+                                            No purchase history found.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                            {customerHistory.map((sale: any) => (
+                                                <div key={sale.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50 text-sm">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <p className="font-medium text-slate-900 dark:text-white">
+                                                                {new Date(sale.created_at).toLocaleDateString()}
+                                                            </p>
+                                                            <p className="text-xs text-slate-500">
+                                                                {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </p>
+                                                        </div>
+                                                        <p className="font-bold text-indigo-600 dark:text-indigo-400">
+                                                            {activeStore?.currency || 'GHS'} {sale.total_amount.toFixed(2)}
                                                         </p>
                                                     </div>
-                                                    <p className="font-bold text-indigo-600 dark:text-indigo-400">
-                                                        {activeStore?.currency || 'GHS'} {sale.total_amount.toFixed(2)}
+                                                    <div className="space-y-1">
+                                                        {sale.sale_items?.map((item: any, idx: number) => (
+                                                            <div key={idx} className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                                                                <span>
+                                                                    {item.quantity}x {item.product?.name || 'Unknown Item'}
+                                                                </span>
+                                                                <span>
+                                                                    {(item.price_at_sale * item.quantity).toFixed(2)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                ) : (
+                                    loyaltyHistory.length === 0 ? (
+                                        <div className="text-center py-4 text-sm text-slate-500 bg-slate-50 rounded-lg dark:bg-slate-800/50">
+                                            No loyalty history found.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                            {loyaltyHistory.map((log: any) => (
+                                                <div key={log.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50 text-sm">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${log.type === 'earned' ? 'bg-green-100 text-green-700' :
+                                                                log.type === 'redeemed' ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'
+                                                            }`}>
+                                                            {log.type}
+                                                        </span>
+                                                        <span className={`font-bold ${log.points > 0 ? 'text-green-600' : 'text-pink-600'}`}>
+                                                            {log.points > 0 ? '+' : ''}{log.points} pts
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-slate-700 dark:text-slate-300 font-medium">{log.description}</p>
+                                                    <p className="text-xs text-slate-500 mt-1">
+                                                        {new Date(log.created_at).toLocaleString()}
                                                     </p>
                                                 </div>
-                                                <div className="space-y-1">
-                                                    {sale.sale_items?.map((item: any, idx: number) => (
-                                                        <div key={idx} className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-                                                            <span>
-                                                                {item.quantity}x {item.product?.name || 'Unknown Item'}
-                                                            </span>
-                                                            <span>
-                                                                {(item.price_at_sale * item.quantity).toFixed(2)}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    )
                                 )}
                             </div>
                         </div>

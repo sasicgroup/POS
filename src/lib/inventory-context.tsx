@@ -277,6 +277,23 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             }
         }
 
+        // --- Fetch Loyalty Config ---
+        let pointsEarned = 0;
+        let loyaltyConfig = null;
+        if (customerId) {
+            const { data: config } = await supabase
+                .from('loyalty_programs')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .single();
+
+            if (config && config.enabled) {
+                loyaltyConfig = config;
+                const rate = config.points_per_currency || 1;
+                pointsEarned = Math.floor(saleData.totalAmount * rate);
+            }
+        }
+
         // 2. Insert Sale
         const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         const safeEmployeeId = user?.id && isUUID(user.id) ? user.id : null;
@@ -336,6 +353,35 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                             metadata: { product_id: product.id, stock: newStock }
                         });
                     }
+                }
+            }
+        }
+
+
+        // 5. Update Customer Loyalty & Total Spent
+        if (customerId) {
+            // We need to fetch current customer stats first to be safe, or use RPC increment (safer)
+            // For now, simpler read-modify-write as we are in a flow
+            const { data: currentCust } = await supabase.from('customers').select('points, total_spent').eq('id', customerId).single();
+            if (currentCust) {
+                const newPoints = (currentCust.points || 0) + pointsEarned;
+                const newTotalSpent = (currentCust.total_spent || 0) + saleData.totalAmount;
+
+                await supabase.from('customers').update({
+                    points: newPoints,
+                    total_spent: newTotalSpent,
+                    last_visit: new Date().toISOString()
+                }).eq('id', customerId);
+
+                // Log Loyalty Earned
+                if (pointsEarned > 0) {
+                    await supabase.from('loyalty_logs').insert({
+                        store_id: activeStore.id,
+                        customer_id: customerId,
+                        points: pointsEarned,
+                        type: 'earned',
+                        description: `Earned from Sale #${sale.id.slice(0, 8)}`
+                    });
                 }
             }
         }
