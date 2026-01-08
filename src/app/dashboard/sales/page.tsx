@@ -440,8 +440,9 @@ export default function SalesPage() {
         // Generate transaction ID with store prefix and sequential number
         const transactionNumber = (activeStore.lastTransactionNumber || 0) + 1;
         const prefix = activeStore.receiptPrefix || 'TRX';
+        const suffix = activeStore.receiptSuffix || '';
         const paddedNumber = transactionNumber.toString().padStart(5, '0');
-        const trxId = `${prefix}-${paddedNumber}`;
+        const trxId = `${prefix}-${paddedNumber}${suffix}`;
 
         // Process Inventory Sync & DB Save
         const saleId = await processSale({

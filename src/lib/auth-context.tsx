@@ -18,6 +18,7 @@ export interface Store {
         value: number;
     };
     receiptPrefix?: string; // e.g., "TRX", "INV", "RCP"
+    receiptSuffix?: string; // e.g., "-A", "2024"
     lastTransactionNumber?: number; // Sequential counter
     rolePermissions?: Record<string, Record<string, boolean>>; // { manager: { view_dashboard: true }, staff: { ... } }
 }
@@ -138,6 +139,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const mappedStores = validStores.map((s: any) => ({
                         ...s,
                         taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
+                        receiptPrefix: s.receipt_prefix,
+                        receiptSuffix: s.receipt_suffix,
                         rolePermissions: s.role_permissions
                     }));
                     setStores(mappedStores);
@@ -199,7 +202,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (validStores.length > 0) {
             const mappedStores = validStores.map((s: any) => ({
                 ...s,
-                taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 }
+                taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
+                receiptPrefix: s.receipt_prefix,
+                receiptSuffix: s.receipt_suffix
             }));
             setStores(mappedStores);
             setActiveStore(mappedStores[0]);
@@ -580,7 +585,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const updateStoreSettings = async (settings: Partial<Store>) => {
         if (activeStore?.id) {
-            await supabase.from('stores').update(settings).eq('id', activeStore.id);
+            // Map camelCase to snake_case for DB
+            const dbUpdates: any = { ...settings };
+
+            if (settings.taxSettings) {
+                dbUpdates.tax_settings = settings.taxSettings;
+                delete dbUpdates.taxSettings;
+            }
+            if (settings.receiptPrefix !== undefined) {
+                dbUpdates.receipt_prefix = settings.receiptPrefix;
+                delete dbUpdates.receiptPrefix;
+            }
+            if (settings.receiptSuffix !== undefined) {
+                dbUpdates.receipt_suffix = settings.receiptSuffix;
+                delete dbUpdates.receiptSuffix;
+            }
+            if (settings.rolePermissions) {
+                dbUpdates.role_permissions = settings.rolePermissions;
+                delete dbUpdates.rolePermissions;
+            }
+
+            const { error } = await supabase.from('stores').update(dbUpdates).eq('id', activeStore.id);
+
+            if (error) {
+                console.error("Failed to update store settings in DB", error);
+                return; // Don't update local state if DB failed
+            }
+
             setActiveStore(prev => prev ? { ...prev, ...settings } : null);
             setStores(prev => prev.map(s => s.id === activeStore.id ? { ...s, ...settings } : s));
         }

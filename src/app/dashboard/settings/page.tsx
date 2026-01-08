@@ -44,6 +44,8 @@ export default function SettingsPage() {
     const [smsConfig, setSmsConfig] = useState<SMSConfig | null>(null);
     const [storeName, setStoreName] = useState('');
     const [storeLocation, setStoreLocation] = useState('');
+    const [receiptPrefix, setReceiptPrefix] = useState('');
+    const [receiptSuffix, setReceiptSuffix] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
     // Profile Edit State
@@ -121,6 +123,8 @@ export default function SettingsPage() {
         if (activeStore) {
             setStoreName(activeStore.name);
             setStoreLocation(activeStore.location);
+            setReceiptPrefix(activeStore.receiptPrefix || 'TRX');
+            setReceiptSuffix(activeStore.receiptSuffix || '');
         }
         if (user) {
             setProfileData({
@@ -143,7 +147,9 @@ export default function SettingsPage() {
             if (activeStore) {
                 await updateStoreSettings({
                     name: storeName,
-                    location: storeLocation
+                    location: storeLocation,
+                    receiptPrefix,
+                    receiptSuffix
                 });
             }
 
@@ -246,6 +252,41 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Initial Transaction Configuration</h2>
+                                    <div className="grid gap-6 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Transaction ID Prefix</label>
+                                            <div className="relative">
+                                                <Tag className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                                                <input
+                                                    type="text"
+                                                    value={receiptPrefix}
+                                                    onChange={(e) => setReceiptPrefix(e.target.value.toUpperCase())}
+                                                    placeholder="TRX"
+                                                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                />
+                                            </div>
+                                            <p className="text-xs text-slate-500">Appears before the number (e.g., <span className="font-bold">{receiptPrefix || 'TRX'}</span>-00001)</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Transaction ID Suffix</label>
+                                            <div className="relative">
+                                                <Tag className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                                                <input
+                                                    type="text"
+                                                    value={receiptSuffix}
+                                                    onChange={(e) => setReceiptSuffix(e.target.value)}
+                                                    placeholder="-2024"
+                                                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                />
+                                            </div>
+                                            <p className="text-xs text-slate-500">Appears after the number (e.g., {receiptPrefix || 'TRX'}-00001<span className="font-bold">{receiptSuffix}</span>)</p>
+                                        </div>
+                                    </div>
+                                </div>
+
 
                                 <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
                                     <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Contact Information</h2>
@@ -441,8 +482,8 @@ export default function SettingsPage() {
                                     <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Active MoMo Provider</h3>
                                     <div className="flex gap-4">
                                         <label className={`flex-1 flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${paymentSettings.default_provider === 'hubtel'
-                                                ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
-                                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
                                             }`}>
                                             <div className="flex items-center gap-3">
                                                 <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${paymentSettings.default_provider === 'hubtel' ? 'border-indigo-600' : 'border-slate-400'
@@ -462,8 +503,8 @@ export default function SettingsPage() {
                                         </label>
 
                                         <label className={`flex-1 flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${paymentSettings.default_provider === 'paystack'
-                                                ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
-                                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
                                             }`}>
                                             <div className="flex items-center gap-3">
                                                 <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${paymentSettings.default_provider === 'paystack' ? 'border-indigo-600' : 'border-slate-400'
@@ -1088,37 +1129,39 @@ export default function SettingsPage() {
                 </div>
             </div>
             {/* Delete Member Confirmation Modal */}
-            {deleteMemberConfirm && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
-                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-                            <Users className="h-6 w-6 text-red-600 dark:text-red-400" />
-                        </div>
-                        <h3 className="text-lg font-bold text-center text-slate-900 dark:text-white mb-2">Remove Team Member?</h3>
-                        <p className="text-sm text-center text-slate-500 mb-6">
-                            Are you sure you want to remove <span className="font-semibold text-slate-900 dark:text-slate-100">{deleteMemberConfirm.name}</span>? They will no longer have access.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setDeleteMemberConfirm(null)}
-                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => {
-                                    removeTeamMember(deleteMemberConfirm.id);
-                                    setDeleteMemberConfirm(null);
-                                    showToast('success', 'Team member removed successfully');
-                                }}
-                                className="flex-1 rounded-xl bg-red-600 py-3 font-bold text-white hover:bg-red-700"
-                            >
-                                Remove
-                            </button>
+            {
+                deleteMemberConfirm && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
+                                <Users className="h-6 w-6 text-red-600 dark:text-red-400" />
+                            </div>
+                            <h3 className="text-lg font-bold text-center text-slate-900 dark:text-white mb-2">Remove Team Member?</h3>
+                            <p className="text-sm text-center text-slate-500 mb-6">
+                                Are you sure you want to remove <span className="font-semibold text-slate-900 dark:text-slate-100">{deleteMemberConfirm.name}</span>? They will no longer have access.
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setDeleteMemberConfirm(null)}
+                                    className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        removeTeamMember(deleteMemberConfirm.id);
+                                        setDeleteMemberConfirm(null);
+                                        showToast('success', 'Team member removed successfully');
+                                    }}
+                                    className="flex-1 rounded-xl bg-red-600 py-3 font-bold text-white hover:bg-red-700"
+                                >
+                                    Remove
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }

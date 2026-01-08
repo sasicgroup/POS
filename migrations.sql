@@ -184,3 +184,7 @@ CREATE TABLE IF NOT EXISTS public.sms_logs (
 
 CREATE INDEX IF NOT EXISTS idx_sms_logs_store_id ON public.sms_logs(store_id);
 CREATE INDEX IF NOT EXISTS idx_sms_logs_created_at ON public.sms_logs(created_at DESC);
+  
+-- 18. Add receipt ID settings  
+ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS receipt_prefix text DEFAULT 'TRX';  
+ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS receipt_suffix text DEFAULT ''; 
