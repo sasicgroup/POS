@@ -326,6 +326,7 @@ export default function SalesPage() {
                     <div>Receipt #${transactionId}</div>
                     <div>${new Date().toLocaleString()}</div>
                     ${customerName ? `<div>Customer: ${customerName}</div>` : ''}
+                    <div>Sold By: ${user?.name || 'Staff'}</div>
                 </div>
                 <div class="divider"></div>
                 ${cart.map(item => `
@@ -415,6 +416,20 @@ export default function SalesPage() {
             .from('stores')
             .update({ last_transaction_number: transactionNumber })
             .eq('id', activeStore.id);
+
+        // Create order notification
+        await supabase.from('notifications').insert({
+            store_id: activeStore.id,
+            type: 'order',
+            title: `New Order #${trxId}`,
+            message: `${customerName || 'A customer'} placed a new order for GHS ${grandTotal.toFixed(2)}.`,
+            metadata: {
+                sale_id: saleId,
+                transaction_id: trxId,
+                amount: grandTotal,
+                customer: customerName || 'Guest'
+            }
+        });
 
         const pointsEarned = Math.floor(grandTotal);
 

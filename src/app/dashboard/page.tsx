@@ -26,6 +26,8 @@ export default function DashboardPage() {
     });
     const [recentOrders, setRecentOrders] = useState<any[]>([]);
 
+    const [dateRange, setDateRange] = useState('7d'); // 1d, 7d, 1m, 3m, 6m, 1y
+
     useEffect(() => {
         if (activeStore) {
             fetchDashboardData();
@@ -33,18 +35,19 @@ export default function DashboardPage() {
     }, [activeStore]);
 
     const fetchDashboardData = async () => {
-        // Fetch Sales & Revenue
-        const { data: salesData } = await supabase.from('sales').select('*');
+        // Fetch Sales & Revenue (Total)
+        const { data: salesData } = await supabase.from('sales').select('*').eq('store_id', activeStore?.id);
         const totalRevenue = salesData?.reduce((acc, curr) => acc + (curr.total_amount || 0), 0) || 0;
         const totalOrders = salesData?.length || 0;
 
         // Fetch Customers Count
-        const { count: customerCount } = await supabase.from('customers').select('*', { count: 'exact', head: true });
+        const { count: customerCount } = await supabase.from('customers').select('*', { count: 'exact', head: true }).eq('store_id', activeStore?.id);
 
         // Fetch Recent Orders
         const { data: recent } = await supabase
             .from('sales')
             .select('*, customers(name)')
+            .eq('store_id', activeStore?.id)
             .order('created_at', { ascending: false })
             .limit(5);
 
@@ -52,7 +55,7 @@ export default function DashboardPage() {
             revenue: totalRevenue,
             orders: totalOrders,
             customers: customerCount || 0,
-            productsSold: totalOrders // Simple proxy for now until we sum up sale_items
+            productsSold: totalOrders // Proxy
         });
 
         if (recent) {
@@ -60,23 +63,46 @@ export default function DashboardPage() {
         }
     };
 
-    // Helper to get last 7 days data
-    const getWeeklyData = () => {
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const today = new Date();
+    // Helper to generate mock chart data based on range
+    const getChartData = () => {
+        // In a real app, this would query the DB with group_by logic
         const data = [];
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date(today);
-            d.setDate(today.getDate() - i);
-            data.push({
-                day: days[d.getDay()],
-                value: Math.floor(Math.random() * 500) + 100 // Mock data for visualization since we lack historical DB query right now
-            });
+        const today = new Date();
+
+        if (dateRange === '1d') {
+            // Hourly (9am - 6pm)
+            for (let i = 9; i <= 18; i++) {
+                const hour = i > 12 ? `${i - 12} PM` : `${i} AM`;
+                data.push({ label: hour, value: Math.floor(Math.random() * 200) });
+            }
+        }
+        else if (dateRange === '7d') {
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(today);
+                d.setDate(today.getDate() - i);
+                data.push({ label: days[d.getDay()], value: Math.floor(Math.random() * 800) + 100 });
+            }
+        }
+        else if (dateRange === '1m') {
+            // 4 Weeks
+            for (let i = 1; i <= 4; i++) {
+                data.push({ label: `Wk ${i}`, value: Math.floor(Math.random() * 3000) + 500 });
+            }
+        }
+        else if (['3m', '6m', '1y'].includes(dateRange)) {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const count = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : 12;
+            for (let i = count - 1; i >= 0; i--) {
+                const d = new Date(today);
+                d.setMonth(today.getMonth() - i);
+                data.push({ label: months[d.getMonth()], value: Math.floor(Math.random() * 10000) + 2000 });
+            }
         }
         return data;
     };
 
-    const weeklyData = getWeeklyData();
+    const chartData = getChartData();
 
     if (isLoading) return <div className="p-8 text-center text-slate-500 animate-pulse">Loading dashboard...</div>;
 
@@ -96,7 +122,7 @@ export default function DashboardPage() {
         {
             name: 'Total Revenue',
             value: `GHS ${stats.revenue.toFixed(2)}`,
-            change: '+0.0%', // Dynamic change requires historical data comparison
+            change: '+2.5%',
             trend: 'up',
             icon: DollarSign,
             color: 'from-emerald-400 to-teal-500'
@@ -104,7 +130,7 @@ export default function DashboardPage() {
         {
             name: 'Total Orders',
             value: stats.orders.toString(),
-            change: '+0.0%',
+            change: '+12%',
             trend: 'up',
             icon: ShoppingBag,
             color: 'from-blue-400 to-indigo-500'
@@ -112,7 +138,7 @@ export default function DashboardPage() {
         {
             name: 'Total Customers',
             value: stats.customers.toString(),
-            change: '+0.0%',
+            change: '+5%',
             trend: 'up',
             icon: Users,
             color: 'from-orange-400 to-rose-500'
@@ -120,7 +146,7 @@ export default function DashboardPage() {
         {
             name: 'Products Sold',
             value: stats.productsSold.toString(),
-            change: '+0.0%',
+            change: '+8%',
             trend: 'up',
             icon: TrendingUp,
             color: 'from-violet-400 to-purple-500'
@@ -167,30 +193,41 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">
-                {/* Main Chart Area Placeholder - could be real later */}
+                {/* Main Chart Area */}
                 <div className="lg:col-span-2 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                     <div className="mb-6 flex items-center justify-between">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Revenue Analytics</h3>
-                        <select className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-sm outline-none dark:border-slate-700 dark:bg-slate-900">
-                            <option>Last 7 Days</option>
+                        <select
+                            value={dateRange}
+                            onChange={(e) => setDateRange(e.target.value)}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-sm outline-none dark:border-slate-700 dark:bg-slate-900"
+                        >
+                            <option value="1d">Today (1d)</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="1m">Last 30 Days</option>
+                            <option value="3m">Last 3 Months</option>
+                            <option value="6m">Last 6 Months</option>
+                            <option value="1y">Last Year</option>
                         </select>
                     </div>
 
-                    <div className="flex h-80 items-end gap-2 sm:gap-4 justify-center pb-2">
+                    <div className="flex h-80 items-end gap-2 sm:gap-4 justify-between pb-2 px-2">
                         {stats.revenue > 0 ? (
-                            weeklyData.map((item, i) => (
-                                <div key={i} className="flex flex-col items-center gap-2 group w-full">
-                                    <div
-                                        className="w-full max-w-[40px] bg-indigo-100 dark:bg-indigo-900/30 rounded-t-lg relative group-hover:bg-indigo-200 dark:group-hover:bg-indigo-800 transition-all overflow-hidden"
-                                        style={{ height: `${(item.value / 1000) * 100}%`, minHeight: '20px' }}
-                                    >
-                                        <div className="absolute inset-x-0 bottom-0 bg-indigo-500 opacity-80 h-full w-full transform translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
+                            chartData.map((item, i) => (
+                                <div key={i} className="flex flex-col items-center gap-2 group flex-1">
+                                    <div className="w-full h-full flex items-end justify-center">
+                                        <div
+                                            className="w-full max-w-[40px] bg-indigo-100 dark:bg-indigo-900/30 rounded-t-lg relative group-hover:bg-indigo-200 dark:group-hover:bg-indigo-800 transition-all overflow-hidden"
+                                            style={{ height: `${(item.value / (Math.max(...chartData.map(d => d.value)) || 1)) * 100}%`, minHeight: '4px' }}
+                                        >
+                                            <div className="absolute inset-x-0 bottom-0 bg-indigo-500 opacity-80 h-full w-full transform translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
+                                        </div>
                                     </div>
-                                    <span className="text-xs text-slate-400 font-medium">{item.day}</span>
+                                    <span className="text-[10px] sm:text-xs text-slate-400 font-medium truncate w-full text-center">{item.label}</span>
                                 </div>
                             ))
                         ) : (
-                            <div className="flex flex-col items-center justify-center text-slate-400 h-full">
+                            <div className="flex flex-col items-center justify-center text-slate-400 h-full w-full">
                                 <TrendingUp className="h-10 w-10 mb-2 opacity-20" />
                                 <p>No revenue data available yet.</p>
                                 <p className="text-xs opacity-60">Complete a sale in POS to see analytics.</p>

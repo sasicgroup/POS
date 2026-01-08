@@ -31,15 +31,33 @@ import {
 
 
 import { ToastProvider } from '@/lib/toast-context';
+import { NotificationsProvider, useNotifications } from '@/lib/notifications-context';
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, logout, activeStore, stores, switchStore, createStore, hasPermission } = useAuth();
+    const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
     const router = useRouter();
     const pathname = usePathname();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
+
+    // Format relative time
+    const formatRelativeTime = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        return date.toLocaleDateString();
+    };
 
     useEffect(() => {
         if (!localStorage.getItem('sms_user')) {
@@ -206,41 +224,63 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                     className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                                 >
                                     <Bell className="h-5 w-5" />
-                                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-950"></span>
+                                    {unreadCount > 0 && (
+                                        <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-950"></span>
+                                    )}
                                 </button>
 
                                 {isNotificationsOpen && (
-                                    <div className="absolute right-0 top-12 w-80 rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in slide-in-from-top-2 origin-top-right">
-                                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-                                            <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Notifications</h3>
-                                            <button className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Mark all read</button>
-                                        </div>
-                                        <div className="max-h-80 overflow-y-auto">
-                                            {[
-                                                { title: 'New Order #ORD-7752', desc: 'Sarah Willis placed a new order.', time: '2 mins ago', unread: true },
-                                                { title: 'Low Stock Alert', desc: 'Premium Leather Bag is running low (3 items left).', time: '1 hour ago', unread: true },
-                                                { title: 'Daily Report Ready', desc: 'Yesterday\'s sales report is ready for view.', time: '5 hours ago', unread: false },
-                                            ].map((notif, i) => (
-                                                <div key={i} className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 cursor-pointer ${notif.unread ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
-                                                    <div className="flex justify-between items-start">
-                                                        <p className={`text-sm ${notif.unread ? 'font-semibold text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>{notif.title}</p>
-                                                        {notif.unread && <span className="h-2 w-2 rounded-full bg-indigo-500 mt-1.5"></span>}
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)} />
+                                        <div className="absolute right-0 top-12 w-80 rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in slide-in-from-top-2 origin-top-right">
+                                            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                                                <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Notifications</h3>
+                                                {unreadCount > 0 && (
+                                                    <button
+                                                        onClick={markAllAsRead}
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                                                    >
+                                                        Mark all read
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="max-h-80 overflow-y-auto">
+                                                {notifications.length === 0 ? (
+                                                    <div className="px-4 py-12 text-center">
+                                                        <Bell className="h-12 w-12 mx-auto mb-3 text-slate-300 dark:text-slate-700" />
+                                                        <p className="text-sm text-slate-500 dark:text-slate-400">No notifications yet</p>
+                                                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">We'll notify you when something happens</p>
                                                     </div>
-                                                    <p className="text-xs text-slate-500 mt-1">{notif.desc}</p>
-                                                    <p className="text-[10px] text-slate-400 mt-1.5">{notif.time}</p>
-                                                </div>
-                                            ))}
+                                                ) : (
+                                                    notifications.slice(0, 10).map((notif) => (
+                                                        <div
+                                                            key={notif.id}
+                                                            onClick={() => !notif.is_read && markAsRead(notif.id)}
+                                                            className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${notif.is_read ? '' : 'bg-indigo-50/30 dark:bg-indigo-900/10'}`}
+                                                        >
+                                                            <div className="flex justify-between items-start">
+                                                                <p className={`text-sm ${notif.is_read ? 'text-slate-700 dark:text-slate-300' : 'font-semibold text-slate-900 dark:text-slate-100'}`}>
+                                                                    {notif.title}
+                                                                </p>
+                                                                {!notif.is_read && <span className="h-2 w-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0 ml-2"></span>}
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 mt-1">{notif.message}</p>
+                                                            <p className="text-[10px] text-slate-400 mt-1.5">{formatRelativeTime(notif.created_at)}</p>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                            <div className="p-2 border-t border-slate-100 dark:border-slate-800 text-center">
+                                                <Link
+                                                    href="/dashboard/communication"
+                                                    className="text-xs font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-400 block py-1"
+                                                    onClick={() => setIsNotificationsOpen(false)}
+                                                >
+                                                    View All Notifications
+                                                </Link>
+                                            </div>
                                         </div>
-                                        <div className="p-2 border-t border-slate-100 dark:border-slate-800 text-center">
-                                            <Link
-                                                href="/dashboard/communication"
-                                                className="text-xs font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-400 block py-1"
-                                                onClick={() => setIsNotificationsOpen(false)}
-                                            >
-                                                View All Notifications
-                                            </Link>
-                                        </div>
-                                    </div>
+                                    </>
                                 )}
                             </div>
                         </header>
@@ -333,6 +373,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
                 )}
             </InventoryProvider>
+        </ToastProvider>
+    );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+    return (
+        <ToastProvider>
+            <NotificationsProvider>
+                <InventoryProvider>
+                    <DashboardContent>{children}</DashboardContent>
+                </InventoryProvider>
+            </NotificationsProvider>
         </ToastProvider>
     );
 }

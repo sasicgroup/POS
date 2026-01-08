@@ -8,16 +8,16 @@ import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 
 // Define Sale Interface
+// Update Sale Interface
 interface Sale {
     id: any;
     total_amount: number;
     payment_method: string;
     status: string;
     created_at: string;
-    customers?: { name: string } | null; // Joined table data
+    customers?: { name: string } | null;
+    employees?: { name: string } | null; // Added
 }
-
-
 
 export default function SalesHistoryPage() {
     const { activeStore, user } = useAuth();
@@ -47,7 +47,8 @@ export default function SalesHistoryPage() {
             .from('sales')
             .select(`
                 *,
-                customers (name)
+                customers (name),
+                employees (name)
             `)
             .eq('store_id', activeStore.id)
             .order('created_at', { ascending: false });
@@ -96,11 +97,12 @@ export default function SalesHistoryPage() {
     };
 
     const handleExport = () => {
-        const headers = ['Transaction ID', 'Date', 'Customer', 'Amount', 'Payment', 'Status'];
+        const headers = ['Transaction ID', 'Date', 'Customer', 'Sold By', 'Amount', 'Payment', 'Status'];
         const rows = filteredSales.map(s => [
             s.id,
             new Date(s.created_at).toLocaleDateString(),
             s.customers?.name || 'Guest',
+            s.employees?.name || 'Unknown', // Added
             s.total_amount,
             s.payment_method,
             s.status
@@ -120,17 +122,28 @@ export default function SalesHistoryPage() {
         if (dateFilter === 'all') return true;
         const d = new Date(sale.created_at);
         const now = new Date();
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        if (dateFilter === 'today') return d >= startOfDay;
-        if (dateFilter === 'week') {
-            const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-            return d >= startOfWeek;
-        }
-        if (dateFilter === 'month') {
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            return d >= startOfMonth;
-        }
+        // Helper to subtract days
+        const subDays = (days: number) => {
+            const date = new Date();
+            date.setDate(date.getDate() - days);
+            return date;
+        };
+
+        // Helper to subtract months
+        const subMonths = (months: number) => {
+            const date = new Date();
+            date.setMonth(date.getMonth() - months);
+            return date;
+        };
+
+        if (dateFilter === '1d') return d >= new Date(now.setHours(0, 0, 0, 0));
+        if (dateFilter === '7d') return d >= subDays(7);
+        if (dateFilter === '1m') return d >= subMonths(1);
+        if (dateFilter === '3m') return d >= subMonths(3);
+        if (dateFilter === '6m') return d >= subMonths(6);
+        if (dateFilter === '1y') return d >= subMonths(12);
+
         return true;
     };
 
@@ -142,6 +155,7 @@ export default function SalesHistoryPage() {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* ... Header ... */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Sales History</h1>
@@ -161,13 +175,20 @@ export default function SalesHistoryPage() {
                         <>
                             <div className="fixed inset-0 z-10" onClick={() => setShowFilterMenu(false)} />
                             <div className="absolute top-12 right-0 z-20 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-                                {['all', 'today', 'week', 'month'].map((filter) => (
+                                {['all', '1d', '7d', '1m', '3m', '6m', '1y'].map((filter) => (
                                     <button
                                         key={filter}
                                         onClick={() => { setDateFilter(filter); setShowFilterMenu(false); }}
                                         className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm ${dateFilter === filter ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'}`}
                                     >
-                                        <span className="capitalize">{filter === 'all' ? 'All Time' : `This ${filter.charAt(0).toUpperCase() + filter.slice(1)}`}</span>
+                                        <span className="capitalize">
+                                            {filter === 'all' ? 'All Time' :
+                                                filter === '1d' ? 'Today' :
+                                                    filter === '7d' ? 'Last 7 Days' :
+                                                        filter === '1m' ? 'Last 30 Days' :
+                                                            filter === '3m' ? 'Last 3 Months' :
+                                                                filter === '6m' ? 'Last 6 Months' : 'Last Year'}
+                                        </span>
                                         {dateFilter === filter && <div className="h-1.5 w-1.5 rounded-full bg-current" />}
                                     </button>
                                 ))}
@@ -188,7 +209,7 @@ export default function SalesHistoryPage() {
                 <Search className="h-5 w-5 text-slate-400" />
                 <input
                     type="text"
-                    placeholder="Search by ID, customer name..."
+                    placeholder="Search by ID, customer, employee..."
                     className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 dark:text-white"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -203,6 +224,7 @@ export default function SalesHistoryPage() {
                                 <th className="px-6 py-4 font-medium">Transaction ID</th>
                                 <th className="px-6 py-4 font-medium">Date & Time</th>
                                 <th className="px-6 py-4 font-medium">Customer</th>
+                                <th className="px-6 py-4 font-medium">Sold By</th>
                                 <th className="px-6 py-4 font-medium">Amount</th>
                                 <th className="px-6 py-4 font-medium">Payment</th>
                                 <th className="px-6 py-4 font-medium">Status</th>
@@ -212,7 +234,7 @@ export default function SalesHistoryPage() {
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {filteredSales.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
+                                    <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
                                         No sales records found.
                                     </td>
                                 </tr>
@@ -227,6 +249,14 @@ export default function SalesHistoryPage() {
                                         </td>
                                         <td className="px-6 py-4 text-slate-900 font-medium dark:text-white">
                                             {sale.customers?.name || 'Guest'}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-600 dark:text-slate-400">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xs font-bold dark:bg-indigo-900/30 dark:text-indigo-400">
+                                                    {(sale.employees?.name || 'U').charAt(0)}
+                                                </div>
+                                                {sale.employees?.name || 'Unknown'}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
                                             GHS {sale.total_amount.toFixed(2)}

@@ -3,7 +3,30 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { Plus, Search, MoreVertical, Shield, User as UserIcon, X, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, MoreVertical, Shield, User as UserIcon, X, Edit2, Trash2, BarChart3, TrendingUp, Award, Calendar } from 'lucide-react';
+
+// Date Helpers (Native implementation to avoid dependency issues)
+const startOfDay = (date: Date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+const startOfWeek = (date: Date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+const startOfMonth = (date: Date) => {
+    const d = new Date(date);
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
 
 interface Employee {
     id: any;
@@ -38,9 +61,22 @@ export default function EmployeesPage() {
     const [activeMenu, setActiveMenu] = useState<any>(null);
     const [editingId, setEditingId] = useState<any>(null);
 
+    // Performance Stats State
+    const [activeTab, setActiveTab] = useState<'team' | 'performance'>('team');
+    const [perfStats, setPerfStats] = useState<any[]>([]);
+    const [perfTimeframe, setPerfTimeframe] = useState('month'); // today, week, month
+
     useEffect(() => {
         if (activeStore?.id) fetchEmployees();
     }, [activeStore?.id]);
+
+
+    useEffect(() => {
+        if (activeStore?.id) {
+            fetchEmployees();
+            if (activeTab === 'performance') fetchPerformance();
+        }
+    }, [activeStore?.id, activeTab, perfTimeframe]);
 
     const fetchEmployees = async () => {
         if (!activeStore?.id) return;
@@ -51,6 +87,68 @@ export default function EmployeesPage() {
 
         if (error) console.error(error);
         if (data) setEmployees(data);
+    };
+
+    const fetchPerformance = async () => {
+        if (!activeStore?.id) return;
+
+        // 1. Fetch all sales for store (optimize later with date range filter in query)
+        let query = supabase
+            .from('sales')
+            .select(`
+                total_amount,
+                employee_id,
+                created_at,
+                employees (name, avatar, role)
+            `)
+            .eq('store_id', activeStore.id);
+
+        // Apply basic date filter at DB level to reduce load
+        const now = new Date();
+        if (perfTimeframe === 'today') {
+            query = query.gte('created_at', startOfDay(now).toISOString());
+        } else if (perfTimeframe === 'week') {
+            query = query.gte('created_at', startOfWeek(now).toISOString());
+        } else if (perfTimeframe === 'month') {
+            query = query.gte('created_at', startOfMonth(now).toISOString());
+        }
+
+        const { data: sales, error } = await query;
+
+        if (error || !sales) {
+            console.error("Error fetching performance", error);
+            return;
+        }
+
+        // 2. Aggregate in JS
+        const statsMap = new Map();
+
+        sales.forEach((sale: any) => {
+            const empId = sale.employee_id || 'unknown';
+            const empName = sale.employees?.name || 'Unknown Staff';
+            const empRole = sale.employees?.role || 'staff';
+
+            if (!statsMap.has(empId)) {
+                statsMap.set(empId, {
+                    id: empId,
+                    name: empName,
+                    role: empRole,
+                    totalSales: 0,
+                    txnCount: 0,
+                    lastSale: null
+                });
+            }
+
+            const stat = statsMap.get(empId);
+            stat.totalSales += sale.total_amount;
+            stat.txnCount += 1;
+            if (!stat.lastSale || new Date(sale.created_at) > new Date(stat.lastSale)) {
+                stat.lastSale = sale.created_at;
+            }
+        });
+
+        const sortedStats = Array.from(statsMap.values()).sort((a, b) => b.totalSales - a.totalSales);
+        setPerfStats(sortedStats);
     };
 
     const handleSaveEmployee = async (e: React.FormEvent) => {
@@ -143,142 +241,231 @@ export default function EmployeesPage() {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Team Members</h1>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Manage access and roles for your store staff.</p>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Team Management</h1>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Manage store staff and view performance.</p>
                 </div>
-                <button
-                    onClick={() => {
-                        setEditingId(null);
-                        setNewEmployee({ name: '', username: '', phone: '', role: 'staff', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
-                        setIsAddEmployeeOpen(true);
-                    }}
-                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30"
-                >
-                    <Plus className="h-4 w-4" />
-                    Add Employee
-                </button>
+                <div className="flex gap-2">
+                    <div className="flex bg-slate-100 p-1 rounded-lg dark:bg-slate-800">
+                        <button
+                            onClick={() => setActiveTab('team')}
+                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'team' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                        >
+                            Staff List
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('performance')}
+                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'performance' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                        >
+                            Performance
+                        </button>
+                    </div>
+                    {activeTab === 'team' && (
+                        <button
+                            onClick={() => {
+                                setEditingId(null);
+                                setNewEmployee({ name: '', username: '', phone: '', role: 'staff', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
+                                setIsAddEmployeeOpen(true);
+                            }}
+                            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30"
+                        >
+                            <Plus className="h-4 w-4" />
+                            <span className="hidden sm:inline">Add Member</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <Search className="h-5 w-5 text-slate-400" />
-                <input
-                    type="text"
-                    placeholder="Search employees..."
-                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 dark:text-white"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-            </div>
+            {activeTab === 'team' ? (
+                <>
+                    <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <Search className="h-5 w-5 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search employees..."
+                            className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 dark:text-white"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {filteredEmployees.map((employee) => (
-                    <div key={employee.id} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-700">
-                        <div className="absolute top-4 right-4 z-10">
-                            <button
-                                onClick={() => setActiveMenu(activeMenu === employee.id ? null : employee.id)}
-                                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
-                            >
-                                <MoreVertical className="h-5 w-5" />
-                            </button>
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        {filteredEmployees.map((employee) => (
+                            <div key={employee.id} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-700">
+                                <div className="absolute top-4 right-4 z-10">
+                                    <button
+                                        onClick={() => setActiveMenu(activeMenu === employee.id ? null : employee.id)}
+                                        className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        <MoreVertical className="h-5 w-5" />
+                                    </button>
 
-                            {activeMenu === employee.id && (
-                                <>
-                                    <div className="fixed inset-0 z-0" onClick={() => setActiveMenu(null)}></div>
-                                    <div className="absolute right-0 top-10 w-48 rounded-lg border border-slate-100 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 z-50 overflow-hidden">
-                                        <button
-                                            onClick={() => {
-                                                setEditingId(employee.id);
-                                                setNewEmployee({
-                                                    name: employee.name,
-                                                    username: employee.username || '',
-                                                    phone: employee.phone || '',
-                                                    role: employee.role,
-                                                    pin: employee.pin,
-                                                    salary: employee.salary || 0,
-                                                    otp_enabled: employee.otp_enabled,
-                                                    shift_start: employee.shift_start || '',
-                                                    shift_end: employee.shift_end || '',
-                                                    work_days: employee.work_days || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                                                });
-                                                setActiveMenu(null);
-                                                setIsAddEmployeeOpen(true);
-                                            }}
-                                            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-                                        >
-                                            <Edit2 className="h-4 w-4" /> Edit Details
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setActiveMenu(null);
-                                                handleDeleteEmployee(employee.id);
-                                            }}
-                                            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                        >
-                                            <Trash2 className="h-4 w-4" /> Remove
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-4 mb-6">
-                            <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center text-slate-400">
-                                {employee.avatar ? (
-                                    <img src={employee.avatar} alt={employee.name} className="h-full w-full object-cover" />
-                                ) : (
-                                    <UserIcon className="h-8 w-8" />
-                                )}
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-slate-900 dark:text-white">{employee.name}</h3>
-                                <div className="flex items-center gap-1.5 mt-1">
-                                    <Shield className={`h-3 w-3 ${employee.role === 'owner' ? 'text-amber-500' : employee.role === 'manager' ? 'text-indigo-500' : 'text-slate-500'}`} />
-                                    <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">{employee.role}</span>
+                                    {activeMenu === employee.id && (
+                                        <>
+                                            <div className="fixed inset-0 z-0" onClick={() => setActiveMenu(null)}></div>
+                                            <div className="absolute right-0 top-10 w-48 rounded-lg border border-slate-100 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 z-50 overflow-hidden">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingId(employee.id);
+                                                        setNewEmployee({
+                                                            name: employee.name,
+                                                            username: employee.username || '',
+                                                            phone: employee.phone || '',
+                                                            role: employee.role,
+                                                            pin: employee.pin,
+                                                            salary: employee.salary || 0,
+                                                            otp_enabled: employee.otp_enabled,
+                                                            shift_start: employee.shift_start || '',
+                                                            shift_end: employee.shift_end || '',
+                                                            work_days: employee.work_days || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                                                        });
+                                                        setActiveMenu(null);
+                                                        setIsAddEmployeeOpen(true);
+                                                    }}
+                                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                                                >
+                                                    <Edit2 className="h-4 w-4" /> Edit Details
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setActiveMenu(null);
+                                                        handleDeleteEmployee(employee.id);
+                                                    }}
+                                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                >
+                                                    <Trash2 className="h-4 w-4" /> Remove
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
-                            </div>
-                        </div>
 
-                        <div className="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-slate-500">Status</span>
-                                <div className="flex items-center gap-2">
-                                    {employee.is_locked ? (
-                                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                                            Locked
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">
-                                            Active
-                                        </span>
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center text-slate-400">
+                                        {employee.avatar ? (
+                                            <img src={employee.avatar} alt={employee.name} className="h-full w-full object-cover" />
+                                        ) : (
+                                            <UserIcon className="h-8 w-8" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-white">{employee.name}</h3>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <Shield className={`h-3 w-3 ${employee.role === 'owner' ? 'text-amber-500' : employee.role === 'manager' ? 'text-indigo-500' : 'text-slate-500'}`} />
+                                            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">{employee.role}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-slate-500">Status</span>
+                                        <div className="flex items-center gap-2">
+                                            {employee.is_locked ? (
+                                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                                    Locked
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">
+                                                    Active
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {employee.username && (
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-slate-500">Username</span>
+                                            <span className="font-medium text-slate-700 dark:text-slate-300">{employee.username}</span>
+                                        </div>
+                                    )}
+
+                                    {employee.is_locked && (
+                                        <button
+                                            onClick={() => handleUnlock(employee.id)}
+                                            className="w-full mt-2 rounded bg-amber-100 py-1 text-xs font-bold text-amber-700 hover:bg-amber-200"
+                                        >
+                                            Unlock Account
+                                        </button>
                                     )}
                                 </div>
                             </div>
-                            {employee.username && (
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-slate-500">Username</span>
-                                    <span className="font-medium text-slate-700 dark:text-slate-300">{employee.username}</span>
-                                </div>
-                            )}
+                        ))}
 
-                            {employee.is_locked && (
-                                <button
-                                    onClick={() => handleUnlock(employee.id)}
-                                    className="w-full mt-2 rounded bg-amber-100 py-1 text-xs font-bold text-amber-700 hover:bg-amber-200"
-                                >
-                                    Unlock Account
-                                </button>
-                            )}
+                        {/* Empty State Helper to encourage adding */}
+                        {filteredEmployees.length === 0 && (
+                            <div className="col-span-full py-12 text-center text-slate-500">
+                                <p>No employees found. Add your team members here.</p>
+                            </div>
+                        )}
+                    </div>
+                </>
+            ) : (
+                /* Performance View */
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm dark:bg-slate-900 dark:border-slate-800">
+                        <div className="flex items-center gap-2 text-slate-900 font-medium dark:text-white">
+                            <BarChart3 className="h-5 w-5 text-indigo-500" />
+                            <span>Sales Performance</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-slate-500">Timeframe:</span>
+                            <select
+                                value={perfTimeframe}
+                                onChange={(e) => setPerfTimeframe(e.target.value)}
+                                className="text-sm bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none dark:bg-slate-800 dark:border-slate-700"
+                            >
+                                <option value="today">Today</option>
+                                <option value="week">This Week</option>
+                                <option value="month">This Month</option>
+                            </select>
                         </div>
                     </div>
-                ))}
 
-                {/* Empty State Helper to encourage adding */}
-                {filteredEmployees.length === 0 && (
-                    <div className="col-span-full py-12 text-center text-slate-500">
-                        <p>No employees found. Add your team members here.</p>
+                    <div className="grid gap-6 md:grid-cols-3">
+                        {perfStats.map((stat, index) => (
+                            <div key={stat.id} className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm relative overflow-hidden dark:bg-slate-900 dark:border-slate-800">
+                                {index === 0 && (
+                                    <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 shadow-sm">
+                                        <Award className="h-3 w-3" /> Top Performer
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className={`h-12 w-12 rounded-full flex items-center justify-center text-lg font-bold border-2 ${index === 0 ? 'bg-yellow-50 border-yellow-200 text-yellow-600' : 'bg-slate-50 border-slate-100 text-slate-500 dark:bg-slate-800 dark:border-slate-700'}`}>
+                                        {stat.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-white">{stat.name}</h3>
+                                        <p className="text-xs text-slate-500 uppercase">{stat.role}</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+                                    <div>
+                                        <p className="text-xs text-slate-500 mb-1">Total Sales</p>
+                                        <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">GHS {stat.totalSales.toFixed(2)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500 mb-1">Transactions</p>
+                                        <p className="text-lg font-bold text-slate-900 dark:text-white">{stat.txnCount}</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 pt-3 border-t border-slate-50 dark:border-slate-800/50 flex items-center gap-2 text-xs text-slate-400">
+                                    <TrendingUp className="h-3 w-3" />
+                                    <span>Avg. Sale: GHS {(stat.totalSales / (stat.txnCount || 1)).toFixed(2)}</span>
+                                </div>
+                            </div>
+                        ))}
+
+                        {perfStats.length === 0 && (
+                            <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-slate-200 border-dashed dark:bg-slate-900 dark:border-slate-700">
+                                <BarChart3 className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                                <p className="text-slate-500">No performance data available for this period.</p>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             {/* Scale-up Add Employee Modal */}
             {isAddEmployeeOpen && (

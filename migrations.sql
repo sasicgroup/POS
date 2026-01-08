@@ -109,5 +109,34 @@ CHECK (role IN ('owner', 'manager', 'staff'));
 ALTER TABLE public.employee_access 
 ADD CONSTRAINT employee_access_role_check 
 CHECK (role IN ('owner', 'manager', 'staff'));
+
 -- 11. Add role_permissions to stores table
 ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS role_permissions jsonb;
+
+-- 12. Add 'employee_id' to 'sales' table for tracking "Sold By"
+ALTER TABLE public.sales 
+ADD COLUMN IF NOT EXISTS employee_id uuid references public.employees(id) on delete set null;
+
+-- 13. Add new Customer Metrics
+ALTER TABLE public.customers
+ADD COLUMN IF NOT EXISTS points int DEFAULT 0,
+ADD COLUMN IF NOT EXISTS total_spent numeric DEFAULT 0,
+ADD COLUMN IF NOT EXISTS total_visits int DEFAULT 0,
+ADD COLUMN IF NOT EXISTS last_visit timestamp with time zone;
+
+-- 14. Create Notifications Table
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+    store_id uuid REFERENCES public.stores(id) ON DELETE CASCADE,
+    type text NOT NULL, -- 'order', 'low_stock', 'report', 'custom'
+    title text NOT NULL,
+    message text NOT NULL,
+    is_read boolean DEFAULT false,
+    metadata jsonb, -- Additional data like order_id, product_id, etc.
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Index for faster queries
+CREATE INDEX IF NOT EXISTS idx_notifications_store_id ON public.notifications(store_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(is_read);

@@ -116,6 +116,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                     image: p.image || ''
                 }));
                 setProducts(mappedProducts);
+                setIsLoading(false);
             }
         } catch (err: any) {
             console.error('[Inventory] Unexpected error fetching products:', err);
@@ -123,15 +124,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             if (retry) {
                 console.log('[Inventory] Retrying fetch in 2s...');
                 setTimeout(() => fetchProducts(false), 2000);
+                return; // Don't set loading false yet, retry will handle it
             } else {
                 setProducts([]);
-            }
-        } finally {
-            if (!retry) {
-                // Only finish loading if we aren't retrying
-                setIsLoading(false);
-            } else {
-                // If success (no catch), finish loading
                 setIsLoading(false);
             }
         }
@@ -284,9 +279,21 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             for (const item of saleData.items) {
                 const product = products.find(p => p.id === item.id);
                 if (product) {
+                    const newStock = product.stock - item.quantity;
                     await supabase.from('products')
-                        .update({ stock: product.stock - item.quantity })
+                        .update({ stock: newStock })
                         .eq('id', item.id);
+
+                    // Create low stock notification if stock is low
+                    if (newStock <= 10 && newStock > 0) {
+                        await supabase.from('notifications').insert({
+                            store_id: activeStore.id,
+                            type: 'low_stock',
+                            title: 'Low Stock Alert',
+                            message: `${product.name} is running low (${newStock} items left).`,
+                            metadata: { product_id: product.id, stock: newStock }
+                        });
+                    }
                 }
             }
         }
