@@ -182,16 +182,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const login = async (username: string, pin: string): Promise<{ success: boolean; status: 'SUCCESS' | 'OTP_REQUIRED' | 'LOCKED' | 'INVALID_CREDENTIALS' | 'OUTSIDE_SHIFT' | 'ERROR'; message?: string; tempUser?: User }> => {
         setIsLoading(true);
         try {
-            // 1. Find Employee by Username
+            // 1. Find Employee by Username (Case Insensitive)
             // Check 'username' OR 'name' (legacy fallback)
-            let query = supabase.from('employees').select('*').eq('username', username).limit(1);
+            let query = supabase.from('employees').select('*').ilike('username', username).limit(1);
             let { data: employees, error } = await query;
-
 
 
             if (error || !employees || employees.length === 0) {
                 // Try searching by name just in case (optional, remove if strict)
-                const { data: byName } = await supabase.from('employees').select('*').eq('name', username).limit(1);
+                const { data: byName } = await supabase.from('employees').select('*').ilike('name', username).limit(1);
                 if (byName && byName.length > 0) employees = byName;
                 else return { success: false, status: 'INVALID_CREDENTIALS', message: 'User not found' };
             }
