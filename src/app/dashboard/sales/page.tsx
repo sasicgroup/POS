@@ -621,7 +621,7 @@ export default function SalesPage() {
             </div>
 
             {/* Mobile Bottom Cart Bar */}
-            <div className={`fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-40 dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
+            <div className={`fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-[60] dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
                 <div className="flex gap-4">
                     <div className="flex-1">
                         <p className="text-xs text-slate-500 dark:text-slate-400">{cart.length} items in cart</p>

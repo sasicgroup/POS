@@ -731,7 +731,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Bulk Action Sticky Bar */}
-            <div className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 w-full max-w-2xl px-4 z-40 transition-all duration-300 ${selectedProducts.length > 0 ? 'translate-y-0 opacity-100' : 'translate-y-[200%] opacity-0'}`}>
+            <div className={`fixed bottom-20 lg:bottom-4 left-1/2 transform -translate-x-1/2 w-full max-w-2xl px-4 z-[60] transition-all duration-300 ${selectedProducts.length > 0 ? 'translate-y-0 opacity-100' : 'translate-y-[200%] opacity-0'}`}>
                 <div className="bg-slate-900 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between dark:bg-white dark:text-slate-900 border border-slate-800 dark:border-slate-200">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
