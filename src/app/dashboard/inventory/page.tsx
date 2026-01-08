@@ -194,7 +194,7 @@ export default function InventoryPage() {
                 const html5QrCode = new Html5Qrcode("scanner-reader");
                 scannerRef.current = html5QrCode;
 
-                const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
+                const config = { fps: 10, qrbox: { width: 200, height: 200 }, aspectRatio: 1.0 };
 
                 html5QrCode.start(
                     { facingMode: "environment" },
@@ -262,22 +262,19 @@ export default function InventoryPage() {
         );
 
         if (existingProduct) {
-            // Product found - open it for editing
-            setNewProduct({
-                name: existingProduct.name,
-                sku: existingProduct.sku,
-                category: existingProduct.category,
-                stock: existingProduct.stock,
-                price: existingProduct.price,
-                costPrice: existingProduct.costPrice || 0,
-                status: existingProduct.status || 'In Stock',
-                image: existingProduct.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
-                video: existingProduct.video || ''
-            });
-            setEditingId(existingProduct.id);
-            setIsAddProductOpen(true);
+            // Product found - highlight it and show only this product
+            setSelectedProducts([existingProduct.id]);
+            setSearchQuery(existingProduct.sku); // Filter to show only this product
             setIsScanning(false);
             showToast('success', `Product found: ${existingProduct.name}`);
+
+            // Scroll to the product
+            setTimeout(() => {
+                const element = document.getElementById(`product-${existingProduct.id}`);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 100);
         } else {
             // Product not found - pre-fill SKU for new product
             setNewProduct({ ...newProduct, sku: code });
@@ -609,6 +606,7 @@ export default function InventoryPage() {
                             filteredProducts.map((product) => (
                                 <tr
                                     key={product.id}
+                                    id={`product-${product.id}`}
                                     className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
                                     onClick={(e) => {
                                         if (!(e.target as HTMLElement).closest('button')) {
