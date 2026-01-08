@@ -54,15 +54,30 @@ export default function CommunicationPage() {
     // ... inside render ... 
 
     // Cost Calculation
-    const smsCostPerUnit = 0.12; // GHS
-    const segments = Math.ceil(Math.max(messageContent.length, 1) / 160);
-    // If 'all', use total count. If 'group', mock partial count (e.g. 20% of total). If 'manual', count commas.
-    const actualRecipients =
-        recipientType === 'all' ? recipientCount :
-            recipientType === 'manual' ? (messageContent ? 1 : 0) : // Rough estimate for now
-                Math.floor(recipientCount * 0.3); // Group estimate
+    // Cost Calculation Logic
+    const calculateSMSCost = (text: string, count: number) => {
+        // Basic GSM 7-bit set check (simplified)
+        // If text contains chars outside standard ASCII/GSM set, treat as Unicode
+        // Unicode segment = 70 chars, GSM = 160.
+        const isUnicode = /[^\u0000-\u00ff]/.test(text);
+        const segmentSize = isUnicode ? 70 : 160;
+        const segments = Math.ceil(Math.max(text.length, 1) / segmentSize);
+        const costPerSegment = 0.035; // Fixed mNotify rate
+        const totalCost = (count * segments * costPerSegment);
 
-    const estimatedCost = (actualRecipients * segments * smsCostPerUnit).toFixed(2);
+        return {
+            segments,
+            cost: totalCost.toFixed(3),
+            isUnicode,
+            segmentSize
+        };
+    };
+
+    const actualRecipients = recipientType === 'all' ? recipientCount :
+        recipientType === 'manual' ? (messageContent ? 1 : 0) :
+            Math.floor(recipientCount * 0.3);
+
+    const { segments, cost: estimatedCost, isUnicode } = calculateSMSCost(messageContent, actualRecipients);
 
     // Credits UI section replacement
     // <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{balance.toFixed(2)}</div>
@@ -288,8 +303,8 @@ export default function CommunicationPage() {
                                             placeholder="Type your message here..."
                                             className="w-full h-40 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
                                         />
-                                        <div className="absolute bottom-3 right-3 text-xs text-slate-400">
-                                            {messageContent.length} chars • {segments} SMS
+                                        <div className={`absolute bottom-3 right-3 text-xs ${isUnicode ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+                                            {messageContent.length} chars • {segments} SMS {isUnicode && '(Unicode)'}
                                         </div>
                                     </div>
 

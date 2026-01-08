@@ -135,7 +135,7 @@ const sendMNotifySMS = async (config: SMSConfig, phone: string, message: string)
         sender: config.mnotify.senderId,
         message: message,
         is_schedule: false,
-        schedule_date: ""
+        schedule_date: null
     };
 
     try {
@@ -197,33 +197,55 @@ const sendMetaWhatsApp = async (config: SMSConfig, phone: string, message: strin
     }
 };
 
-export const sendNotification = async (type: 'sale' | 'welcome', data: any) => {
-    const config = getSMSConfig();
+export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
+    // 1. Ensure config is loaded (Try memory, then DB)
+    let config = getSMSConfig(); // This already tries localStorage and then global smsConfig
 
-    console.log(`[SMS Module] Processing ${type} notification via ${config.provider}...`);
+    if (!config) {
+        console.warn('SMS Config not loaded. Notification skipped.');
+        return;
+    }
 
-    let message = '';
-    let phone = '';
+    const { notifications } = config;
+    const { owner, customer } = notifications;
 
-    if (type === 'welcome') {
-        if (data.customerPhone) {
-            phone = data.customerPhone;
-            message = config.templates.welcome || "Welcome {Name}! You have been registered.";
-            message = message.replace('{Name}', data.customerName || 'Customer');
+    // --- Customer Notifications ---
+    if (data.customerPhone) {
+        let msg = '';
+        if (type === 'welcome') {
+            msg = config.templates.welcome.replace('{Name}', data.customerName || 'Customer');
+        } else if (type === 'sale') {
+            msg = config.templates.receipt
+                .replace('{Amount}', data.amount.toFixed(2))
+                .replace('{Id}', (data.id || '').toString())
+                .replace('{PointsEarned}', (data.pointsEarned || '0').toString())
+                .replace('{TotalPoints}', (data.totalPoints || '0').toString());
         }
-    } else if (type === 'sale') {
-        if (data.customerPhone) {
-            phone = data.customerPhone;
-            message = config.templates.receipt || "Thanks for buying! Total: GHS {Amount}.";
-            message = message.replace('{Amount}', data.amount);
-            message = message.replace('{Id}', data.id);
-            message = message.replace('{PointsEarned}', data.pointsEarned || '0');
-            message = message.replace('{TotalPoints}', data.totalPoints || '0');
+
+        console.log(`[SMS] Sending ${type} to customer: ${data.customerPhone}`);
+
+        if (msg) {
+            if (customer.sms) await sendDirectMessage(data.customerPhone, msg, ['sms']);
+            if (customer.whatsapp) await sendDirectMessage(data.customerPhone, msg, ['whatsapp']);
         }
     }
 
-    if (phone && message) {
-        await sendDirectMessage(phone, message);
+    // --- Owner Notifications ---
+    // Assuming ownerPhone is available in data for owner notifications. 
+    // If not, we might need to fetch store settings.
+    // For now, we only support if data explicitly has 'ownerPhone' or checks 'sms.ts' notification settings.
+    // NOTE: Owner phone logic is currently dependent on 'data.ownerPhone' being passed by caller
+    // OR we could load it from active store settings if we had access here.
+    if (data.ownerPhone) {
+        let msg = '';
+        if (type === 'sale') {
+            msg = `New sale: GHS ${data.amount.toFixed(2)} by ${data.customerName || 'a customer'}.`;
+        }
+
+        if (msg) {
+            if (owner.sms) await sendDirectMessage(data.ownerPhone, msg, ['sms']);
+            if (owner.whatsapp) await sendDirectMessage(data.ownerPhone, msg, ['whatsapp']);
+        }
     }
 
     return true;
@@ -231,6 +253,8 @@ export const sendNotification = async (type: 'sale' | 'welcome', data: any) => {
 
 export const sendDirectMessage = async (phone: string, message: string, channels: ('sms' | 'whatsapp')[] = ['sms', 'whatsapp']) => {
     const config = getSMSConfig();
+
+    console.log(`[SMS] Direct Message to ${phone} via ${channels.join(', ')}`);
 
     // Send SMS
     if (channels.includes('sms')) {
@@ -263,9 +287,7 @@ export const getSMSBalance = async (): Promise<number> => {
     }
 
     if (config.provider === 'hubtel') {
-        // Hubtel balance check often requires complex auth or is strictly merchant-portal based 
-        // depending on the API version (v1 vs v2).
-        // Returning 0 for now unless specific endpoint is provided by user docs.
+        // Hubtel balance check implementation deferred
         return 0;
     }
 
