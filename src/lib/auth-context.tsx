@@ -118,12 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                     if (accessData) accessIds = accessData.map(a => a.store_id);
 
-                    // 2. Also check if they are "home" based in a store (if we knew it)
-                    // Ideally we re-fetch the employee to be safe
+                    // 2. Also check if they are "home" based in a store
                     const { data: freshEmp } = await supabase.from('employees').select('store_id').eq('id', currentUser.id).single();
                     if (freshEmp?.store_id) accessIds.push(freshEmp.store_id);
-                } else {
-                    // It is owner-1 (legacy/dev user), so we skip UUID-based lookups which cause 400 Bad Request
                 }
 
                 // Fetch Stores
@@ -131,8 +128,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds);
                     if (userStores) validStores = userStores;
                 } else {
-                    // Fallback: If no access records found, maybe they are owner/super or data gap?
-                    // If ID is 'owner-1' (legacy), fetch all
                     if (currentUser.id === 'owner-1') {
                         const { data: all } = await supabase.from('stores').select('*');
                         if (all) validStores = all;
@@ -143,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const mappedStores = validStores.map((s: any) => ({
                         ...s,
                         taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
-                        rolePermissions: s.role_permissions // Load permissions from DB
+                        rolePermissions: s.role_permissions
                     }));
                     setStores(mappedStores);
 
@@ -153,11 +148,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const finalStore = lastActive || mappedStores[0];
                     setActiveStore(finalStore);
                     if (finalStore?.id) {
-                        try {
-                            await loadSMSConfigFromDB(finalStore.id);
-                        } catch (err) {
-                            console.warn("Failed to load SMS config during auth init", err);
-                        }
+                        // Don't await this, let it load in background so we don't block Dashboard
+                        loadSMSConfigFromDB(finalStore.id).catch(err => console.warn("Failed to load SMS config", err));
                     }
                 }
             } catch (error) {
@@ -166,7 +158,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setIsLoading(false);
             }
         };
+
+        // Safety timeout to prevent infinite loading
+        const safetyTimer = setTimeout(() => {
+            setIsLoading((prev) => {
+                if (prev) {
+                    console.warn("Auth init timed out, forcing load completion");
+                    return false;
+                }
+                return prev;
+            });
+        }, 5000);
+
         initAuth();
+
+        return () => clearTimeout(safetyTimer);
     }, []);
 
     const finalizeLogin = async (loggedUser: User): Promise<{ success: boolean; status: 'SUCCESS'; tempUser: User }> => {
