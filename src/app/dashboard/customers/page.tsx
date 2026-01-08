@@ -33,15 +33,19 @@ export default function CustomersPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Edit State
-    const [isEditing, setIsEditing] = useState(false);
+    const [editingField, setEditingField] = useState<'name' | 'phone' | 'points' | null>(null);
     const [editName, setEditName] = useState('');
+    const [editPhone, setEditPhone] = useState('');
+    const [editPoints, setEditPoints] = useState(0);
     const [showOptions, setShowOptions] = useState(false);
 
     // Reset edit state when customer changes
     useEffect(() => {
-        setIsEditing(false);
+        setEditingField(null);
         setShowOptions(false);
         setEditName('');
+        setEditPhone('');
+        setEditPoints(0);
     }, [selectedCustomer]);
 
     const handleUpdateName = async () => {
@@ -59,7 +63,45 @@ export default function CustomersPage() {
             const updated = { ...selectedCustomer, name: editName };
             setSelectedCustomer(updated);
             setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
-            setIsEditing(false);
+            setEditingField(null);
+        }
+    };
+
+    const handleUpdatePhone = async () => {
+        if (!selectedCustomer || !activeStore?.id || !editPhone.trim()) return;
+
+        const { error } = await supabase
+            .from('customers')
+            .update({ phone: editPhone })
+            .eq('id', selectedCustomer.id);
+
+        if (error) {
+            console.error('Error updating phone', error);
+            alert('Failed to update phone');
+        } else {
+            const updated = { ...selectedCustomer, phone: editPhone };
+            setSelectedCustomer(updated);
+            setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+            setEditingField(null);
+        }
+    };
+
+    const handleUpdatePoints = async () => {
+        if (!selectedCustomer || !activeStore?.id) return;
+
+        const { error } = await supabase
+            .from('customers')
+            .update({ points: editPoints })
+            .eq('id', selectedCustomer.id);
+
+        if (error) {
+            console.error('Error updating points', error);
+            alert('Failed to update points');
+        } else {
+            const updated = { ...selectedCustomer, points: editPoints };
+            setSelectedCustomer(updated);
+            setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+            setEditingField(null);
         }
     };
 
@@ -191,16 +233,36 @@ export default function CustomersPage() {
                                     </button>
 
                                     {showOptions && (
-                                        <div className="absolute right-0 top-8 w-32 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-10 dark:bg-slate-800 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
+                                        <div className="absolute right-0 top-8 w-40 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-10 dark:bg-slate-800 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
                                             <button
                                                 onClick={() => {
-                                                    setIsEditing(true);
+                                                    setEditingField('name');
                                                     setEditName(selectedCustomer.name);
                                                     setShowOptions(false);
                                                 }}
                                                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 dark:text-slate-300 dark:hover:bg-slate-700"
                                             >
                                                 <Pencil className="h-3 w-3" /> Edit Name
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setEditingField('phone');
+                                                    setEditPhone(selectedCustomer.phone);
+                                                    setShowOptions(false);
+                                                }}
+                                                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 dark:text-slate-300 dark:hover:bg-slate-700"
+                                            >
+                                                <Phone className="h-3 w-3" /> Edit Phone
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setEditingField('points');
+                                                    setEditPoints(selectedCustomer.points || 0);
+                                                    setShowOptions(false);
+                                                }}
+                                                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 dark:text-slate-300 dark:hover:bg-slate-700"
+                                            >
+                                                <Pencil className="h-3 w-3" /> Edit Points
                                             </button>
                                         </div>
                                     )}
@@ -211,7 +273,7 @@ export default function CustomersPage() {
                                 <div className="mx-auto h-20 w-20 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 mb-4 dark:bg-slate-800">
                                     <User className="h-10 w-10" />
                                 </div>
-                                {isEditing ? (
+                                {editingField === 'name' ? (
                                     <div className="flex items-center justify-center gap-2 mb-1">
                                         <input
                                             type="text"
@@ -223,20 +285,57 @@ export default function CustomersPage() {
                                         <button onClick={handleUpdateName} className="p-1.5 bg-indigo-100 text-indigo-600 rounded-md hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-400">
                                             <Check className="h-4 w-4" />
                                         </button>
-                                        <button onClick={() => setIsEditing(false)} className="p-1.5 bg-slate-100 text-slate-600 rounded-md hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400">
+                                        <button onClick={() => setEditingField(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-md hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400">
                                             <X className="h-4 w-4" />
                                         </button>
                                     </div>
                                 ) : (
                                     <h2 className="text-xl font-bold text-slate-900 dark:text-white">{selectedCustomer.name}</h2>
                                 )}
-                                <p className="text-sm text-slate-500">{selectedCustomer.phone || 'No Phone'}</p>
+
+                                {editingField === 'phone' ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <input
+                                            type="tel"
+                                            value={editPhone}
+                                            onChange={(e) => setEditPhone(e.target.value)}
+                                            className="text-center text-sm bg-white border border-indigo-200 rounded-md px-2 py-1 w-full max-w-[180px] focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                                            autoFocus
+                                        />
+                                        <button onClick={handleUpdatePhone} className="p-1 bg-indigo-100 text-indigo-600 rounded-md hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-400">
+                                            <Check className="h-3 w-3" />
+                                        </button>
+                                        <button onClick={() => setEditingField(null)} className="p-1 bg-slate-100 text-slate-600 rounded-md hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400">
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-slate-500">{selectedCustomer.phone || 'No Phone'}</p>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4 mb-8">
                                 <div className="rounded-lg bg-indigo-50 p-4 text-center dark:bg-indigo-900/20">
                                     <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium uppercase">Points</p>
-                                    <p className="text-xl font-bold text-indigo-700 dark:text-indigo-300">{selectedCustomer.points || 0}</p>
+                                    {editingField === 'points' ? (
+                                        <div className="flex items-center justify-center gap-1 mt-1">
+                                            <input
+                                                type="number"
+                                                value={editPoints}
+                                                onChange={(e) => setEditPoints(parseInt(e.target.value) || 0)}
+                                                className="text-center text-lg font-bold bg-white border border-indigo-200 rounded-md px-2 py-1 w-20 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                                                autoFocus
+                                            />
+                                            <button onClick={handleUpdatePoints} className="p-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                                                <Check className="h-3 w-3" />
+                                            </button>
+                                            <button onClick={() => setEditingField(null)} className="p-1 bg-slate-300 text-slate-600 rounded-md hover:bg-slate-400">
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xl font-bold text-indigo-700 dark:text-indigo-300">{selectedCustomer.points || 0}</p>
+                                    )}
                                 </div>
                                 <div className="rounded-lg bg-emerald-50 p-4 text-center dark:bg-emerald-900/20">
                                     <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium uppercase">Spent</p>

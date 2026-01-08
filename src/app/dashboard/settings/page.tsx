@@ -44,6 +44,14 @@ export default function SettingsPage() {
     const [storeLocation, setStoreLocation] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
+    // Profile Edit State
+    const [profileData, setProfileData] = useState({
+        name: '',
+        phone: '',
+        username: ''
+    });
+    const [isEditingProfile, setIsEditingProfile] = useState(false);
+
     // Team Management State
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [editingMember, setEditingMember] = useState<any>(null);
@@ -59,7 +67,14 @@ export default function SettingsPage() {
             setStoreName(activeStore.name);
             setStoreLocation(activeStore.location);
         }
-    }, [activeStore]);
+        if (user) {
+            setProfileData({
+                name: user.name || '',
+                phone: user.phone || '',
+                username: user.username || ''
+            });
+        }
+    }, [activeStore, user]);
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -90,8 +105,10 @@ export default function SettingsPage() {
 
     const tabs = [
         { id: 'general', label: 'General', icon: Building2 },
+        { id: 'profile', label: 'My Profile', icon: Users },
         { id: 'products', label: 'Product Settings', icon: Package },
         { id: 'users', label: 'Team Members', icon: Users },
+        { id: 'payments', label: 'Payments', icon: CreditCard },
         { id: 'sms', label: 'SMS & Notifications', icon: MessageSquare },
     ];
 
