@@ -153,7 +153,6 @@ export default function InventoryPage() {
                     <div style="font-weight: bold; margin-bottom: 5px;">${activeStore.name}</div>
                     <div style="font-size: 12px; margin-bottom: 10px;">${product.name}</div>
                     <svg id="barcode"></svg>
-                    <div style="font-weight: bold; margin-top: 5px;">GHS ${product.price.toFixed(2)}</div>
                     <script>
                         JsBarcode("#barcode", "${product.sku}", {
                             format: "CODE128",
