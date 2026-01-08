@@ -17,6 +17,8 @@ export interface Store {
         type: 'percentage' | 'fixed';
         value: number;
     };
+    receiptPrefix?: string; // e.g., "TRX", "INV", "RCP"
+    lastTransactionNumber?: number; // Sequential counter
 }
 
 // Define User Type

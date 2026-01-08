@@ -7,6 +7,7 @@ import { useToast } from '@/lib/toast-context';
 import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { supabase } from '@/lib/supabase';
 
 export default function SalesPage() {
     const { activeStore } = useAuth();
@@ -283,7 +284,7 @@ export default function SalesPage() {
                     <span>${cartTotal.toFixed(2)}</span>
                 </div>
                 <div class="item">
-                    <span>Tax (${activeStore.taxSettings?.type === 'percentage' ? activeStore.taxSettings.value + '%' : 'Fixed'})</span>
+                    <span>Tax (${taxSettings.type === 'percentage' ? taxSettings.value + '%' : 'Fixed'})</span>
                     <span>${taxAmount.toFixed(2)}</span>
                 </div>
                 ${redeemPoints ? `
@@ -327,7 +328,11 @@ export default function SalesPage() {
     const handleCheckout = async () => {
         // Process Payment Logic would go here
 
-        const trxId = `TRX-${Date.now().toString().slice(-4)}`;
+        // Generate transaction ID with store prefix and sequential number
+        const transactionNumber = (activeStore.lastTransactionNumber || 0) + 1;
+        const prefix = activeStore.receiptPrefix || 'TRX';
+        const paddedNumber = transactionNumber.toString().padStart(5, '0');
+        const trxId = `${prefix}-${paddedNumber}`;
 
         // Process Inventory Sync & DB Save
         const saleId = await processSale({
@@ -348,6 +353,12 @@ export default function SalesPage() {
             showToast('error', "Failed to process sale. Please try again.");
             return;
         }
+
+        // Update transaction counter in database
+        await supabase
+            .from('stores')
+            .update({ last_transaction_number: transactionNumber })
+            .eq('id', activeStore.id);
 
         const pointsEarned = Math.floor(grandTotal);
         const finalPoints = redeemPoints ? (loyaltyPoints - 100) + pointsEarned : loyaltyPoints + pointsEarned;
