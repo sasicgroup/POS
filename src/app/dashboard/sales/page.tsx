@@ -53,32 +53,12 @@ export default function SalesPage() {
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | null>(null);
     const [showMobileCart, setShowMobileCart] = useState(false);
 
+
     // Scanner Logic - must be declared before early return
     const [cameraError, setCameraError] = useState('');
     const scannerRef = useRef<Html5Qrcode | null>(null);
 
-    // Early return AFTER all hooks
-    if (!activeStore) return null;
-
-    // Audio Refs
-    const beepAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3') : null;
-    const errorAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3') : null;
-    const successAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3') : null;
-
-    const playBeep = () => {
-        if (beepAudio) {
-            beepAudio.currentTime = 0;
-            beepAudio.play().catch(e => console.error("Audio play failed", e));
-        }
-    };
-
-    const playSuccess = () => {
-        if (successAudio) {
-            successAudio.currentTime = 0;
-            successAudio.play().catch(e => console.error("Audio play failed", e));
-        }
-    }
-
+    // Scanner useEffect - must be before early return
     useEffect(() => {
         if (isScanning) {
             setCameraError('');
@@ -148,6 +128,29 @@ export default function SalesPage() {
             }
         };
     }, [isScanning]);
+
+    // Early return AFTER all hooks
+    if (!activeStore) return null;
+
+    // Audio Refs
+    const beepAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3') : null;
+    const errorAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3') : null;
+    const successAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3') : null;
+
+    const playBeep = () => {
+        if (beepAudio) {
+            beepAudio.currentTime = 0;
+            beepAudio.play().catch(e => console.error("Audio play failed", e));
+        }
+    };
+
+    const playSuccess = () => {
+        if (successAudio) {
+            successAudio.currentTime = 0;
+            successAudio.play().catch(e => console.error("Audio play failed", e));
+        }
+    }
+
 
 
     const addToCart = (product: any) => {
