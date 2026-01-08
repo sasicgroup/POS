@@ -817,7 +817,7 @@ export default function SalesPage() {
                                                     <Plus className="h-4 w-4" />
                                                 </button>
                                             )}
-                                            )}
+
                                         </div>
                                     </div>
                                 );
