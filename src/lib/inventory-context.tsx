@@ -84,15 +84,18 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             fetchProducts();
         } else {
             setProducts([]);
+            setIsLoading(false); // Ensure loading stops when no store
         }
     }, [activeStore?.id]);
 
     const fetchProducts = async () => {
         if (!activeStore?.id) {
+            console.log('[Inventory] No active store, stopping load');
             setIsLoading(false);
             return;
         }
 
+        console.log('[Inventory] Fetching products for store:', activeStore.id);
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -102,9 +105,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 .order('created_at', { ascending: false }); // Most recent first
 
             if (error) {
-                console.error('Error fetching products:', error);
+                console.error('[Inventory] Error fetching products:', error);
                 setProducts([]);
             } else if (data) {
+                console.log('[Inventory] Fetched products:', data.length);
                 // Map database snake_case to frontend camelCase
                 const mappedProducts = data.map((p: any) => ({
                     ...p,
@@ -116,9 +120,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setProducts(mappedProducts);
             }
         } catch (err) {
-            console.error('Unexpected error fetching products:', err);
+            console.error('[Inventory] Unexpected error fetching products:', err);
             setProducts([]);
         } finally {
+            console.log('[Inventory] Fetch complete, setting loading to false');
             setIsLoading(false);
         }
     };
