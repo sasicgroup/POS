@@ -27,81 +27,17 @@ export interface HubtelPaymentResponse {
  * Initialize Hubtel payment
  * This creates a payment request and returns a checkout URL or USSD code
  */
+import { initiateHubtelPaymentAction } from '@/app/actions/payment-actions';
+
+/**
+ * Initialize Hubtel payment
+ * Uses Server Action to avoid CORS
+ */
 export async function initializeHubtelPayment(
     config: HubtelConfig,
     paymentRequest: HubtelPaymentRequest
 ): Promise<HubtelPaymentResponse> {
-    try {
-        if (!config.enabled) {
-            return {
-                success: false,
-                error: 'Hubtel payment is not enabled. Please configure it in Settings > Payments.'
-            };
-        }
-
-        if (!config.api_id || !config.api_key) {
-            return {
-                success: false,
-                error: 'Hubtel API credentials are missing.'
-            };
-        }
-
-        // Basic Auth for Hubtel (API ID : API Key)
-        const authHeader = 'Basic ' + btoa(`${config.api_id}:${config.api_key}`);
-
-        const apiUrl = 'https://api-v2.hubtel.com/merchantaccount/onlinecheckout/items/initiate';
-
-        // Prepare request payload
-        const payload = {
-            totalAmount: paymentRequest.amount,
-            description: paymentRequest.description,
-            callbackUrl: paymentRequest.callbackUrl || `${window.location.origin}/dashboard/sales`,
-            returnUrl: `${window.location.origin}/dashboard/sales`,
-            cancellationUrl: `${window.location.origin}/dashboard/sales`,
-            clientReference: paymentRequest.clientReference,
-            customerName: paymentRequest.customerName,
-            customerMsisdn: paymentRequest.customerPhone,
-            customerEmail: '',
-        };
-
-        console.log('[Hubtel] Initiating payment:', payload);
-
-        // Make API request
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            console.error('[Hubtel] Payment initialization failed:', data);
-            return {
-                success: false,
-                error: data.message || 'Failed to initialize payment'
-            };
-        }
-
-        console.log('[Hubtel] Payment initialized:', data);
-
-        return {
-            success: true,
-            transactionId: data.transactionId,
-            checkoutUrl: data.checkoutUrl,
-            message: 'Payment initialized successfully'
-        };
-
-    } catch (error: any) {
-        console.error('[Hubtel] Error:', error);
-        return {
-            success: false,
-            error: error.message || 'An error occurred while processing payment'
-        };
-    }
+    return await initiateHubtelPaymentAction(config, paymentRequest);
 }
 
 /**
