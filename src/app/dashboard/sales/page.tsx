@@ -626,7 +626,7 @@ export default function SalesPage() {
             </div>
 
             {/* Mobile Bottom Cart Bar */}
-            <div className={`fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-30 dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
+            <div className={`fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-40 dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
                 <div className="flex gap-4">
                     <div className="flex-1">
                         <p className="text-xs text-slate-500 dark:text-slate-400">{cart.length} items in cart</p>
@@ -645,13 +645,13 @@ export default function SalesPage() {
 
             {/* Right Side: Cart/Checkout - Responsive Sidebar/Modal */}
             <div className={`
-                fixed inset-0 z-40 bg-white/50 backdrop-blur-sm lg:hidden
+                fixed inset-0 z-[60] bg-white/50 backdrop-blur-sm lg:hidden
                 ${showMobileCart ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none delay-200'}
                 transition-opacity duration-300
             `} onClick={() => setShowMobileCart(false)} />
 
             <div className={`
-                fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl transition-transform duration-300 ease-in-out dark:bg-slate-900
+                fixed inset-y-0 right-0 z-[70] w-full max-w-md bg-white shadow-2xl transition-transform duration-300 ease-in-out dark:bg-slate-900
                 lg:static lg:h-full lg:w-96 lg:bg-transparent lg:shadow-none lg:translate-x-0 lg:z-0
                 ${showMobileCart ? 'translate-x-0' : 'translate-x-full'}
             `}>
