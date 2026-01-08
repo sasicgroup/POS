@@ -94,9 +94,11 @@ export default function CommunicationPage() {
 
 
     const handleSaveConfig = () => {
-        if (config) {
-            updateSMSConfig(config);
+        if (config && activeStore?.id) {
+            updateSMSConfig(config, activeStore.id);
             alert('Settings Saved Successfully!');
+        } else {
+            alert('Error: No active store found. Cannot save settings.');
         }
     };
 
@@ -436,6 +438,21 @@ export default function CommunicationPage() {
                                         className="w-full h-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                     />
                                     <p className="text-xs text-slate-400 mt-2">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Amount}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Id}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{PointsEarned}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{TotalPoints}`}</span></p>
+                                </div>
+
+                                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Bell className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                                        <label className="font-semibold text-sm uppercase tracking-wide">Owner Sale Alert</label>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Notification sent to you (the owner) when a sale is made.</p>
+                                    <textarea
+                                        value={config.templates.ownerSale || ''}
+                                        onChange={(e) => setConfig({ ...config, templates: { ...config.templates, ownerSale: e.target.value } })}
+                                        className="w-full h-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        placeholder="New sale: GHS {Amount} by {Name}..."
+                                    />
+                                    <p className="text-xs text-slate-400 mt-2">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Amount}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Name}`}</span></p>
                                 </div>
                             </div>
                         </div>

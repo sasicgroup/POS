@@ -29,6 +29,7 @@ export interface SMSConfig {
     templates: {
         welcome: string;
         receipt: string;
+        ownerSale?: string;
     };
 }
 
@@ -49,7 +50,8 @@ let smsConfig: SMSConfig = {
     },
     templates: {
         welcome: "Welcome {Name}! You have been registered. Shop with us to earn points.",
-        receipt: "Thanks for buying! Total: GHS {Amount}. See you soon!"
+        receipt: "Thanks for buying! Total: GHS {Amount}. See you soon!",
+        ownerSale: "New Sale Alert: GHS {Amount} by {Name}. Total Today: {TotalOrders} orders."
     }
 };
 
@@ -239,7 +241,11 @@ export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
     if (data.ownerPhone) {
         let msg = '';
         if (type === 'sale') {
-            msg = `New sale: GHS ${data.amount.toFixed(2)} by ${data.customerName || 'a customer'}.`;
+            const template = config.templates.ownerSale || "New sale: GHS {Amount} by {Name}.";
+            msg = template
+                .replace('{Amount}', data.amount.toFixed(2))
+                .replace('{Name}', data.customerName || 'Customer')
+                .replace('{TotalOrders}', (data.totalOrders || '0').toString());
         }
 
         if (msg) {
