@@ -152,7 +152,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const lastActive = mappedStores.find((s: any) => s.id === storedStoreId);
                     const finalStore = lastActive || mappedStores[0];
                     setActiveStore(finalStore);
-                    if (finalStore?.id) loadSMSConfigFromDB(finalStore.id);
+                    if (finalStore?.id) {
+                        try {
+                            await loadSMSConfigFromDB(finalStore.id);
+                        } catch (err) {
+                            console.warn("Failed to load SMS config during auth init", err);
+                        }
+                    }
                 }
             } catch (error) {
                 console.error("Auth init failed", error);
@@ -192,7 +198,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setStores(mappedStores);
             setActiveStore(mappedStores[0]);
             localStorage.setItem('sms_active_store_id', mappedStores[0].id);
-            if (mappedStores[0].id) await loadSMSConfigFromDB(mappedStores[0].id);
+            if (mappedStores[0].id) {
+                // Background load for SMS config on login
+                loadSMSConfigFromDB(mappedStores[0].id).catch(err => console.error(err));
+            }
         }
 
         setUser(loggedUser);
