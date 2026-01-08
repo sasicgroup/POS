@@ -64,6 +64,7 @@ export default function LoyaltyPage() {
     };
 
     const handleRedeem = async () => {
+        if (!activeStore) return;
         if (!customer || !redeemAmount) return;
         const points = parseInt(redeemAmount);
         if (isNaN(points) || points <= 0) {
