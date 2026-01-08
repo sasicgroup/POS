@@ -8,9 +8,6 @@ import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartp
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
-import { initializeHubtelPayment } from '@/lib/hubtel';
-import { initializePaystackPayment } from '@/lib/paystack';
-import { getPaymentSettings, PaymentSettings } from '@/lib/payment-settings';
 
 export default function SalesPage() {
     const { activeStore, user } = useAuth();
@@ -63,19 +60,7 @@ export default function SalesPage() {
     const [isScanning, setIsScanning] = useState(false);
     const [scannedProduct, setScannedProduct] = useState<any | null>(null);
 
-    // Payment Settings State
-    const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
-    const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-    useEffect(() => {
-        const loadPaymentSettings = async () => {
-            if (activeStore?.id) {
-                const settings = await getPaymentSettings(activeStore.id);
-                setPaymentSettings(settings);
-            }
-        };
-        loadPaymentSettings();
-    }, [activeStore]);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -1088,92 +1073,9 @@ export default function SalesPage() {
                                     <button
                                         onClick={async () => {
                                             setShowCheckoutConfirm(false);
-
-                                            if (paymentMethod === 'momo') {
-                                                if (!paymentSettings) {
-                                                    showToast('error', 'Payment settings not loaded. Please try again.');
-                                                    return;
-                                                }
-
-                                                const provider = paymentSettings.default_provider;
-
-                                                if (provider === 'hubtel' && !paymentSettings.hubtel.enabled) {
-                                                    showToast('error', 'Hubtel payments are disabled. Please contact admin.');
-                                                    return;
-                                                }
-                                                if (provider === 'paystack' && !paymentSettings.paystack.enabled) {
-                                                    showToast('error', 'Paystack payments are disabled. Please contact admin.');
-                                                    return;
-                                                }
-
-                                                // Validate credentials
-                                                if (provider === 'hubtel') {
-                                                    if (!paymentSettings.hubtel.api_id || !paymentSettings.hubtel.api_key) {
-                                                        showToast('error', 'Hubtel API credentials are missing. Please configure in settings.');
-                                                        return;
-                                                    }
-                                                } else if (provider === 'paystack') {
-                                                    if (!paymentSettings.paystack.secret_key) {
-                                                        showToast('error', 'Paystack secret key is missing. Please configure in settings.');
-                                                        return;
-                                                    }
-                                                }
-
-                                                setIsProcessingPayment(true);
-                                                let paymentResult;
-
-                                                try {
-                                                    if (provider === 'hubtel') {
-                                                        paymentResult = await initializeHubtelPayment(paymentSettings.hubtel, {
-                                                            amount: grandTotal,
-                                                            customerName: customerName || 'Guest',
-                                                            customerPhone: customerPhone || '0000000000',
-                                                            description: `Purchase from ${activeStore.name}`,
-                                                            clientReference: `TRX-${Date.now()}`
-                                                        });
-                                                    } else {
-                                                        paymentResult = await initializePaystackPayment(paymentSettings.paystack, {
-                                                            amount: grandTotal,
-                                                            email: (customerName ? `${customerName.replace(/\s+/g, '')}@email.com` : 'guest@email.com').toLowerCase(),
-                                                            reference: `TRX-${Date.now()}`,
-                                                            metadata: {
-                                                                customer_name: customerName,
-                                                                customer_phone: customerPhone
-                                                            }
-                                                        });
-                                                    }
-
-                                                    setIsProcessingPayment(false);
-
-                                                    // Cast to any to access provider-specific fields
-                                                    const result = paymentResult as any;
-                                                    const checkoutUrl = result.checkoutUrl || result.authorization_url;
-
-                                                    if (result.success && checkoutUrl) {
-                                                        // Open checkout in new window
-                                                        window.open(checkoutUrl, '_blank');
-                                                        showToast('info', 'Complete payment in the opened window');
-
-                                                        // Proceed with checkout after user confirms or automate verification later
-                                                        setTimeout(() => {
-                                                            handleCheckout();
-                                                        }, 5000);
-                                                    } else {
-                                                        const errorMsg = result.error || 'Payment initialization failed';
-                                                        console.error('[Payment Error]', errorMsg, result);
-                                                        showToast('error', errorMsg);
-                                                    }
-                                                } catch (err: any) {
-                                                    setIsProcessingPayment(false);
-                                                    console.error('[Payment Exception]', err);
-                                                    showToast('error', `Payment failed: ${err.message || 'Network error. Please check your connection.'}`);
-                                                }
-                                            } else {
-                                                // Cash payment - proceed normally
-                                                handleCheckout();
-                                            }
+                                            // All payment methods (cash, momo, card) now proceed directly to checkout
+                                            handleCheckout();
                                         }}
-                                        disabled={isProcessingPayment}
                                         className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
                                     >
                                         Confirm
