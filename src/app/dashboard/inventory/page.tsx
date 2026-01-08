@@ -5,6 +5,7 @@ import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
 import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
@@ -32,6 +33,13 @@ export default function InventoryPage() {
     const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+
+    // Patch: Ensure scanner stops if component unmounts
+    useEffect(() => {
+        return () => {
+            // Cleanup global scanner if needed, though ref cleanup covers mostly
+        }
+    }, []);
 
     const getEmbedUrl = (url: string) => {
         if (!url) return '';
@@ -167,38 +175,50 @@ export default function InventoryPage() {
     };
 
     // Scanner Logic
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    // Scanner Logic
     const [cameraError, setCameraError] = useState('');
+    const scannerRef = useRef<Html5Qrcode | null>(null);
 
     useEffect(() => {
-        let stream: MediaStream | null = null;
-
         if (isScanning) {
             setCameraError('');
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(s => {
-                    stream = s;
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream;
-                        videoRef.current.play();
+            // Small delay to ensure DOM is ready
+            setTimeout(() => {
+                const html5QrCode = new Html5Qrcode("scanner-reader");
+                scannerRef.current = html5QrCode;
+
+                const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
+
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText, decodedResult) => {
+                        handleScan(decodedText);
+                    },
+                    (errorMessage) => {
+                        // ignore errors for each frame
                     }
-                })
-                .catch(err => {
-                    console.error("Camera access error:", err);
-                    if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-                        setCameraError('No camera found on this device. Please enter manually.');
-                    } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        setCameraError('Camera permission denied. Please allow camera access.');
-                    } else {
-                        setCameraError('Unable to access camera. Please enter manually.');
-                    }
+                ).catch(err => {
+                    console.error("Camera start error:", err);
+                    setCameraError("Unable to access camera. Please ensure you have granted permission.");
                 });
+            }, 100);
+        } else {
+            if (scannerRef.current) {
+                scannerRef.current.stop().then(() => {
+                    scannerRef.current?.clear();
+                    scannerRef.current = null;
+                }).catch(err => console.error("Stop failed", err));
+            }
         }
 
         return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
+            if (scannerRef.current) {
+                if (scannerRef.current.isScanning) {
+                    scannerRef.current.stop().then(() => {
+                        scannerRef.current?.clear();
+                    }).catch(console.error);
+                }
             }
         };
     }, [isScanning]);
@@ -654,56 +674,24 @@ export default function InventoryPage() {
                                 <X className="h-6 w-6" />
                             </button>
                         </div>
-                        <div className="relative aspect-[4/3] bg-black">
-                            <video
-                                ref={videoRef}
-                                className="h-full w-full object-cover opacity-80"
-                                playsInline
-                                muted
-                                autoPlay
-                            />
-                            <canvas ref={canvasRef} className="hidden" />
-
-                            {/* Scanning overlay */}
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="relative h-48 w-64 border-2 border-indigo-500/50 rounded-lg">
-                                    <div className="absolute inset-0 border-2 border-indigo-500 rounded-lg animate-pulse"></div>
-                                    <div className="absolute top-1/2 left-0 w-full h-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-scan"></div>
-                                </div>
-                            </div>
-
-                            {/* Status Text */}
-                            <div className="absolute bottom-4 left-0 right-0 text-center">
-                                <p className="text-sm font-medium text-white shadow-sm bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur-sm">
-                                    {cameraError ? cameraError : 'Align barcode within frame'}
-                                </p>
-                            </div>
+                        <div className="relative aspect-[4/3] bg-black overflow-hidden rounded-lg">
+                            <div id="scanner-reader" className="w-full h-full"></div>
+                        </div>
+                        {/* Status Text */}
+                        <div className="absolute bottom-4 left-0 right-0 text-center">
+                            <p className="text-sm font-medium text-white shadow-sm bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur-sm">
+                                {cameraError ? cameraError : 'Align barcode within frame'}
+                            </p>
                         </div>
 
                         {/* Manual entry / fallback */}
                         <div className="p-6 bg-slate-900 border-t border-slate-800">
-                            <div className="flex justify-between items-center mb-4">
+                            <div className="flex justify-between items-center">
                                 <h3 className="text-white font-medium">Scanner Active</h3>
                                 <div className="flex gap-2">
                                     <span className="animate-ping h-2 w-2 rounded-full bg-indigo-500"></span>
                                     <span className="text-xs text-indigo-400">Detecting...</span>
                                 </div>
-                            </div>
-
-                            {/* Simulation Buttons for testing */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <button
-                                    onClick={() => handleScan('ACC-001')}
-                                    className="px-3 py-2 text-xs font-medium bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors border border-slate-700"
-                                >
-                                    Simulate 'ACC-001'
-                                </button>
-                                <button
-                                    onClick={() => handleScan('APP-004')}
-                                    className="px-3 py-2 text-xs font-medium bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors border border-slate-700"
-                                >
-                                    Simulate 'APP-004'
-                                </button>
                             </div>
                         </div>
                     </div>
