@@ -627,57 +627,73 @@ export default function SalesPage() {
                                 <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">Try adjusting your search</p>
                             </div>
                         ) : (
-                            filteredProducts.map(product => (
-                                <div
-                                    key={product.id}
-                                    onClick={() => {
-                                        // Mobile Tap to Add
-                                        if (window.innerWidth < 1024) addToCart(product);
-                                    }}
-                                    className="group relative grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border border-slate-200 bg-white p-2 sm:p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-800 dark:hover:border-indigo-900 active:scale-[0.99] lg:active:scale-100"
-                                >
-                                    <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
-                                        <div className="relative h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
-                                            <img
-                                                src={product.image}
-                                                alt={product.name}
-                                                className="h-full w-full rounded-lg object-cover bg-slate-100"
-                                            />
+                            filteredProducts.map(product => {
+                                const cartItem = cart.find(item => item.id === product.id);
+                                const qty = cartItem ? cartItem.quantity : 0;
+
+                                return (
+                                    <div
+                                        key={product.id}
+                                        onClick={() => {
+                                            // Mobile Tap to Add
+                                            if (window.innerWidth < 1024) addToCart(product);
+                                        }}
+                                        className={`group relative grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border ${qty > 0 ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50/10' : 'border-slate-200 bg-white'} p-2 sm:p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-800 dark:hover:border-indigo-900 active:scale-[0.99] lg:active:scale-100`}
+                                    >
+                                        <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
+                                            <div className="relative h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
+                                                <img
+                                                    src={product.image}
+                                                    alt={product.name}
+                                                    className="h-full w-full rounded-lg object-cover bg-slate-100"
+                                                />
+                                                {qty > 0 && (
+                                                    <div className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-indigo-600 text-[10px] font-bold text-white flex items-center justify-center shadow-sm sm:hidden border-2 border-white dark:border-slate-800">
+                                                        {qty}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h3 className="text-sm font-semibold text-slate-900 truncate dark:text-slate-100">{product.name}</h3>
+                                                <p className="text-xs text-slate-500">{product.sku}</p>
+                                            </div>
                                         </div>
-                                        <div className="min-w-0">
-                                            <h3 className="text-sm font-semibold text-slate-900 truncate dark:text-slate-100">{product.name}</h3>
-                                            <p className="text-xs text-slate-500">{product.sku}</p>
+                                        <div className="hidden sm:block sm:col-span-3">
+                                            <div className="flex flex-col gap-1 items-start">
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                    <Tag className="h-3 w-3" />
+                                                    {product.category}
+                                                </span>
+                                                <span className={`text-xs font-bold ${product.stock > 10 ? 'text-emerald-600 dark:text-emerald-400' : product.stock > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                    {product.stock} in stock
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="col-span-3 sm:col-span-2 text-right">
+                                            <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                                                {product.price.toFixed(2)}
+                                            </p>
+                                        </div>
+                                        <div className="col-span-1 text-right flex justify-end">
+                                            {qty > 0 ? (
+                                                <div className="h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm animate-in zoom-in">
+                                                    {qty}
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        addToCart(product);
+                                                    }}
+                                                    className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 hidden sm:inline-block"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="hidden sm:block sm:col-span-3">
-                                        <div className="flex flex-col gap-1 items-start">
-                                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                                <Tag className="h-3 w-3" />
-                                                {product.category}
-                                            </span>
-                                            <span className={`text-xs font-bold ${product.stock > 10 ? 'text-emerald-600 dark:text-emerald-400' : product.stock > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                {product.stock} in stock
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="col-span-3 sm:col-span-2 text-right">
-                                        <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                                            {product.price.toFixed(2)}
-                                        </p>
-                                    </div>
-                                    <div className="col-span-1 text-right">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                addToCart(product);
-                                            }}
-                                            className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 hidden sm:inline-block"
-                                        >
-                                            <Plus className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </div>
