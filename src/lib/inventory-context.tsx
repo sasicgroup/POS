@@ -19,6 +19,7 @@ interface Product {
 
 interface InventoryContextType {
     products: Product[];
+    isLoading: boolean;
     searchQuery: string;
     setSearchQuery: (query: string) => void;
     filteredProducts: Product[];
@@ -46,6 +47,7 @@ const InventoryContext = createContext<InventoryContextType | undefined>(undefin
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const { activeStore, user } = useAuth();
     const [products, setProducts] = useState<Product[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategories, setActiveCategories] = useState<string[]>(['All']);
 
@@ -86,26 +88,38 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }, [activeStore?.id]);
 
     const fetchProducts = async () => {
-        if (!activeStore?.id) return;
+        if (!activeStore?.id) {
+            setIsLoading(false);
+            return;
+        }
 
-        const { data, error } = await supabase
-            .from('products')
-            .select('*')
-            .eq('store_id', activeStore.id);
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .order('created_at', { ascending: false }); // Most recent first
 
-        if (error) {
-            console.error('Error fetching products:', error);
-        } else if (data) {
-            // Map database snake_case to frontend camelCase
-            const mappedProducts = data.map((p: any) => ({
-                ...p,
-                costPrice: p.cost_price || 0,
-                // Ensure other fields are present or default
-                status: p.status || 'In Stock',
-                video: p.video || '',
-                image: p.image || ''
-            }));
-            setProducts(mappedProducts);
+            if (error) {
+                console.error('Error fetching products:', error);
+                setProducts([]);
+            } else if (data) {
+                // Map database snake_case to frontend camelCase
+                const mappedProducts = data.map((p: any) => ({
+                    ...p,
+                    costPrice: p.cost_price || 0,
+                    status: p.status || 'In Stock',
+                    video: p.video || '',
+                    image: p.image || ''
+                }));
+                setProducts(mappedProducts);
+            }
+        } catch (err) {
+            console.error('Unexpected error fetching products:', err);
+            setProducts([]);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -292,6 +306,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return (
         <InventoryContext.Provider value={{
             products,
+            isLoading,
             searchQuery,
             setSearchQuery,
             filteredProducts,

@@ -10,7 +10,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 
 export default function SalesPage() {
     const { activeStore } = useAuth();
-    const { products, processSale } = useInventory();
+    const { products, isLoading, processSale } = useInventory();
     const { showToast } = useToast();
     const [cart, setCart] = useState<any[]>([]);
 
@@ -522,57 +522,89 @@ export default function SalesPage() {
                             <div className="col-span-1"></div>
                         </div>
 
-                        {filteredProducts.map(product => (
-                            <div
-                                key={product.id}
-                                onClick={() => {
-                                    // Mobile Tap to Add
-                                    if (window.innerWidth < 1024) addToCart(product);
-                                }}
-                                className="group relative grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border border-slate-200 bg-white p-2 sm:p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-800 dark:hover:border-indigo-900 active:scale-[0.99] lg:active:scale-100"
-                            >
-                                <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
-                                    <div className="relative h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
-                                        <img
-                                            src={product.image}
-                                            alt={product.name}
-                                            className="h-full w-full rounded-lg object-cover bg-slate-100"
-                                        />
+                        {isLoading ? (
+                            // Loading skeleton
+                            Array.from({ length: 6 }).map((_, i) => (
+                                <div key={`skeleton-${i}`} className="grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border border-slate-200 bg-white p-2 sm:p-3 shadow-sm dark:border-slate-800 dark:bg-slate-800 animate-pulse">
+                                    <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
+                                        <div className="h-10 w-10 sm:h-12 sm:w-12 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                        <div className="space-y-2 flex-1">
+                                            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                            <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                        </div>
                                     </div>
-                                    <div className="min-w-0">
-                                        <h3 className="text-sm font-semibold text-slate-900 truncate dark:text-slate-100">{product.name}</h3>
-                                        <p className="text-xs text-slate-500">{product.sku}</p>
+                                    <div className="hidden sm:block sm:col-span-3">
+                                        <div className="space-y-2">
+                                            <div className="h-5 w-24 bg-slate-200 dark:bg-slate-700 rounded-full"></div>
+                                            <div className="h-4 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="hidden sm:block sm:col-span-3">
-                                    <div className="flex flex-col gap-1 items-start">
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                            <Tag className="h-3 w-3" />
-                                            {product.category}
-                                        </span>
-                                        <span className={`text-xs font-bold ${product.stock > 10 ? 'text-emerald-600 dark:text-emerald-400' : product.stock > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                            {product.stock} in stock
-                                        </span>
+                                    <div className="col-span-3 sm:col-span-2 text-right">
+                                        <div className="h-5 w-16 bg-slate-200 dark:bg-slate-700 rounded ml-auto"></div>
+                                    </div>
+                                    <div className="col-span-1">
+                                        <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg ml-auto"></div>
                                     </div>
                                 </div>
-                                <div className="col-span-3 sm:col-span-2 text-right">
-                                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                                        {product.price.toFixed(2)}
-                                    </p>
-                                </div>
-                                <div className="col-span-1 text-right">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            addToCart(product);
-                                        }}
-                                        className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 hidden sm:inline-block"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
-                                </div>
+                            ))
+                        ) : filteredProducts.length === 0 ? (
+                            <div className="text-center py-12">
+                                <p className="text-slate-400 dark:text-slate-500 text-lg">No products found</p>
+                                <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">Try adjusting your search</p>
                             </div>
-                        ))}
+                        ) : (
+                            filteredProducts.map(product => (
+                                <div
+                                    key={product.id}
+                                    onClick={() => {
+                                        // Mobile Tap to Add
+                                        if (window.innerWidth < 1024) addToCart(product);
+                                    }}
+                                    className="group relative grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border border-slate-200 bg-white p-2 sm:p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-800 dark:hover:border-indigo-900 active:scale-[0.99] lg:active:scale-100"
+                                >
+                                    <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
+                                        <div className="relative h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
+                                            <img
+                                                src={product.image}
+                                                alt={product.name}
+                                                className="h-full w-full rounded-lg object-cover bg-slate-100"
+                                            />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h3 className="text-sm font-semibold text-slate-900 truncate dark:text-slate-100">{product.name}</h3>
+                                            <p className="text-xs text-slate-500">{product.sku}</p>
+                                        </div>
+                                    </div>
+                                    <div className="hidden sm:block sm:col-span-3">
+                                        <div className="flex flex-col gap-1 items-start">
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                <Tag className="h-3 w-3" />
+                                                {product.category}
+                                            </span>
+                                            <span className={`text-xs font-bold ${product.stock > 10 ? 'text-emerald-600 dark:text-emerald-400' : product.stock > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                {product.stock} in stock
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="col-span-3 sm:col-span-2 text-right">
+                                        <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                                            {product.price.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div className="col-span-1 text-right">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                addToCart(product);
+                                            }}
+                                            className="rounded-lg bg-indigo-50 p-2 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 hidden sm:inline-block"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
             </div>
