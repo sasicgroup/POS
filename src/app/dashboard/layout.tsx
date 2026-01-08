@@ -33,7 +33,7 @@ import {
 import { ToastProvider } from '@/lib/toast-context';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const { user, logout, activeStore, stores, switchStore, createStore } = useAuth();
+    const { user, logout, activeStore, stores, switchStore, createStore, hasPermission } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -50,27 +50,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!user) return null;
 
     const navigation = [
-        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-        { name: 'Inventory', href: '/dashboard/inventory', icon: Package },
-        { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag },
-        { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock },
-        { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles },
-        { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award },
-        { name: 'Customers', href: '/dashboard/customers', icon: Users },
-        { name: 'Employees', href: '/dashboard/employees', icon: CreditCard },
-        { name: 'Expenses', href: '/dashboard/expenses', icon: Receipt },
-        { name: 'Reports', href: '/dashboard/reports', icon: TrendingUp },
-        { name: 'Activity Logs', href: '/dashboard/logs', icon: Activity },
-        { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck },
-        { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare },
-        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
+        { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
+        { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
+        { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock, permission: 'view_sales_history' },
+        { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'view_analytics' },
+        { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award, permission: 'manage_customers' },
+        { name: 'Customers', href: '/dashboard/customers', icon: Users, permission: 'view_customers' },
+        { name: 'Employees', href: '/dashboard/employees', icon: CreditCard, permission: 'view_employees' },
+        { name: 'Expenses', href: '/dashboard/expenses', icon: Receipt, permission: 'view_analytics' },
+        { name: 'Reports', href: '/dashboard/reports', icon: TrendingUp, permission: 'view_analytics' },
+        { name: 'Activity Logs', href: '/dashboard/logs', icon: Activity, permission: 'view_analytics' },
+        { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck, permission: 'view_roles' },
+        { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare, permission: 'manage_customers' },
+        { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
     ];
+
+    const filteredNavigation = navigation.filter(item => !item.permission || hasPermission(item.permission));
 
     return (
         <ToastProvider>
             <InventoryProvider>
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
-                    {/* Mobile Sidebar Backdrop */}
+                    {/* ... */}
                     {isSidebarOpen && (
                         <div
                             className="fixed inset-0 z-20 bg-black/50 lg:hidden"
@@ -91,7 +93,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                             {/* Nav Links */}
                             <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-                                {navigation.map((item) => {
+                                {filteredNavigation.map((item) => {
                                     const isActive = pathname === item.href;
                                     return (
                                         <Link

@@ -1,22 +1,28 @@
 'use client';
 
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, DEFAULT_PERMISSIONS } from '@/lib/auth-context';
 import { useState, useEffect } from 'react';
 import { Shield, Lock, Save, ShieldCheck, Store, Users, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/lib/toast-context';
 
 export default function RolesPage() {
-    const { activeStore, user } = useAuth();
-    const [activeTab, setActiveTab] = useState<'permissions' | 'access'>('access');
+    const { activeStore, user, updateRolePermissions } = useAuth();
+    const { showToast } = useToast();
+    const [activeTab, setActiveTab] = useState<'permissions' | 'access'>('permissions');
 
     // Permissions State
-    const [activeRoleSelector, setActiveRoleSelector] = useState('admin');
-    const [rolePermissions, setRolePermissions] = useState<any>({ /* ... keep existing ... */
-        super_admin: { all: true },
-        admin: { view_dashboard: true, view_analytics: true, view_inventory: true, add_product: true, edit_product: true, delete_product: true, adjust_stock: true, access_pos: true, process_returns: true, give_discount: true, view_sales_history: true, view_customers: true, manage_customers: true, view_employees: true, manage_employees: true, access_settings: true },
-        manager: { view_dashboard: true, view_analytics: true, view_inventory: true, add_product: true, edit_product: true, delete_product: false, adjust_stock: true, access_pos: true, process_returns: true, give_discount: true, view_sales_history: true, view_customers: true, manage_customers: true, view_employees: true, manage_employees: false, access_settings: false },
-        staff: { view_dashboard: true, view_analytics: false, view_inventory: true, add_product: false, edit_product: false, delete_product: false, adjust_stock: false, access_pos: true, process_returns: false, give_discount: false, view_sales_history: false, view_customers: true, manage_customers: true, view_employees: false, manage_employees: false, access_settings: false }
-    });
+    const [activeRoleSelector, setActiveRoleSelector] = useState('manager');
+    const [rolePermissions, setRolePermissions] = useState<any>(DEFAULT_PERMISSIONS);
+
+    // Load from store on mount/change
+    useEffect(() => {
+        if (activeStore?.rolePermissions) {
+            setRolePermissions(activeStore.rolePermissions);
+        } else {
+            setRolePermissions(DEFAULT_PERMISSIONS);
+        }
+    }, [activeStore]);
 
     // Access Management State
     const [employees, setEmployees] = useState<any[]>([]);
@@ -86,12 +92,45 @@ export default function RolesPage() {
         { module: 'Sales (POS)', actions: [{ id: 'access_pos', label: 'Access POS' }, { id: 'process_returns', label: 'Process Returns' }, { id: 'give_discount', label: 'Give Discounts' }, { id: 'view_sales_history', label: 'View Sales History' }] },
         { module: 'Customers', actions: [{ id: 'view_customers', label: 'View Customers' }, { id: 'manage_customers', label: 'Add/Edit/Delete Customers' }] },
         { module: 'Employees', actions: [{ id: 'view_employees', label: 'View Employees' }, { id: 'manage_employees', label: 'Manage Employees & Roles' }] },
-        { module: 'Settings', actions: [{ id: 'access_settings', label: 'Access Store Settings' }] }
+        { module: 'Settings', actions: [{ id: 'access_settings', label: 'Access Store Settings' }, { id: 'view_roles', label: 'View Roles' }, { id: 'manage_roles', label: 'Manage Roles' }] }
     ];
 
-    const handlePermissionToggle = (role: string, permissionId: string) => { /* ... */ };
+    const handlePermissionToggle = (role: string, permissionId: string) => {
+        setRolePermissions((prev: any) => ({
+            ...prev,
+            [role]: {
+                ...prev[role],
+                [permissionId]: !prev[role][permissionId]
+            }
+        }));
+    };
+
+    const handleSavePermissions = async () => {
+        if (!updateRolePermissions) return; // Guard
+
+        let success = true;
+
+        // Save Active Role First (Optimization)
+        const updated = await updateRolePermissions(activeRoleSelector, rolePermissions[activeRoleSelector]);
+        if (!updated) success = false;
+
+        // Optionally save others if changed? For now single save based on active view is safest or loop all.
+        // Let's loop all except owner
+        const rolesToSave = Object.keys(rolePermissions).filter(r => r !== 'owner' && r !== activeRoleSelector);
+        for (const role of rolesToSave) {
+            const ok = await updateRolePermissions(role, rolePermissions[role]);
+            if (!ok) success = false;
+        }
+
+        if (success) {
+            showToast('success', 'Permissions saved successfully');
+        } else {
+            showToast('error', 'Failed to save permissions. Ensure you have the latest database schema.');
+        }
+    };
+
     const isPermitted = (role: string, permissionId: string) => {
-        if (role === 'super_admin') return true;
+        if (role === 'owner') return true;
         return rolePermissions[role]?.[permissionId] === true;
     };
 
@@ -105,7 +144,9 @@ export default function RolesPage() {
                     <p className="text-sm text-slate-500 dark:text-slate-400">Manage access levels and multi-store assignments.</p>
                 </div>
                 {activeTab === 'permissions' && (
-                    <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30">
+                    <button
+                        onClick={handleSavePermissions}
+                        className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30">
                         <Save className="h-4 w-4" />
                         Save Changes
                     </button>
@@ -205,7 +246,13 @@ export default function RolesPage() {
                                         <div className="space-y-2">
                                             {moduleItem.actions.map(action => (
                                                 <label key={action.id} className="flex items-center gap-2">
-                                                    <input type="checkbox" checked={isPermitted(activeRoleSelector, action.id)} readOnly className="rounded text-indigo-600" />
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isPermitted(activeRoleSelector, action.id)}
+                                                        onChange={() => handlePermissionToggle(activeRoleSelector, action.id)}
+                                                        disabled={activeRoleSelector === 'owner' || activeRoleSelector === 'super_admin'}
+                                                        className="rounded text-indigo-600 cursor-pointer disabled:opacity-50"
+                                                    />
                                                     <span className="text-sm">{action.label}</span>
                                                 </label>
                                             ))}

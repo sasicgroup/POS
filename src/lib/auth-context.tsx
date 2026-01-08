@@ -19,7 +19,29 @@ export interface Store {
     };
     receiptPrefix?: string; // e.g., "TRX", "INV", "RCP"
     lastTransactionNumber?: number; // Sequential counter
+    rolePermissions?: Record<string, Record<string, boolean>>; // { manager: { view_dashboard: true }, staff: { ... } }
 }
+
+// Default Permissions
+export const DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
+    owner: { all: true },
+    manager: {
+        view_dashboard: true, view_analytics: true, view_inventory: true,
+        add_product: true, edit_product: true, delete_product: false,
+        adjust_stock: true, access_pos: true, process_returns: true,
+        give_discount: true, view_sales_history: true, view_customers: true,
+        manage_customers: true, view_employees: true, manage_employees: false,
+        access_settings: false, view_roles: false, manage_roles: false
+    },
+    staff: {
+        view_dashboard: true, view_analytics: false, view_inventory: true,
+        add_product: false, edit_product: false, delete_product: false,
+        adjust_stock: false, access_pos: true, process_returns: false,
+        give_discount: false, view_sales_history: false, view_customers: true,
+        manage_customers: true, view_employees: false, manage_employees: false,
+        access_settings: false, view_roles: false, manage_roles: false
+    }
+};
 
 // Define User Type
 export interface User {
@@ -55,6 +77,8 @@ interface AuthContextType {
     addTeamMember: (member: Omit<User, 'id'>) => Promise<void>;
     updateTeamMember: (id: any, updates: Partial<User>) => Promise<void>;
     removeTeamMember: (id: any) => Promise<void>;
+    hasPermission: (permission: string) => boolean;
+    updateRolePermissions: (role: string, permissions: Record<string, boolean>) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -118,7 +142,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (validStores.length > 0) {
                     const mappedStores = validStores.map((s: any) => ({
                         ...s,
-                        taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 }
+                        taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
+                        rolePermissions: s.role_permissions // Load permissions from DB
                     }));
                     setStores(mappedStores);
 
@@ -560,6 +585,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const hasPermission = (permission: string) => {
+        if (!user) return false;
+        if (user.role === 'owner') return true;
+
+        // Get permissions from store settings or defaults
+        const currentPermissions = activeStore?.rolePermissions || DEFAULT_PERMISSIONS;
+
+        // If role doesn't exist in config, default to false
+        if (!currentPermissions[user.role]) return false;
+
+        return currentPermissions[user.role][permission] === true;
+    };
+
+    const updateRolePermissions = async (role: string, permissions: Record<string, boolean>) => {
+        if (!activeStore?.id) return false;
+
+        const updatedRolePermissions = {
+            ...(activeStore.rolePermissions || DEFAULT_PERMISSIONS),
+            [role]: permissions
+        };
+
+        const { error } = await supabase
+            .from('stores')
+            .update({ role_permissions: updatedRolePermissions })
+            .eq('id', activeStore.id);
+
+        if (!error) {
+            updateStoreSettings({ rolePermissions: updatedRolePermissions });
+            return true;
+        }
+        console.error("Failed to update permissions", error);
+        return false;
+    };
+
     return (
         <AuthContext.Provider value={{
             user,
@@ -577,7 +636,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             removeTeamMember,
             verifyOTP,
             resendOTP,
-            unlockAccount
+            unlockAccount,
+            hasPermission,
+            updateRolePermissions
         }}>
             {children}
         </AuthContext.Provider>

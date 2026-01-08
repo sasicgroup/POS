@@ -109,3 +109,5 @@ CHECK (role IN ('owner', 'manager', 'staff'));
 ALTER TABLE public.employee_access 
 ADD CONSTRAINT employee_access_role_check 
 CHECK (role IN ('owner', 'manager', 'staff'));
+-- 11. Add role_permissions to stores table
+ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS role_permissions jsonb;
