@@ -33,6 +33,7 @@ export default function InventoryPage() {
     const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+    const [aiInsights, setAiInsights] = useState<{ reorderCandidates: any[], totalValue: number, lowStockCount: number }>({ reorderCandidates: [], totalValue: 0, lowStockCount: 0 });
 
     // Patch: Ensure scanner stops if component unmounts
     useEffect(() => {
@@ -56,6 +57,21 @@ export default function InventoryPage() {
         }
         // Return original for direct MP4 links etc (browsers handle many via iframe or we could use <video> tag if needed, but iframe is safer for generic URLs)
         return url;
+    };
+
+    const generateAiInsights = () => {
+        // 1. Identify Low Stock / Reorder Candidates
+        const reorderCandidates = products.filter(p => p.stock > 0 && p.stock <= 5).sort((a, b) => a.stock - b.stock).slice(0, 3);
+        const lowStockCount = products.filter(p => p.stock <= 5).length;
+
+        // 2. Identify Dead Stock (High Stock > 50, but we don't have last sale date easily yet, so let's use High Value items instead for now as a 'Watch' list) or just summary
+        // Let's rely on reorder for now as it's most useful
+
+        // 3. Total Inventory Value
+        const totalValue = products.reduce((acc, p) => acc + (p.price * p.stock), 0);
+
+        setAiInsights({ reorderCandidates, totalValue, lowStockCount });
+        setShowAiAnalysis(true);
     };
 
     const filteredProducts = products.filter(product => {
@@ -387,7 +403,7 @@ export default function InventoryPage() {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => setShowAiAnalysis(true)}
+                        onClick={generateAiInsights}
                         className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
                     >
                         <Sparkles className="h-4 w-4" />
@@ -893,26 +909,44 @@ export default function InventoryPage() {
                             </div>
 
                             <div className="space-y-4">
-                                <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-900/40">
-                                    <h3 className="font-bold text-indigo-900 dark:text-indigo-100 flex items-center gap-2">
-                                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-200 text-indigo-700 text-xs dark:bg-indigo-800 dark:text-indigo-300">1</span>
-                                        Reorder Recommendation
-                                    </h3>
-                                    <p className="mt-1 text-sm text-indigo-800/80 dark:text-indigo-300/80">
-                                        "Premium Leather Bag" sales velocity has increased by 15%. Stock will deplete in 4 days.
-                                    </p>
-                                    <button className="mt-3 text-xs font-bold text-indigo-700 hover:underline dark:text-indigo-400">Create Purchase Order &rarr;</button>
-                                </div>
+                                {aiInsights.reorderCandidates.length > 0 ? (
+                                    <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-900/40">
+                                        <h3 className="font-bold text-indigo-900 dark:text-indigo-100 flex items-center gap-2">
+                                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-200 text-indigo-700 text-xs dark:bg-indigo-800 dark:text-indigo-300">1</span>
+                                            Reorder Recommendation
+                                        </h3>
+                                        <div className="mt-2 space-y-2">
+                                            {aiInsights.reorderCandidates.map(p => (
+                                                <div key={p.id} className="text-sm text-indigo-800/80 dark:text-indigo-300/80 flex justify-between items-center border-b border-indigo-100 dark:border-indigo-800/50 pb-1 last:border-0">
+                                                    <span>"{p.name}" is running low ({p.stock} units left).</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 font-medium">Consider restocking these items soon.</p>
+                                    </div>
+                                ) : (
+                                    <div className="p-4 rounded-xl bg-green-50 border border-green-100 dark:bg-green-900/20 dark:border-green-900/40">
+                                        <h3 className="font-bold text-green-900 dark:text-green-100 flex items-center gap-2">
+                                            <CheckSquare className="h-5 w-5" />
+                                            Stock Levels Healthy
+                                        </h3>
+                                        <p className="mt-1 text-sm text-green-800/80 dark:text-green-300/80">
+                                            Great job! No items are critically low on stock.
+                                        </p>
+                                    </div>
+                                )}
 
                                 <div className="p-4 rounded-xl bg-amber-50 border border-amber-100 dark:bg-amber-900/20 dark:border-amber-900/40">
                                     <h3 className="font-bold text-amber-900 dark:text-amber-100 flex items-center gap-2">
                                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-200 text-amber-700 text-xs dark:bg-amber-800 dark:text-amber-300">2</span>
-                                        Dead Stock Alert
+                                        Inventory Value
                                     </h3>
                                     <p className="mt-1 text-sm text-amber-800/80 dark:text-amber-300/80">
-                                        12 units of "Slim Fit Denim Jeans" haven't moved in 45 days.
+                                        Your total inventory is valued at <span className="font-bold">GHS {aiInsights.totalValue.toFixed(2)}</span>.
                                     </p>
-                                    <button className="mt-3 text-xs font-bold text-amber-700 hover:underline dark:text-amber-400">Apply 20% Discount &rarr;</button>
+                                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-500">
+                                        {aiInsights.lowStockCount > 0 ? `${aiInsights.lowStockCount} items are low on stock.` : "Inventory is fully stocked."}
+                                    </p>
                                 </div>
                             </div>
 
