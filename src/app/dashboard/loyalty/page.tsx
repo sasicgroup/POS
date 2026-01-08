@@ -100,6 +100,13 @@ export default function LoyaltyPage() {
         }
     };
 
+    const [stats, setStats] = useState({
+        totalMembers: 0,
+        pointsIssued: 0,
+        pointsRedeemed: 0,
+        activeRate: '0%'
+    });
+
     // Loyalty configuration state
     const [settings, setSettings] = useState({
         enabled: true,
@@ -111,37 +118,65 @@ export default function LoyaltyPage() {
     const [isSavingSettings, setIsSavingSettings] = useState(false);
     const { showToast } = useToast();
 
-    // Load Loyalty Settings
+    // Load Loyalty Settings & Stats
     useEffect(() => {
-        const loadSettings = async () => {
+        const loadData = async () => {
             if (!activeStore?.id) return;
 
-            const { data, error } = await supabase
+            // 1. Fetch Settings
+            const { data: settingsData, error: settingsError } = await supabase
                 .from('loyalty_programs')
                 .select('*')
                 .eq('store_id', activeStore.id)
                 .single();
 
-            if (data) {
+            if (settingsData) {
                 setSettings({
-                    enabled: data.enabled,
-                    pointsPerCurrency: data.points_per_currency,
-                    redemptionRate: data.redemption_rate,
-                    minRedemptionPoints: data.min_points_to_redeem,
-                    expiryMonths: 12 // Default as not in schema yet
+                    enabled: settingsData.enabled,
+                    pointsPerCurrency: settingsData.points_per_currency,
+                    redemptionRate: settingsData.redemption_rate,
+                    minRedemptionPoints: settingsData.min_points_to_redeem,
+                    expiryMonths: 12
                 });
-            } else if (!error && !data) {
-                // Initialize defaults for new store
+            } else if (!settingsData && !settingsError) {
+                // Initialize if missing
                 await supabase.from('loyalty_programs').insert({
                     store_id: activeStore.id,
-                    points_per_currency: 1,
-                    redemption_rate: 0.05,
+                    points_per_currency: 0.01,
+                    redemption_rate: 0.01,
                     min_points_to_redeem: 100
                 });
             }
+
+            // 2. Fetch Stats
+            const { data: customers, error: custError } = await supabase
+                .from('customers')
+                .select('points, total_spent')
+                .eq('store_id', activeStore.id);
+
+            if (customers) {
+                const totalMembers = customers.length;
+                const totalPoints = customers.reduce((sum, c) => sum + (c.points || 0), 0);
+                // We don't have a direct 'redeemed' counter on customer, would need a transaction table. 
+                // For now, we will show 0 or assume we track it later.
+
+                // Calculate "Active" as customers with points > 0
+                const activeCount = customers.filter(c => c.points > 0).length;
+                const activeRate = totalMembers > 0 ? Math.round((activeCount / totalMembers) * 100) + '%' : '0%';
+
+                // Update the stats object (we need to make it stateful)
+                setStats({
+                    totalMembers,
+                    pointsIssued: totalPoints, // Showing current balance sum as a proxy for now
+                    pointsRedeemed: 0,
+                    activeRate
+                });
+            }
         };
-        loadSettings();
+        loadData();
     }, [activeStore]);
+
+
 
     const handleSaveSettings = async () => {
         if (!activeStore?.id) return;
@@ -178,13 +213,7 @@ export default function LoyaltyPage() {
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
 
-    // Mock Customer Data for Dashboard
-    const stats = {
-        totalMembers: 0,
-        pointsIssued: 0,
-        pointsRedeemed: 0,
-        activeRate: '0%'
-    };
+
 
     if (!activeStore) return null;
 

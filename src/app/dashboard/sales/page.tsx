@@ -123,11 +123,25 @@ export default function SalesPage() {
     const [cameraError, setCameraError] = useState('');
     const scannerRef = useRef<Html5Qrcode | null>(null);
     const [registerId, setRegisterId] = useState('Main-01');
+    const [loyaltyConfig, setLoyaltyConfig] = useState<any>(null);
 
     useEffect(() => {
         const storedRegister = localStorage.getItem('sms_register_id');
         if (storedRegister) setRegisterId(storedRegister);
-    }, []);
+
+        // Fetch Loyalty Config
+        const loadLoyalty = async () => {
+            if (!activeStore?.id) return;
+            const { data } = await supabase
+                .from('loyalty_programs')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .single();
+
+            if (data) setLoyaltyConfig(data);
+        };
+        loadLoyalty();
+    }, [activeStore]);
 
     const handleEditRegister = () => {
         const newId = prompt("Enter Register/Terminal Name:", registerId);
@@ -322,7 +336,11 @@ export default function SalesPage() {
             : taxSettings.value)
         : 0;
 
-    const grandTotal = cartTotal + taxAmount - (redeemPoints ? 5.00 : 0);
+    // Loyalty Redemption Calculation
+    const loyaltyRedeemPoints = loyaltyConfig?.min_points_to_redeem || 100;
+    const loyaltyRedeemValue = loyaltyRedeemPoints * (loyaltyConfig?.redemption_rate || 0.05);
+
+    const grandTotal = cartTotal + taxAmount - (redeemPoints ? loyaltyRedeemValue : 0);
 
     const handlePrintReceipt = (transactionId: string) => {
         const receiptWindow = window.open('', '_blank', 'width=400,height=600');
@@ -369,13 +387,13 @@ export default function SalesPage() {
                 ${redeemPoints ? `
                 <div class="item">
                     <span>Loyalty Discount</span>
-                    <span>-5.00</span>
+                    <span>-${loyaltyRedeemValue.toFixed(2)}</span>
                 </div>` : ''}
                 <div class="total">
                     <span>TOTAL</span>
                     <span>${grandTotal.toFixed(2)}</span>
                 </div>
-                ${customerName ? `<div style="text-align: center; margin-top: 10px;">Points Earned: ${Math.floor(grandTotal)}</div>` : ''}
+                ${customerName && loyaltyConfig?.enabled ? `<div style="text-align: center; margin-top: 10px;">Points Earned: ${Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1))}</div>` : ''}
                 <div class="barcode">
                     *${transactionId}*
                 </div>
@@ -453,7 +471,9 @@ export default function SalesPage() {
             }
         });
 
-        const pointsEarned = Math.floor(grandTotal);
+        const pointsEarned = loyaltyConfig?.enabled
+            ? Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1)) // Default to 1 if missing, but config should exist
+            : 0;
 
         // --- Update Customer Loyalty Points & Stats ---
         if (customerPhone) {
@@ -471,8 +491,10 @@ export default function SalesPage() {
                 // If redeeming, we subtract 100, then add earned. 
                 // Note: grandTotal already has the discount applied if redeemPoints was true, 
                 // so we don't need to adjust pointsEarned, just the starting balance.
+                // If redeeming, we subtrac the redemption amount
+                // Note: grandTotal already has the discount applied if redeemPoints was true
                 const finalPoints = redeemPoints
-                    ? (currentDbPoints - 100) + pointsEarned
+                    ? (currentDbPoints - loyaltyRedeemPoints) + pointsEarned
                     : currentDbPoints + pointsEarned;
 
                 await supabase.from('customers').update({
@@ -932,7 +954,7 @@ export default function SalesPage() {
                                         </div>
                                         <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{loyaltyPoints} Points</span>
                                     </div>
-                                    {loyaltyPoints >= 100 && (
+                                    {loyaltyPoints >= (loyaltyConfig?.min_points_to_redeem || 100) && (
                                         <label className="flex items-center gap-2 cursor-pointer mt-2">
                                             <input
                                                 type="checkbox"
@@ -940,7 +962,10 @@ export default function SalesPage() {
                                                 onChange={(e) => setRedeemPoints(e.target.checked)}
                                                 className="h-3 w-3 rounded text-indigo-600 focus:ring-indigo-500"
                                             />
-                                            <span className="text-xs text-slate-600 dark:text-slate-400">Redeem 100 pts (Get GHS 5.00 off)</span>
+                                            <span className="text-xs text-slate-600 dark:text-slate-400">
+                                                Redeem {loyaltyConfig?.min_points_to_redeem || 100} pts
+                                                (Get GHS {(loyaltyRedeemValue).toFixed(2)} off)
+                                            </span>
                                         </label>
                                     )}
                                 </div>
@@ -978,7 +1003,7 @@ export default function SalesPage() {
                             {redeemPoints && (
                                 <div className="flex justify-between text-sm text-emerald-600 dark:text-emerald-400 font-medium">
                                     <span>Loyalty</span>
-                                    <span>- GHS 5.00</span>
+                                    <span>- GHS {loyaltyRedeemValue.toFixed(2)}</span>
                                 </div>
                             )}
                             <div className="flex justify-between text-lg font-bold text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-700">
