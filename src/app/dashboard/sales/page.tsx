@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
-import { sendNotification } from '@/lib/sms';
+import { loadSMSConfigFromDB, sendNotification } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
 import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
@@ -14,6 +14,13 @@ export default function SalesPage() {
     const { products, isLoading, processSale } = useInventory();
     const { showToast } = useToast();
     const [cart, setCart] = useState<any[]>([]);
+
+    // Load SMS Config
+    useEffect(() => {
+        if (activeStore?.id) {
+            loadSMSConfigFromDB(activeStore.id);
+        }
+    }, [activeStore]);
 
     // Load Cart from LocalStorage
     useEffect(() => {
@@ -363,6 +370,25 @@ export default function SalesPage() {
         const pointsEarned = Math.floor(grandTotal);
         const finalPoints = redeemPoints ? (loyaltyPoints - 100) + pointsEarned : loyaltyPoints + pointsEarned;
         const isNewCustomer = customerPhone.length >= 10 && customerName && loyaltyPoints === 0;
+
+        // --- Update Customer Loyalty Points & Stats ---
+        if (customerPhone) {
+            const { data: existingCust } = await supabase
+                .from('customers')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .eq('phone', customerPhone)
+                .single();
+
+            if (existingCust) {
+                await supabase.from('customers').update({
+                    points: finalPoints,
+                    total_spent: (existingCust.total_spent || 0) + grandTotal,
+                    total_visits: (existingCust.total_visits || 0) + 1,
+                    last_visit: new Date().toISOString()
+                }).eq('id', existingCust.id);
+            }
+        }
 
         console.log(`Processing Sale: ${trxId}`);
 

@@ -113,7 +113,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             </nav>
 
                             {/* User Profile & Logout */}
-                            <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+                            <div className="border-t border-slate-200 p-4 pb-24 lg:pb-4 dark:border-slate-800 bg-white/50 dark:bg-slate-950/50">
                                 <div className="flex items-center gap-3 mb-4">
                                     <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`} alt="User" className="h-10 w-10 rounded-full bg-slate-200 ring-2 ring-indigo-500/20" />
                                     <div className="overflow-hidden">
