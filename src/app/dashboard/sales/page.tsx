@@ -339,6 +339,7 @@ export default function SalesPage() {
                 <div class="header">
                     <div class="store-name">${activeStore.name}</div>
                     <div style="font-size: 11px;">${activeStore.location}</div>
+                    ${activeStore.phone ? `<div style="font-size: 11px;">Tel: ${activeStore.phone}</div>` : ''}
                     <div class="divider"></div>
                     <div>RECEIPT #${transactionId}</div>
                     <div>${new Date().toLocaleString()}</div>

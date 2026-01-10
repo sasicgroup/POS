@@ -23,7 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { useEffect } from 'react';
 
 export default function CommunicationPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, user } = useAuth();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'compose' | 'templates' | 'automations' | 'history'>('compose');
     const [selectedChannel, setSelectedChannel] = useState<'sms' | 'whatsapp'>('sms');
@@ -170,20 +170,28 @@ export default function CommunicationPage() {
                     }
                 }
             } else if (recipientType === 'all' || recipientType === 'group') {
-                // Fetch customers (Limit to 50 for safety in this client-side demo)
+                // Fetch customers with full data for placeholders
                 const { data: customers } = await supabase
                     .from('customers')
-                    .select('phone, name')
+                    .select('phone, name, points, total_spent, last_visit, total_visits')
                     .limit(50);
 
                 if (customers) {
                     for (const cust of customers) {
                         if (cust.phone) {
-                            // Basic placeholder replacement
-                            let finalMsg = messageContent.replace('{Name}', cust.name).replace('{StoreName}', activeStore.name);
-                            // Clean other unused
-                            finalMsg = finalMsg.replace('{Points}', '0').replace('{LastVisit}', 'N/A')
-                                .replace('{Staff}', 'N/A').replace('{Receipt}', 'N/A');
+                            // Format last visit date
+                            const lastVisit = cust.last_visit 
+                                ? new Date(cust.last_visit).toLocaleDateString() 
+                                : ' visit';
+                            
+                            // Build final message with all available placeholders
+                            let finalMsg = messageContent
+                                .replace('{Name}', cust.name || 'Valued Customer')
+                                .replace('{StoreName}', activeStore.name)
+                                .replace('{Points}', (cust.points || 0).toString())
+                                .replace('{LastVisit}', lastVisit)
+                                .replace('{TotalSpent}', (cust.total_spent || 0).toFixed(2))
+                                .replace('{Staff}', user?.name || 'Staff');
 
                             await sendDirectMessage(cust.phone, finalMsg, channels as any, activeStore.id);
                             count++;
