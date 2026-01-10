@@ -354,14 +354,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const verifyOTP = async (username: string, code: string): Promise<boolean> => {
-        // 1. Get user (re-fetch to be safe)
-        const { data: employees } = await supabase.from('employees').select('*').eq('username', username).single();
-        if (!employees) return false;
+        // 1. Get user (re-fetch to be safe) - use ilike for case-insensitive match
+        const { data: employees } = await supabase.from('employees').select('*').ilike('username', username).single();
+        if (!employees) {
+            console.error('[OTP] User not found for username:', username);
+            return false;
+        }
+
+        console.log('[OTP] Found user:', employees.username, '| Stored code:', employees.otp_code, '| Entered:', code);
 
         // 2. Validate Code & Expiry
         if (employees.otp_code === code) {
             const now = new Date();
             const exp = new Date(employees.otp_expiry);
+            console.log('[OTP] Expiry:', exp, '| Now:', now, '| Valid:', now <= exp);
+            
             if (now <= exp) {
                 // Success
                 // Clear OTP fields
@@ -378,15 +385,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 };
                 await finalizeLogin(userObj);
                 await logActivity('LOGIN_SUCCESS', { method: 'OTP' }, userObj.id, employees.store_id);
+                console.log('[OTP] Verification successful!');
                 return true;
+            } else {
+                console.error('[OTP] Code expired');
             }
+        } else {
+            console.error('[OTP] Code mismatch');
         }
         return false;
     };
 
     const resendOTP = async (username: string): Promise<boolean> => {
-        const { data: employee } = await supabase.from('employees').select('*').eq('username', username).single();
-        if (!employee || !employee.phone) return false;
+        const { data: employee } = await supabase.from('employees').select('*').ilike('username', username).single();
+        if (!employee || !employee.phone) {
+            console.error('[OTP Resend] User not found or no phone');
+            return false;
+        }
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         const expiry = new Date(Date.now() + 5 * 60000);
@@ -396,7 +411,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             otp_expiry: expiry.toISOString()
         }).eq('id', employee.id);
 
-        await sendDirectMessage(employee.phone, `Your new OTP is ${code}.`);
+        console.log('[OTP Resend] New code sent to', employee.phone, ':', code);
+        await sendDirectMessage(employee.phone, `Your new OTP is ${code}. Valid for 5 minutes.`);
         return true;
     };
 
