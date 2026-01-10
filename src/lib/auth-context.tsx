@@ -148,7 +148,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
                         receiptPrefix: s.receipt_prefix,
                         receiptSuffix: s.receipt_suffix,
-                        rolePermissions: s.role_permissions
+                        rolePermissions: s.role_permissions,
+                        lastTransactionNumber: s.last_transaction_number || 0
                     }));
                     setStores(mappedStores);
 
@@ -211,7 +212,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 ...s,
                 taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
                 receiptPrefix: s.receipt_prefix,
-                receiptSuffix: s.receipt_suffix
+                receiptSuffix: s.receipt_suffix,
+                lastTransactionNumber: s.last_transaction_number || 0
             }));
             setStores(mappedStores);
             setActiveStore(mappedStores[0]);
