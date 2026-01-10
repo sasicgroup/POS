@@ -157,8 +157,8 @@ export default function EmployeesPage() {
         setIsSubmitting(true);
 
         if (editingId) {
-            // Update
-            const { error } = await supabase.from('employees').update({
+            // Update - only include time fields if they have values
+            const updateData: any = {
                 name: newEmployee.name,
                 username: newEmployee.username,
                 phone: newEmployee.phone,
@@ -166,14 +166,26 @@ export default function EmployeesPage() {
                 otp_enabled: newEmployee.otp_enabled,
                 pin: newEmployee.pin,
                 salary: newEmployee.salary,
-                shift_start: newEmployee.shift_start,
-                shift_end: newEmployee.shift_end,
                 work_days: newEmployee.work_days
-            }).eq('id', editingId);
+            };
+            
+            // Only include shift times if they are not empty
+            if (newEmployee.shift_start && newEmployee.shift_start.trim() !== '') {
+                updateData.shift_start = newEmployee.shift_start;
+            } else {
+                updateData.shift_start = null;
+            }
+            if (newEmployee.shift_end && newEmployee.shift_end.trim() !== '') {
+                updateData.shift_end = newEmployee.shift_end;
+            } else {
+                updateData.shift_end = null;
+            }
+
+            const { error } = await supabase.from('employees').update(updateData).eq('id', editingId);
 
             if (error) {
                 console.error("Error updating employee:", error);
-                alert("Failed to update employee");
+                alert("Failed to update employee: " + error.message);
             } else {
                 setEmployees(prev => prev.map(e => e.id === editingId ? { ...e, ...newEmployee } : e) as any);
                 setIsAddEmployeeOpen(false);
@@ -597,7 +609,7 @@ export default function EmployeesPage() {
                                 disabled={isSubmitting}
                                 className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 disabled:opacity-50"
                             >
-                                {isSubmitting ? 'Saving...' : 'Add Member'}
+                                {isSubmitting ? 'Saving...' : (editingId ? 'Save Changes' : 'Add Member')}
                             </button>
                         </form>
                     </div>
