@@ -10,54 +10,24 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
 
 export default function SalesPage() {
-    const { activeStore, user } = useAuth();
-    const { products, isLoading, processSale } = useInventory();
+    const { activeStore, user, updateStoreSettings } = useAuth();
+    const {
+        products,
+        isLoading,
+        processSale,
+        cart,
+        setCart,
+        addToCart: contextAddToCart,
+        removeFromCart,
+        updateCartQuantity,
+        setCartQuantity: contextSetCartQuantity,
+        clearCart
+    } = useInventory();
     const { showToast } = useToast();
-    const [cart, setCart] = useState<any[]>([]);
-
-    // Load SMS Config
-    useEffect(() => {
-        if (activeStore?.id) {
-            loadSMSConfigFromDB(activeStore.id);
-        }
-    }, [activeStore]);
-
-    // Load Cart from LocalStorage
-    useEffect(() => {
-        const savedCart = localStorage.getItem('sms_cart');
-        if (savedCart) {
-            try {
-                setCart(JSON.parse(savedCart));
-            } catch (e) {
-                console.error("Failed to parse cart", e);
-            }
-        }
-    }, []);
-
-    // Save Cart to LocalStorage with optimization for Quota Limits
-    useEffect(() => {
-        try {
-            // Minify cart: Remove potentially large fields like full base64 images or descriptions
-            // We only need minimal data for restoration. Images can be re-fetched from products context or DB.
-            const minimalCart = cart.map(item => ({
-                ...item,
-                image: (item.image && item.image.length > 500) ? undefined : item.image, // Drop large images
-                video: undefined, // Drop video
-                description: undefined, // Drop description
-                status: undefined // Drop status
-            }));
-            localStorage.setItem('sms_cart', JSON.stringify(minimalCart));
-        } catch (error: any) {
-            console.error("Failed to save cart to local storage:", error);
-            if (error.name === 'QuotaExceededError' || error.message.toLowerCase().includes('quota')) {
-                showToast('error', 'Storage usage high. Cart may not persist on reload.');
-                // Attempt to cleanup slightly? Or just warn.
-            }
-        }
-    }, [cart]);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [isScanning, setIsScanning] = useState(false);
+    const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
     const [scannedProduct, setScannedProduct] = useState<any | null>(null);
 
 
@@ -209,10 +179,19 @@ export default function SalesPage() {
         return () => {
             // Cleanup on unmount/re-run
             if (scannerRef.current) {
-                if (scannerRef.current.isScanning) {
-                    scannerRef.current.stop().catch(e => console.error(e));
-                }
-                scannerRef.current.clear();
+                const stopScanner = async () => {
+                    try {
+                        if (scannerRef.current?.isScanning) {
+                            await scannerRef.current.stop();
+                        }
+                        scannerRef.current?.clear();
+                    } catch (e) {
+                        console.error("Scanner cleanup error", e);
+                    } finally {
+                        scannerRef.current = null;
+                    }
+                };
+                stopScanner();
             }
         };
     }, [isScanning]);
@@ -250,20 +229,7 @@ export default function SalesPage() {
         }
 
         playBeep();
-        setCart(current => {
-            const existing = current.find(item => item.id === product.id);
-            if (existing) {
-                // Optional: Check if adding 1 more exceeds stock
-                if (existing.quantity >= product.stock) {
-                    showToast('error', 'Cannot add more than available stock!');
-                    return current;
-                }
-                return current.map(item =>
-                    item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-                );
-            }
-            return [...current, { ...product, quantity: 1 }];
-        });
+        contextAddToCart(product);
     };
 
     const playError = () => {
@@ -278,9 +244,9 @@ export default function SalesPage() {
 
         // Safely find product
         const product = products.find(p => {
-            const sku = p.sku ? p.sku.toLowerCase().trim() : '';
-            const name = p.name ? p.name.toLowerCase() : '';
-            const q = query.toLowerCase().trim();
+            const sku = p.sku ? String(p.sku).toLowerCase().trim() : '';
+            const name = p.name ? String(p.name).toLowerCase() : '';
+            const q = String(query).toLowerCase().trim();
 
             // Prioritize SKU exact match, then loose match on name
             return sku === q || (name && name.includes(q)) || (sku && sku.includes(q));
@@ -297,41 +263,21 @@ export default function SalesPage() {
     };
 
     const updateQuantity = (id: number, delta: number) => {
-        setCart(current => {
-            return current.map(item => {
-                if (item.id === id) {
-                    const newQty = item.quantity + delta;
-                    return newQty > 0 ? { ...item, quantity: newQty } : item;
-                }
-                return item;
-            });
-        });
+        updateCartQuantity(id, delta);
     };
 
     const setCartQuantity = (id: number, quantity: number) => {
-        setCart(current => {
-            return current.map(item => {
-                if (item.id === id) {
-                    return { ...item, quantity: Math.max(1, quantity) };
-                }
-                return item;
-            });
-        });
+        contextSetCartQuantity(id, quantity);
     };
 
     const updateItemPrice = (id: number, newPrice: number) => {
-        setCart(current => {
-            return current.map(item => {
-                if (item.id === id) {
-                    return { ...item, price: newPrice };
-                }
-                return item;
-            });
+        const newCart = cart.map(item => {
+            if (item.id === id) {
+                return { ...item, price: newPrice };
+            }
+            return item;
         });
-    };
-
-    const removeFromCart = (id: number) => {
-        setCart(current => current.filter(item => item.id !== id));
+        setCart(newCart);
     };
 
 
@@ -355,70 +301,125 @@ export default function SalesPage() {
         const receiptWindow = window.open('', '_blank', 'width=400,height=600');
         if (!receiptWindow) return;
 
+        // Calculate totals for receipt
+        const totalDiscount = cart.reduce((sum, item) => {
+            const originalProduct = products.find(p => p.id === item.id);
+            const originalPrice = originalProduct?.price || item.price;
+            const diff = originalPrice - item.price;
+            return sum + (diff > 0 ? diff * item.quantity : 0);
+        }, 0);
+
+        const pointsEarned = loyaltyConfig?.enabled
+            ? Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1))
+            : 0;
+
         const receiptContent = `
             <html>
             <head>
                 <title>Receipt ${transactionId}</title>
                 <style>
-                    body { font-family: 'Courier New', Courier, monospace; font-size: 12px; margin: 0; padding: 20px; }
+                    @page { margin: 0; }
+                    body { font-family: 'Courier New', Courier, monospace; font-size: 13px; margin: 0; padding: 25px; line-height: 1.4; color: #000; }
                     .header { text-align: center; margin-bottom: 20px; }
-                    .store-name { font-size: 16px; font-weight: bold; }
-                    .divider { border-top: 1px dashed #000; margin: 10px 0; }
-                    .item { display: flex; justify-content: space-between; margin-bottom: 5px; }
-                    .total { display: flex; justify-content: space-between; font-weight: bold; margin-top: 10px; }
-                    .barcode { text-align: center; margin-top: 20px; }
+                    .store-name { font-size: 18px; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; }
+                    .divider { border-top: 1px dashed #000; margin: 12px 0; }
+                    .item { display: flex; justify-content: space-between; margin-bottom: 4px; }
+                    .item-name { flex: 1; padding-right: 10px; }
+                    .item-total { text-align: right; min-width: 70px; }
+                    .summary-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+                    .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; margin-top: 10px; border-top: 1px solid #000; padding-top: 5px; }
+                    .loyalty-section { margin-top: 20px; text-align: center; font-size: 11px; padding: 10px; border: 1px solid #000; }
+                    .loyalty-title { font-weight: bold; margin-bottom: 5px; text-decoration: underline; }
+                    .footer { text-align: center; margin-top: 25px; font-size: 11px; }
+                    .barcode { text-align: center; margin-top: 15px; font-size: 16px; letter-spacing: 2px; }
                 </style>
             </head>
             <body>
                 <div class="header">
                     <div class="store-name">${activeStore.name}</div>
-                    <div>Receipt #${transactionId}</div>
+                    <div style="font-size: 11px;">${activeStore.location}</div>
+                    <div class="divider"></div>
+                    <div>RECEIPT #${transactionId}</div>
                     <div>${new Date().toLocaleString()}</div>
-                    ${customerName ? `<div>Customer: ${customerName}</div>` : ''}
-                    <div>Sold By: ${user?.name || 'Staff'}</div>
+                    ${customerName ? `<div style="font-weight: bold;">CUSTOMER: ${customerName.toUpperCase()}</div>` : ''}
+                    <div>CASHIER: ${(user?.name || 'Staff').toUpperCase()}</div>
                 </div>
+                
                 <div class="divider"></div>
+                
                 ${cart.map(item => `
                     <div class="item">
-                        <span>${item.name} x${item.quantity}</span>
-                        <span>${(item.price * item.quantity).toFixed(2)}</span>
+                        <span class="item-name">${item.name} x${item.quantity}</span>
+                        <span class="item-total">${(item.price * item.quantity).toFixed(2)}</span>
                     </div>
                 `).join('')}
+                
                 <div class="divider"></div>
-                <div class="item">
+                
+                <div class="summary-row">
                     <span>Subtotal</span>
                     <span>${cartTotal.toFixed(2)}</span>
                 </div>
-                <div class="item">
+                
+                ${totalDiscount > 0 ? `
+                <div class="summary-row" style="color: #444;">
+                    <span>Direct Discount</span>
+                    <span>-${totalDiscount.toFixed(2)}</span>
+                </div>` : ''}
+
+                ${taxSettings.enabled && taxAmount > 0 ? `
+                <div class="summary-row">
                     <span>Tax (${taxSettings.type === 'percentage' ? taxSettings.value + '%' : 'Fixed'})</span>
                     <span>${taxAmount.toFixed(2)}</span>
-                </div>
+                </div>` : ''}
+                
                 ${redeemPoints ? `
-                <div class="item">
-                    <span>Loyalty Discount</span>
+                <div class="summary-row">
+                    <span>Loyalty Redemption</span>
                     <span>-${loyaltyRedeemValue.toFixed(2)}</span>
                 </div>` : ''}
-                <div class="total">
+                
+                <div class="total-row">
                     <span>TOTAL</span>
-                    <span>${grandTotal.toFixed(2)}</span>
+                    <span>GHS ${grandTotal.toFixed(2)}</span>
                 </div>
-                ${customerName && loyaltyConfig?.enabled ? `<div style="text-align: center; margin-top: 10px;">Points Earned: ${Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1))}</div>` : ''}
+                
+                <div class="summary-row" style="margin-top: 5px;">
+                    <span>Payment Method</span>
+                    <span style="text-transform: uppercase;">${paymentMethod}</span>
+                </div>
+
+                ${(customerName && loyaltyConfig?.enabled) ? `
+                <div class="loyalty-section">
+                    <div class="loyalty-title">LOYALTY SUMMARY</div>
+                    ${redeemPoints ? `<div class="summary-row"><span>Points Used:</span> <span>${loyaltyRedeemPoints}</span></div>` : ''}
+                    <div class="summary-row"><span>Points Earned:</span> <span>+${pointsEarned}</span></div>
+                    <div class="summary-row" style="font-weight: bold; border-top: 0.5px solid #ccc; margin-top: 3px; padding-top: 3px;">
+                        <span>New Balance:</span> <span>${redeemPoints ? (loyaltyPoints - loyaltyRedeemPoints + pointsEarned) : (loyaltyPoints + pointsEarned)}</span>
+                    </div>
+                </div>` : ''}
+
                 <div class="barcode">
                     *${transactionId}*
                 </div>
+                
+                <div class="footer">
+                    THANK YOU FOR SHOPPING WITH US!<br>
+                    PLEASE KEEP YOUR RECEIPT FOR RETURNS
+                </div>
+
+                <script>
+                    window.onload = function() {
+                        window.print();
+                        setTimeout(function() { window.close(); }, 500);
+                    };
+                </script>
             </body>
             </html>
         `;
 
         receiptWindow.document.write(receiptContent);
         receiptWindow.document.close();
-
-        // Wait for styles/images to load if any, but pure text is fast
-        setTimeout(() => {
-            receiptWindow.focus();
-            receiptWindow.print();
-            receiptWindow.close();
-        }, 500);
     };
 
     // Customer Lookup
@@ -462,10 +463,15 @@ export default function SalesPage() {
         }
 
         // Update transaction counter in database
-        await supabase
+        const { error: storeUpdateError } = await supabase
             .from('stores')
             .update({ last_transaction_number: transactionNumber })
             .eq('id', activeStore.id);
+
+        if (!storeUpdateError) {
+            // CRITICAL: Update local state so next transaction ID is incremented
+            updateStoreSettings({ lastTransactionNumber: transactionNumber });
+        }
 
         // Create order notification
         await supabase.from('notifications').insert({
@@ -553,8 +559,6 @@ export default function SalesPage() {
         }
 
         console.log(`Processing Sale: ${trxId}`);
-
-        // Trigger Print
         handlePrintReceipt(trxId);
 
         // Play Success Sound
@@ -574,9 +578,9 @@ export default function SalesPage() {
 
 
     const filteredProducts = products.filter(p =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+        (p.name && String(p.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (p.category && String(p.category).toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (p.sku && String(p.sku).toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
 
@@ -710,7 +714,9 @@ export default function SalesPage() {
                             Array.from({ length: 6 }).map((_, i) => (
                                 <div key={`skeleton-${i}`} className="grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border border-slate-200 bg-white p-2 sm:p-3 shadow-sm dark:border-slate-800 dark:bg-slate-800 animate-pulse">
                                     <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
-                                        <div className="h-10 w-10 sm:h-12 sm:w-12 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                        <div className="h-10 w-10 sm:h-12 sm:w-12 bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                                            <Camera className="h-5 w-5 text-slate-300" />
+                                        </div>
                                         <div className="space-y-2 flex-1">
                                             <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
                                             <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
@@ -750,12 +756,20 @@ export default function SalesPage() {
                                         className={`group relative grid grid-cols-12 gap-2 sm:gap-4 items-center rounded-xl border ${qty > 0 ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50/10' : 'border-slate-200 bg-white'} p-2 sm:p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-800 dark:hover:border-indigo-900 active:scale-[0.99] lg:active:scale-100`}
                                     >
                                         <div className="col-span-8 sm:col-span-6 flex items-center gap-3 sm:gap-4">
-                                            <div className="relative h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0">
-                                                <img
-                                                    src={product.image}
-                                                    alt={product.name}
-                                                    className="h-full w-full rounded-lg object-cover bg-slate-100"
-                                                />
+                                            <div className="relative h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0 flex items-center justify-center bg-slate-100 rounded-lg dark:bg-slate-800">
+                                                {product.image ? (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveImageUrl(product.image);
+                                                        }}
+                                                        className="text-slate-400 hover:text-indigo-600 transition-colors"
+                                                    >
+                                                        <Camera className="h-6 w-6" />
+                                                    </button>
+                                                ) : (
+                                                    <Camera className="h-6 w-6 text-slate-200" />
+                                                )}
                                                 {qty > 0 && (
                                                     <div className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-indigo-600 text-[10px] font-bold text-white flex items-center justify-center shadow-sm sm:hidden border-2 border-white dark:border-slate-800">
                                                         {qty}
@@ -867,12 +881,17 @@ export default function SalesPage() {
                         ) : (
                             cart.map(item => (
                                 <div key={item.id} className="flex gap-3 animate-in slide-in-from-right-4 duration-300">
-                                    <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                                        <img
-                                            src={products.find(p => p.id === item.id)?.image || item.image || '/placeholder.png'}
-                                            alt={item.name}
-                                            className="h-full w-full object-cover"
-                                        />
+                                    <div className="h-16 w-16 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
+                                        {(products.find(p => p.id === item.id)?.image || item.image) ? (
+                                            <button
+                                                onClick={() => setActiveImageUrl(products.find(p => p.id === item.id)?.image || item.image)}
+                                                className="text-slate-400 hover:text-indigo-600 transition-colors"
+                                            >
+                                                <Camera className="h-6 w-6" />
+                                            </button>
+                                        ) : (
+                                            <Camera className="h-6 w-6 text-slate-200" />
+                                        )}
                                     </div>
                                     <div className="flex-1 flex flex-col justify-between">
                                         <div className="flex justify-between items-start">
@@ -1129,6 +1148,24 @@ export default function SalesPage() {
                     </div>
                 )
             }
+            {/* Image Preview Modal */}
+            {activeImageUrl && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setActiveImageUrl(null)}>
+                    <div className="relative max-w-4xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-white/10 p-2" onClick={e => e.stopPropagation()}>
+                        <button
+                            onClick={() => setActiveImageUrl(null)}
+                            className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                        <img
+                            src={activeImageUrl}
+                            alt="Product Preview"
+                            className="max-w-full max-h-[85vh] object-contain rounded-lg"
+                        />
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

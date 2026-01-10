@@ -5,6 +5,7 @@ import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
 import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
@@ -19,7 +20,10 @@ export default function InventoryPage() {
         setPage,
         pageSize,
         setPageSize,
-        totalCount
+        totalCount,
+        addToCart,
+        cart,
+        setCart
     } = useInventory();
     const { showToast } = useToast();
 
@@ -44,6 +48,49 @@ export default function InventoryPage() {
     const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+    const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+
+    // Image Compression Utility
+    const compressImage = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target?.result as string;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Max dimension 800px for small file size
+                    const MAX_SIZE = 800;
+                    if (width > height) {
+                        if (width > MAX_SIZE) {
+                            height *= MAX_SIZE / width;
+                            width = MAX_SIZE;
+                        }
+                    } else {
+                        if (height > MAX_SIZE) {
+                            width *= MAX_SIZE / height;
+                            height = MAX_SIZE;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, width, height);
+
+                    // Compress to WebP with 0.7 quality to stay under 50KB usually
+                    const dataUrl = canvas.toDataURL('image/webp', 0.7);
+                    resolve(dataUrl);
+                };
+                img.onerror = reject;
+            };
+            reader.onerror = reject;
+        });
+    };
     const [aiInsights, setAiInsights] = useState<{ reorderCandidates: any[], totalValue: number, lowStockCount: number }>({ reorderCandidates: [], totalValue: 0, lowStockCount: 0 });
 
     // Patch: Ensure scanner stops if component unmounts
@@ -136,159 +183,81 @@ export default function InventoryPage() {
         const selectedItems = products.filter(p => selectedProducts.includes(p.id));
         if (selectedItems.length === 0) return;
 
-        // Get existing cart
-        let currentCart = [];
-        try {
-            const saved = localStorage.getItem('sms_cart');
-            if (saved) currentCart = JSON.parse(saved);
-        } catch (e) { console.error(e); }
-
-        let addedCount = 0;
-
         selectedItems.forEach(product => {
-            const minimalProduct = {
-                id: product.id,
-                name: product.name,
-                price: product.price,
-                quantity: 1,
-                sku: product.sku,
-                image: (product.image && product.image.length < 500) ? product.image : undefined,
-                category: product.category,
-                costPrice: product.costPrice,
-                status: product.status
-            };
-            const existingItemIndex = currentCart.findIndex((item) => item.id === product.id);
-            if (existingItemIndex >= 0) {
-                // Increment
-                currentCart[existingItemIndex].quantity += 1;
-            } else {
-                // Add new
-                currentCart.push(minimalProduct);
-            }
-            addedCount++;
+            addToCart(product);
         });
 
-        // Save back
-        try {
-            localStorage.setItem('sms_cart', JSON.stringify(currentCart));
-        } catch (e) {
-            console.error('Failed to save cart', e);
-            showToast('error', 'Cart storage full');
-        }
-
-        showToast('success', `${addedCount} items added to cart`);
+        showToast('success', `${selectedItems.length} items added to cart`);
         setSelectedProducts([]);
     };
 
     const handleBulkBarcode = () => {
-            {/* Product List - List View */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto dark:bg-slate-800 dark:border-slate-700 pb-20 lg:pb-0">
-                <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50">
-                        {/* ...existing code for table head... */}
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-800 dark:divide-slate-700">
-                        {isLoading && products.length === 0 ? (
-                            Array.from({ length: 5 }).map((_, i) => (
-                                <tr key={`skeleton-${i}`} className="animate-pulse">
-                                    {/* ...existing code for skeleton row... */}
-                                </tr>
-                            ))
-                        ) : filteredProducts.length === 0 ? (
-                            <tr>
-                                <td colSpan={7} className="px-6 py-12 text-center">
-                                    <div className="text-slate-400 dark:text-slate-500">
-                                        <p className="text-lg font-medium mb-2">No products found</p>
-                                        <p className="text-sm">Add your first product to get started</p>
-                                    </div>
-                                </td>
-                            </tr>
-                        ) : (
-                            filteredProducts.map((product) => (
-                                <tr
-                                    key={product.id}
-                                    id={`product-${product.id}`}
-                                    className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
-                                    onClick={(e) => {
-                                        if (!(e.target as HTMLElement).closest('button')) {
-                                            handleSelectProduct(product.id);
-                                        }
-                                    }}
-                                >
-                                    {/* ...existing code for product row... */}
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-                {/* Infinite scroll loader */}
-                <div ref={loadMoreRef} style={{ height: 40 }} />
-                {isLoading && products.length > 0 && (
-                    <div className="text-center py-4 text-slate-400 dark:text-slate-500">Loading more...</div>
-                )}
-                {/* Pagination controls (fallback for non-infinite scroll) */}
-                <div className="flex justify-center items-center gap-2 py-4">
-                    <button
-                        className="px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-50"
-                        onClick={() => setPage(Math.max(1, page - 1))}
-                        disabled={page === 1}
-                    >Prev</button>
-                    <span className="text-sm text-slate-600 dark:text-slate-300">Page {page} of {Math.ceil(totalCount / pageSize) || 1}</span>
-                    <button
-                        className="px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-50"
-                        onClick={() => setPage(page + 1)}
-                        disabled={products.length < pageSize || products.length >= totalCount}
-                    >Next</button>
-                </div>
-            </div>
-        // Save back
-        try {
-            localStorage.setItem('sms_cart', JSON.stringify(currentCart));
-        } catch (e) {
-            console.error('Failed to save cart', e);
-            showToast('error', 'Cart storage full');
-        }
+        if (selectedProducts.length === 0 || !activeStore) return;
+        const selectedItems = products.filter(p => selectedProducts.includes(p.id));
+        if (selectedItems.length === 0) return;
 
-        showToast('success', `${addedCount} items added to cart`);
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        if (!printWindow) return;
+
+        const barcodesHtml = selectedItems.map(product => `
+            <div style="display: inline-block; width: 200px; text-align: center; padding: 15px; border: 1px dashed #ccc; margin: 5px; border-radius: 4px;">
+                <div style="font-weight: bold; font-size: 10px; margin-bottom: 2px;">${activeStore.name}</div>
+                <div style="font-size: 10px; margin-bottom: 5px; height: 24px; overflow: hidden;">${product.name}</div>
+                <svg id="barcode-${product.id}"></svg>
+                <div style="font-size: 10px; font-weight: bold; margin-top: 5px;">GHS ${product.price.toFixed(2)}</div>
+                <script>
+                    setTimeout(() => {
+                        try {
+                            JsBarcode("#barcode-${product.id}", "${product.sku}", {
+                                format: "CODE128",
+                                width: 1.2,
+                                height: 30,
+                                displayValue: true,
+                                fontSize: 10
+                            });
+                        } catch(e) { console.error(e); }
+                    }, 0);
+                </script>
+            </div>
+        `).join('');
+
+        const html = `
+            <html>
+                <head>
+                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+                    <style>
+                        @media print {
+                            .no-print { display: none; }
+                            body { margin: 0; }
+                        }
+                    </style>
+                </head>
+                <body style="font-family: sans-serif; padding: 20px;">
+                    <div class="no-print" style="margin-bottom: 20px; text-align: center;">
+                        <button onclick="window.print()" style="padding: 10px 20px; background: #4f46e5; color: white; border: none; border-radius: 6px; cursor: pointer;">Print Now</button>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; justify-content: flex-start;">
+                        ${barcodesHtml}
+                    </div>
+                    <script>
+                        window.onload = () => {
+                            setTimeout(() => {
+                                // window.print();
+                            }, 1000);
+                        };
+                    </script>
+                </body>
+            </html>
+        `;
+        printWindow.document.write(html);
+        printWindow.document.close();
+
+        showToast('success', `Generated ${selectedItems.length} barcodes`);
         setSelectedProducts([]);
     };
 
     const handleAddToCart = (product: any) => {
-        // Get existing cart
-        let currentCart = [];
-        try {
-            const saved = localStorage.getItem('sms_cart');
-            if (saved) currentCart = JSON.parse(saved);
-        } catch (e) { console.error(e); }
-
-        const minimalProduct = {
-            id: product.id,
-            name: product.name,
-            price: product.price,
-            quantity: 1,
-            sku: product.sku,
-            image: (product.image && product.image.length < 500) ? product.image : undefined,
-            category: product.category,
-            costPrice: product.costPrice,
-            status: product.status
-        };
-
-        const existingItemIndex = currentCart.findIndex((item: any) => item.id === product.id);
-        if (existingItemIndex >= 0) {
-            // Increment
-            currentCart[existingItemIndex].quantity += 1;
-        } else {
-            // Add new
-            currentCart.push(minimalProduct);
-        }
-
-        // Save back
-        try {
-            localStorage.setItem('sms_cart', JSON.stringify(currentCart));
-        } catch (e) {
-            console.error('Failed to save cart', e);
-            showToast('error', 'Cart storage full');
-        }
+        addToCart(product);
         showToast('success', `Added ${product.name} to cart`);
     };
 
@@ -351,25 +320,19 @@ export default function InventoryPage() {
                 html5QrCode.start(
                     { facingMode: "environment" },
                     config,
-                    async (decodedText, decodedResult) => {
-                        // Stop scanning first to prevent errors when unmounting
-                        if (scannerRef.current && scannerRef.current.isScanning) {
-                            try {
-                                await scannerRef.current.stop();
-                                scannerRef.current.clear();
-                            } catch (e) {
-                                console.error("Stop error", e);
-                            }
+                    (decodedText: string) => {
+                        setNewProduct(prev => ({ ...prev, sku: decodedText }));
+                        setIsScanning(false);
+                        if (scannerRef.current) {
+                            scannerRef.current.stop().catch(console.error);
                         }
-
-                        handleScan(decodedText);
                     },
-                    (errorMessage) => {
-                        // ignore errors for each frame
+                    (_errorMessage: string) => {
+                        // ignore errors
                     }
-                ).catch(err => {
-                    console.error("Camera start error:", err);
-                    setCameraError("Unable to access camera. Please ensure you have granted permission.");
+                ).catch((err: any) => {
+                    console.error("Scanner failed to start", err);
+                    setCameraError("Could not access camera. Please check permissions.");
                 });
             }, 100);
         } else {
@@ -560,23 +523,28 @@ export default function InventoryPage() {
                                                         <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
                                                     </svg>
                                                     <p className="mb-2 text-sm text-slate-500 dark:text-slate-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400">SVG, PNG, JPG or GIF (MAX. 2MB)</p>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400">SVG, PNG, JPG or GIF (Auto-compressed to WebP)</p>
                                                 </div>
-                                                <input id="dropzone-file" type="file" className="hidden" accept="image/*" onChange={(e) => {
+                                                <input id="dropzone-file" type="file" className="hidden" accept="image/*" onChange={async (e) => {
                                                     const file = e.target.files?.[0];
                                                     if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onloadend = () => {
-                                                            setNewProduct({ ...newProduct, image: reader.result as string });
-                                                        };
-                                                        reader.readAsDataURL(file);
+                                                        try {
+                                                            const compressed = await compressImage(file);
+                                                            setNewProduct({ ...newProduct, image: compressed });
+                                                        } catch (err) {
+                                                            console.error("Compression failed", err);
+                                                            showToast('error', 'Image processing failed');
+                                                        }
                                                     }
                                                 }} />
                                             </label>
                                         </div>
                                         {newProduct.image && newProduct.image.startsWith('data:image') && (
-                                            <div className="mt-2 flex items-center justify-center p-2 border border-slate-200 rounded-lg dark:border-slate-700">
+                                            <div className="mt-2 flex items-center justify-between p-2 border border-slate-200 rounded-lg dark:border-slate-700">
                                                 <img src={newProduct.image} alt="Preview" className="h-20 object-contain rounded-md" />
+                                                <div className="text-[10px] text-slate-500 font-mono">
+                                                    {Math.round(newProduct.image.length * 0.75 / 1024)} KB (WebP)
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -705,6 +673,7 @@ export default function InventoryPage() {
                                 </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Product</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Image</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Video</th>
                             <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">SKU / Category</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Stock</th>
@@ -782,14 +751,30 @@ export default function InventoryPage() {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="flex items-center">
-                                            <div className="h-10 w-10 flex-shrink-0">
-                                                <img className="h-10 w-10 rounded-lg object-cover" src={product.image} alt={product.name} />
-                                            </div>
-                                            <div className="ml-4">
+                                            <div className="ml-0">
                                                 <div className="text-sm font-medium text-slate-900 dark:text-white">{product.name}</div>
                                                 <div className="text-xs text-slate-500 sm:hidden">{product.sku}</div>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {product.image ? (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setActiveImageUrl(product.image || null);
+                                                }}
+                                                className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30 transition-colors"
+                                                title="View Image"
+                                            >
+                                                <Camera className="h-5 w-5" />
+                                            </button>
+                                        ) : (
+                                            <div className="flex justify-center w-9">
+                                                <Camera className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         {product.video ? (
@@ -1033,9 +1018,7 @@ export default function InventoryPage() {
                             </div>
                         </div>
                     </div>
-                )
-            }
-
+                )}
             {/* Video Player Modal */}
             {activeVideoUrl && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4">
@@ -1055,6 +1038,26 @@ export default function InventoryPage() {
                     </div>
                 </div>
             )}
+
+            {/* Image Preview Modal */}
+            {activeImageUrl && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setActiveImageUrl(null)}>
+                    <div className="relative max-w-4xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-white/10 p-2" onClick={e => e.stopPropagation()}>
+                        <button
+                            onClick={() => setActiveImageUrl(null)}
+                            className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
+                        >
+                            <X className="h-6 w-6" />
+                        </button>
+                        <img
+                            src={activeImageUrl}
+                            alt="Product Preview"
+                            className="max-w-full max-h-[85vh] object-contain rounded-lg"
+                        />
+                    </div>
+                </div>
+            )}
+
             {/* Delete Confirmation Modal */}
             {deleteConfirmation && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">

@@ -40,6 +40,18 @@ interface InventoryContextType {
     addProduct: (product: any) => Promise<void>;
     deleteProduct: (id: any) => Promise<void>;
     updateProduct: (product: any) => Promise<void>;
+    cart: any[];
+    setCart: (cart: any[]) => void;
+    addToCart: (product: any) => void;
+    removeFromCart: (id: any) => void;
+    updateCartQuantity: (id: any, delta: number) => void;
+    setCartQuantity: (id: any, quantity: number) => void;
+    clearCart: () => void;
+    page: number;
+    setPage: (page: number) => void;
+    pageSize: number;
+    setPageSize: (size: number) => void;
+    totalCount: number;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -54,6 +66,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [totalCount, setTotalCount] = useState(0);
+
+    // Cart State
+    const [cart, setCart] = useState<any[]>([]);
 
     // Cache state
     const [productsCache, setProductsCache] = useState<{
@@ -97,28 +112,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     const isFetching = useRef(false);
 
-    useEffect(() => {
-        if (activeStore?.id) {
-            // Check if we have valid cache for this store and page
-            const isCacheValid =
-                productsCache.storeId === activeStore.id &&
-                productsCache.timestamp &&
-                Date.now() - productsCache.timestamp < CACHE_TTL;
-
-            if (isCacheValid) {
-                console.log('[Inventory] Using cached products');
-                setProducts(productsCache.data);
-                setIsLoading(false);
-            } else {
-                fetchProducts(page, pageSize);
-            }
-        } else {
-            setProducts([]);
-            setIsLoading(false); // Ensure loading stops when no store
-        }
-    }, [activeStore?.id, page, pageSize]);
-
-    const fetchProducts = async (pageNum = 1, pageSizeNum = 20, retry = true) => {
+    const fetchProducts = React.useCallback(async (pageNum = 1, pageSizeNum = 20, retry = true) => {
         if (!activeStore?.id) {
             setIsLoading(false);
             return;
@@ -182,7 +176,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 return;
             } else {
                 // Only clear if final attempt failed
-                if (products.length === 0) setProducts([]);
+                setProducts(prev => prev.length === 0 ? [] : prev);
                 setIsLoading(false);
             }
         } finally {
@@ -191,9 +185,66 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             }
         }
         isFetching.current = false;
-    };
+    }, [activeStore?.id]);
 
-    const addProduct = async (product: any) => {
+    useEffect(() => {
+        if (activeStore?.id) {
+            // Check if we have valid cache for this store and page
+            const isCacheValid =
+                productsCache.storeId === activeStore.id &&
+                productsCache.timestamp &&
+                Date.now() - productsCache.timestamp < CACHE_TTL;
+
+            if (isCacheValid) {
+                console.log('[Inventory] Using cached products');
+                setProducts(productsCache.data);
+                setIsLoading(false);
+            } else {
+                fetchProducts(page, pageSize);
+            }
+        } else {
+            setProducts([]);
+            setIsLoading(false); // Ensure loading stops when no store
+        }
+    }, [activeStore?.id, page, pageSize, fetchProducts]);
+
+    // Load Cart from LocalStorage on mount
+    useEffect(() => {
+        const savedCart = localStorage.getItem('sms_cart');
+        if (savedCart) {
+            try {
+                const parsed = JSON.parse(savedCart);
+                if (Array.isArray(parsed)) {
+                    setCart(parsed);
+                }
+            } catch (e) {
+                console.error("Failed to parse cart from local storage", e);
+            }
+        }
+    }, []);
+
+    // Save Cart to LocalStorage whenever it changes
+    useEffect(() => {
+        try {
+            // Minify cart to avoid quota issues
+            const minimalCart = cart.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                sku: item.sku,
+                image: (item.image && item.image.length > 500) ? undefined : item.image,
+                category: item.category
+            }));
+            localStorage.setItem('sms_cart', JSON.stringify(minimalCart));
+        } catch (error) {
+            console.error("Failed to save cart to local storage:", error);
+        }
+    }, [cart]);
+
+
+
+    const addProduct = React.useCallback(async (product: any) => {
         if (!activeStore?.id) return;
 
         // Optimistic update (with temporary ID)
@@ -232,9 +283,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Invalidate cache to force fresh fetch next time
             setProductsCache(prev => ({ ...prev, timestamp: null }));
         }
-    };
+    }, [activeStore?.id]);
 
-    const updateProduct = async (product: any) => {
+    const updateProduct = React.useCallback(async (product: any) => {
         if (!activeStore?.id) return;
 
         // Optimistic update
@@ -259,9 +310,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Invalidate cache
             setProductsCache(prev => ({ ...prev, timestamp: null }));
         }
-    };
+    }, [activeStore?.id, fetchProducts]);
 
-    const deleteProduct = async (id: any) => {
+    const deleteProduct = React.useCallback(async (id: any) => {
         // Optimistic delete
         setProducts(prev => prev.filter(p => p.id !== id));
 
@@ -274,9 +325,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Invalidate cache
             setProductsCache(prev => ({ ...prev, timestamp: null }));
         }
-    };
+    }, [fetchProducts]);
 
-    const processSale = async (saleData: any) => {
+    const processSale = React.useCallback(async (saleData: any) => {
         if (!activeStore?.id) return null;
 
         // 1. Handle Customer (Find or Create)
@@ -415,11 +466,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         }
 
         return sale.id;
-    };
+    }, [activeStore?.id, user?.id, products]);
 
     const filteredProducts = products.filter(product => {
-        const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            product.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesSearch = (product.name && String(product.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (product.sku && String(product.sku).toLowerCase().includes(searchQuery.toLowerCase()));
         const matchesCategory = activeCategories.includes('All') || activeCategories.includes(product.category);
         return matchesSearch && matchesCategory;
     });
@@ -429,6 +480,57 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
         );
     };
+
+    // --- Cart Helpers ---
+    const addToCart = React.useCallback((product: any) => {
+        setCart(current => {
+            const existing = current.find(item => item.id === product.id);
+            if (existing) {
+                return current.map(item =>
+                    item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                );
+            }
+            return [...current, {
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                quantity: 1,
+                sku: product.sku,
+                image: (product.image && product.image.length < 500) ? product.image : undefined,
+                category: product.category,
+                costPrice: product.costPrice,
+                status: product.status
+            }];
+        });
+    }, []);
+
+    const removeFromCart = React.useCallback((id: any) => {
+        setCart(current => current.filter(item => item.id !== id));
+    }, []);
+
+    const updateCartQuantity = React.useCallback((id: any, delta: number) => {
+        setCart(current => current.map(item => {
+            if (item.id === id) {
+                const newQty = Math.max(1, item.quantity + delta);
+                return { ...item, quantity: newQty };
+            }
+            return item;
+        }));
+    }, []);
+
+    const setCartQuantity = React.useCallback((id: any, quantity: number) => {
+        setCart(current => current.map(item => {
+            if (item.id === id) {
+                return { ...item, quantity: Math.max(1, quantity) };
+            }
+            return item;
+        }));
+    }, []);
+
+    const clearCart = React.useCallback(() => {
+        setCart([]);
+        localStorage.removeItem('sms_cart');
+    }, []);
 
     const addCustomCategory = (category: string) => {
         if (!customCategories.includes(category)) {
@@ -464,6 +566,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             addProduct,
             deleteProduct,
             updateProduct,
+            cart,
+            setCart,
+            addToCart,
+            removeFromCart,
+            updateCartQuantity,
+            setCartQuantity,
+            clearCart,
             // Pagination controls
             page,
             setPage,
