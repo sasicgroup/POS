@@ -125,6 +125,23 @@ export default function CommunicationPage() {
 
     // Templates State
     const [templates, setTemplates] = useState<any[]>([]);
+    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState<any>(null);
+    
+    // Load templates from DB
+    useEffect(() => {
+        const loadTemplates = async () => {
+            if (activeStore?.id) {
+                const { data } = await supabase
+                    .from('sms_templates')
+                    .select('*')
+                    .eq('store_id', activeStore.id)
+                    .order('created_at', { ascending: false });
+                if (data) setTemplates(data);
+            }
+        };
+        if (activeTab === 'templates') loadTemplates();
+    }, [activeTab, activeStore?.id]);
 
 
     const placeholders = ['{Name}', '{StoreName}', '{Points}', '{LastVisit}', '{Staff}', '{Receipt}'];
@@ -467,11 +484,6 @@ export default function CommunicationPage() {
                                         <label className="font-semibold text-sm uppercase tracking-wide">Purchase Receipt</label>
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Sent after every successful transaction.</p>
-                                    <textarea
-                                        value={config.templates.receipt}
-                                        onChange={(e) => setConfig({ ...config, templates: { ...config.templates, receipt: e.target.value } })}
-                                        className="w-full h-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    />
                                     <textarea
                                         value={config.templates.receipt}
                                         onChange={(e) => setConfig({ ...config, templates: { ...config.templates, receipt: e.target.value } })}

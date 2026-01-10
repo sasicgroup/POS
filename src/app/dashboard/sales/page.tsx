@@ -84,6 +84,7 @@ export default function SalesPage() {
     const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | null>(null);
     const [showMobileCart, setShowMobileCart] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
 
 
     // Scanner Logic - must be declared before early return
@@ -433,147 +434,157 @@ export default function SalesPage() {
 
 
     const handleCheckout = async () => {
-        // Process Payment Logic would go here
+        if (isProcessing) return;
+        setIsProcessing(true);
 
-        // Generate transaction ID with store prefix and sequential number
-        const transactionNumber = (activeStore.lastTransactionNumber || 0) + 1;
-        const prefix = activeStore.receiptPrefix || 'TRX';
-        const suffix = activeStore.receiptSuffix || '';
-        const paddedNumber = transactionNumber.toString().padStart(5, '0');
-        const trxId = `${prefix}-${paddedNumber}${suffix}`;
+        try {
+            // Process Payment Logic would go here
 
-        // Process Inventory Sync & DB Save
-        const saleId = await processSale({
-            items: cart.map(item => ({
-                id: item.id,
-                quantity: item.quantity,
-                price: item.price
-            })),
-            totalAmount: grandTotal,
-            paymentMethod: paymentMethod!,
-            customer: (customerName || customerPhone) ? {
-                name: customerName,
-                phone: customerPhone
-            } : undefined
-        });
+            // Generate transaction ID with store prefix and sequential number
+            const transactionNumber = (activeStore.lastTransactionNumber || 0) + 1;
+            const prefix = activeStore.receiptPrefix || 'TRX';
+            const suffix = activeStore.receiptSuffix || '';
+            const paddedNumber = transactionNumber.toString().padStart(5, '0');
+            const trxId = `${prefix}-${paddedNumber}${suffix}`;
 
-        if (!saleId) {
-            showToast('error', "Failed to process sale. Please try again.");
-            return;
-        }
+            // Process Inventory Sync & DB Save
+            const saleId = await processSale({
+                items: cart.map(item => ({
+                    id: item.id,
+                    quantity: item.quantity,
+                    price: item.price
+                })),
+                totalAmount: grandTotal,
+                paymentMethod: paymentMethod!,
+                customer: (customerName || customerPhone) ? {
+                    name: customerName,
+                    phone: customerPhone
+                } : undefined
+            });
 
-        // Update transaction counter in database
-        const { error: storeUpdateError } = await supabase
-            .from('stores')
-            .update({ last_transaction_number: transactionNumber })
-            .eq('id', activeStore.id);
-
-        if (!storeUpdateError) {
-            // CRITICAL: Update local state so next transaction ID is incremented
-            updateStoreSettings({ lastTransactionNumber: transactionNumber });
-        }
-
-        // Create order notification
-        await supabase.from('notifications').insert({
-            store_id: activeStore.id,
-            type: 'order',
-            title: `New Order #${trxId}`,
-            message: `${customerName || 'A customer'} placed a new order for GHS ${grandTotal.toFixed(2)}.`,
-            metadata: {
-                sale_id: saleId,
-                transaction_id: trxId,
-                amount: grandTotal,
-                customer: customerName || 'Guest'
+            if (!saleId) {
+                showToast('error', "Failed to process sale. Please try again.");
+                return;
             }
-        });
 
-        const pointsEarned = loyaltyConfig?.enabled
-            ? Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1)) // Default to 1 if missing, but config should exist
-            : 0;
+            // Update transaction counter in database
+            const { error: storeUpdateError } = await supabase
+                .from('stores')
+                .update({ last_transaction_number: transactionNumber })
+                .eq('id', activeStore.id);
 
-        // --- Update Customer Loyalty Points & Stats ---
-        if (customerPhone) {
-            // 1. Fetch fresh customer data to ensure we have the latest points/existence
-            const { data: freshCust } = await supabase
-                .from('customers')
-                .select('*')
-                .eq('store_id', activeStore.id)
-                .eq('phone', customerPhone)
-                .single();
+            if (!storeUpdateError) {
+                // CRITICAL: Update local state so next transaction ID is incremented
+                updateStoreSettings({ lastTransactionNumber: transactionNumber });
+            }
 
-            if (freshCust) {
-                // Calculate based on DB data
-                const currentDbPoints = freshCust.points || 0;
-                // If redeeming, we subtract 100, then add earned. 
-                // Note: grandTotal already has the discount applied if redeemPoints was true, 
-                // so we don't need to adjust pointsEarned, just the starting balance.
-                // If redeeming, we subtrac the redemption amount
-                // Note: grandTotal already has the discount applied if redeemPoints was true
-                const finalPoints = redeemPoints
-                    ? (currentDbPoints - loyaltyRedeemPoints) + pointsEarned
-                    : currentDbPoints + pointsEarned;
-
-                await supabase.from('customers').update({
-                    points: finalPoints,
-                    total_spent: (freshCust.total_spent || 0) + grandTotal,
-                    total_visits: (freshCust.total_visits || 0) + 1,
-                    last_visit: new Date().toISOString()
-                }).eq('id', freshCust.id);
-
-                // Update Local State for UI
-                setLoyaltyPoints(finalPoints);
-                setExistingCustomer({
-                    ...freshCust,
-                    points: finalPoints,
-                    total_spent: (freshCust.total_spent || 0) + grandTotal,
-                    total_visits: (freshCust.total_visits || 0) + 1
-                });
-                setRedeemPoints(false);
-
-                // --- Notifications ---
-                // Trigger 'new customer' welcome if they were just created (points check or created_at check?)
-                // Since we just updated them, let's use the local 'existingCustomer' state check
-                // If existingCustomer was null BEFORE this transaction, they are new.
-                if (!existingCustomer) {
-                    await sendNotification('welcome', {
-                        customerName: freshCust.name,
-                        customerPhone: customerPhone
-                    });
-                }
-
-                // Sale Receipt
-                await sendNotification('sale', {
-                    id: trxId,
+            // Create order notification
+            await supabase.from('notifications').insert({
+                store_id: activeStore.id,
+                type: 'order',
+                title: `New Order #${trxId}`,
+                message: `${customerName || 'A customer'} placed a new order for GHS ${grandTotal.toFixed(2)}.`,
+                metadata: {
+                    sale_id: saleId,
+                    transaction_id: trxId,
                     amount: grandTotal,
-                    customerPhone: customerPhone,
-                    items: cart.length,
-                    pointsEarned: pointsEarned,
-                    totalPoints: finalPoints,
-                    staffName: user?.name,
-                    storeId: activeStore.id
-                });
+                    customer: customerName || 'Guest'
+                }
+            });
 
-            } else {
-                console.warn("Customer not found for points update after sale processing", customerPhone);
+            const pointsEarned = loyaltyConfig?.enabled
+                ? Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1)) // Default to 1 if missing, but config should exist
+                : 0;
+
+            // --- Update Customer Loyalty Points & Stats ---
+            if (customerPhone) {
+                // 1. Fetch fresh customer data to ensure we have the latest points/existence
+                const { data: freshCust } = await supabase
+                    .from('customers')
+                    .select('*')
+                    .eq('store_id', activeStore.id)
+                    .eq('phone', customerPhone)
+                    .single();
+
+                if (freshCust) {
+                    // Calculate based on DB data
+                    const currentDbPoints = freshCust.points || 0;
+                    // If redeeming, we subtract 100, then add earned. 
+                    // Note: grandTotal already has the discount applied if redeemPoints was true, 
+                    // so we don't need to adjust pointsEarned, just the starting balance.
+                    // If redeeming, we subtrac the redemption amount
+                    // Note: grandTotal already has the discount applied if redeemPoints was true
+                    const finalPoints = redeemPoints
+                        ? (currentDbPoints - loyaltyRedeemPoints) + pointsEarned
+                        : currentDbPoints + pointsEarned;
+
+                    await supabase.from('customers').update({
+                        points: finalPoints,
+                        total_spent: (freshCust.total_spent || 0) + grandTotal,
+                        total_visits: (freshCust.total_visits || 0) + 1,
+                        last_visit: new Date().toISOString()
+                    }).eq('id', freshCust.id);
+
+                    // Update Local State for UI
+                    setLoyaltyPoints(finalPoints);
+                    setExistingCustomer({
+                        ...freshCust,
+                        points: finalPoints,
+                        total_spent: (freshCust.total_spent || 0) + grandTotal,
+                        total_visits: (freshCust.total_visits || 0) + 1
+                    });
+                    setRedeemPoints(false);
+
+                    // --- Notifications ---
+                    // Trigger 'new customer' welcome if they were just created (points check or created_at check?)
+                    // Since we just updated them, let's use the local 'existingCustomer' state check
+                    // If existingCustomer was null BEFORE this transaction, they are new.
+                    if (!existingCustomer) {
+                        await sendNotification('welcome', {
+                            customerName: freshCust.name,
+                            customerPhone: customerPhone
+                        });
+                    }
+
+                    // Sale Receipt
+                    await sendNotification('sale', {
+                        id: trxId,
+                        amount: grandTotal,
+                        customerPhone: customerPhone,
+                        customerName: customerName,
+                        ownerPhone: user?.phone, // Send to current user's phone as owner notification
+                        items: cart.length,
+                        pointsEarned: pointsEarned,
+                        totalPoints: finalPoints,
+                        staffName: user?.name,
+                        storeId: activeStore.id
+                    });
+
+                } else {
+                    console.warn("Customer not found for points update after sale processing", customerPhone);
+                }
             }
-        }
 
-        console.log(`Processing Sale: ${trxId}`);
-        handlePrintReceipt(trxId);
+            console.log(`Processing Sale: ${trxId}`);
+            handlePrintReceipt(trxId);
 
-        // Play Success Sound
-        playSuccess();
+            // Play Success Sound
+            playSuccess();
 
-        setShowCheckoutSuccess(true);
-        setTimeout(() => {
+            setShowCheckoutSuccess(true);
             setCart([]);
             localStorage.removeItem('sms_cart');
             setCustomerName('');
             setCustomerPhone('');
             setLoyaltyPoints(0);
             setRedeemPoints(false);
-            setShowCheckoutSuccess(false);
-        }, 3000);
+
+            setTimeout(() => {
+                setShowCheckoutSuccess(false);
+            }, 3000);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
 
@@ -1066,11 +1077,11 @@ export default function SalesPage() {
 
                         <button
                             onClick={() => setShowCheckoutConfirm(true)}
-                            disabled={cart.length === 0 || !paymentMethod}
+                            disabled={cart.length === 0 || !paymentMethod || isProcessing}
                             className="w-full rounded-xl bg-indigo-600 py-3.5 text-center font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                            title={!paymentMethod ? "Please select a payment method" : ""}
+                            title={isProcessing ? "Processing..." : (!paymentMethod ? "Please select a payment method" : "")}
                         >
-                            {paymentMethod ? `Checkout • GHS ${grandTotal.toFixed(2)}` : 'Select Payment Method'}
+                            {isProcessing ? 'Processing...' : (paymentMethod ? `Checkout • GHS ${grandTotal.toFixed(2)}` : 'Select Payment Method')}
                         </button>
                     </div>
 

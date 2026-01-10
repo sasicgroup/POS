@@ -21,6 +21,9 @@ export interface Store {
     receiptSuffix?: string; // e.g., "-A", "2024"
     lastTransactionNumber?: number; // Sequential counter
     rolePermissions?: Record<string, Record<string, boolean>>; // { manager: { view_dashboard: true }, staff: { ... } }
+    status?: 'active' | 'hidden' | 'deleted' | 'archived';
+    deletion_otc?: string;
+    deletion_otc_expiry?: string;
 }
 
 // Default Permissions
@@ -80,6 +83,10 @@ interface AuthContextType {
     removeTeamMember: (id: any) => Promise<void>;
     hasPermission: (permission: string) => boolean;
     updateRolePermissions: (role: string, permissions: Record<string, boolean>) => Promise<boolean>;
+    updateStoreStatus: (storeId: any, status: 'active' | 'hidden' | 'deleted' | 'archived') => Promise<void>;
+    requestStoreDeletionOTC: (storeId: any) => Promise<boolean>;
+    verifyStoreDeletionOTC: (storeId: any, otc: string) => Promise<boolean>;
+    deleteStore: (storeId: any) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -583,6 +590,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchTeamMembers();
     };
 
+    const updateStoreStatus = async (storeId: any, status: 'active' | 'hidden' | 'deleted' | 'archived') => {
+        const { error } = await supabase
+            .from('stores')
+            .update({ status })
+            .eq('id', storeId);
+
+        if (error) throw error;
+
+        // Force refresh local stores list
+        setStores(prev => prev.map(s => s.id === storeId ? { ...s, status } : s));
+        if (activeStore?.id === storeId) {
+            setActiveStore(prev => prev ? { ...prev, status } : null);
+        }
+
+        await logActivity('UPDATE_STORE_STATUS', { store_id: storeId, new_status: status }, user?.id, storeId);
+    };
+
+    const requestStoreDeletionOTC = async (storeId: any): Promise<boolean> => {
+        if (!user || user.role !== 'owner') return false;
+
+        const otc = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
+
+        const { error } = await supabase
+            .from('stores')
+            .update({
+                deletion_otc: otc,
+                deletion_otc_expiry: expiry
+            })
+            .eq('id', storeId);
+
+        if (error) return false;
+
+        // In a real app, send OTC via SMS or Email
+        console.log(`STORE DELETION OTC for store ${storeId}: ${otc}`);
+
+        // If phone is available, try sending SMS
+        if (user.phone) {
+            await sendDirectMessage(user.phone, `Your OTC for store deletion is: ${otc}. This code expires in 10 minutes.`);
+        }
+
+        return true;
+    };
+
+    const verifyStoreDeletionOTC = async (storeId: any, otc: string): Promise<boolean> => {
+        const { data, error } = await supabase
+            .from('stores')
+            .select('deletion_otc, deletion_otc_expiry')
+            .eq('id', storeId)
+            .single();
+
+        if (error || !data) return false;
+
+        const now = new Date();
+        const expiry = new Date(data.deletion_otc_expiry);
+
+        if (data.deletion_otc === otc && now < expiry) {
+            return true;
+        }
+
+        return false;
+    };
+
+    const deleteStore = async (storeId: any) => {
+        const { error } = await supabase
+            .from('stores')
+            .update({ status: 'deleted' })
+            .eq('id', storeId);
+
+        if (error) throw error;
+
+        setStores(prev => prev.filter(s => s.id !== storeId));
+        if (activeStore?.id === storeId) {
+            setActiveStore(stores.find(s => s.id !== storeId) || null);
+        }
+
+        await logActivity('DELETE_STORE', { store_id: storeId }, user?.id, storeId);
+    };
+
     const updateStoreSettings = async (settings: Partial<Store>): Promise<{ success: boolean; error?: any }> => {
         if (activeStore?.id) {
             // Map camelCase to snake_case for DB
@@ -705,7 +791,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             resendOTP,
             unlockAccount,
             hasPermission,
-            updateRolePermissions
+            updateRolePermissions,
+            updateStoreStatus,
+            requestStoreDeletionOTC,
+            verifyStoreDeletionOTC,
+            deleteStore
         }}>
             {children}
         </AuthContext.Provider>

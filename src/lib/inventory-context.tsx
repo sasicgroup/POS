@@ -112,7 +112,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     const isFetching = useRef(false);
 
-    const fetchProducts = React.useCallback(async (pageNum = 1, pageSizeNum = 20, retry = true) => {
+    const fetchProducts = React.useCallback(async (pageNum = 1, pageSizeNum = 20, retryCount = 0) => {
         if (!activeStore?.id) {
             setIsLoading(false);
             return;
@@ -124,22 +124,32 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        console.log(`[Inventory] Fetching products for store: ${activeStore.id}, page: ${pageNum}, pageSize: ${pageSizeNum}`);
+        console.log(`[Inventory] Fetching products for store: ${activeStore.id}, page: ${pageNum}, pageSize: ${pageSizeNum}, attempt: ${retryCount + 1}`);
         isFetching.current = true;
         setIsLoading(true);
 
         const startTime = Date.now();
+        const TIMEOUT_MS = 30000; // 30 second timeout
+        
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
         try {
             // Use range for pagination
             const from = (pageNum - 1) * pageSizeNum;
             const to = from + pageSizeNum - 1;
+            
             const { data, error, count } = await supabase
                 .from('products')
                 .select('*', { count: 'exact' })
                 .eq('store_id', activeStore.id)
-                .range(from, to);
+                .range(from, to)
+                .abortSignal(controller.signal);
 
+            clearTimeout(timeoutId);
             const duration = Date.now() - startTime;
+            
             if (error) {
                 console.error(`[Inventory] Supabase error (duration: ${duration}ms):`, error.message || error);
                 throw error;
@@ -165,26 +175,36 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setIsLoading(false);
             }
         } catch (err: any) {
+            clearTimeout(timeoutId);
             const duration = Date.now() - startTime;
-            console.error(`[Inventory] Error fetching products (duration: ${duration}ms):`, err.message || err);
-
-            // Simple retry logic
-            if (retry) {
-                console.log('[Inventory] Retrying fetch in 2s...');
+            
+            // Check for specific error types
+            const isNetworkError = err.name === 'AbortError' || 
+                                   err.message === 'Failed to fetch' || 
+                                   err.message.includes('network') ||
+                                   err.name === 'TypeError';
+            
+            console.error(`[Inventory] Error fetching products (duration: ${duration}ms, attempt: ${retryCount + 1}):`, err.message || err);
+            
+            // Retry with exponential backoff (max 3 attempts)
+            const maxRetries = 3;
+            if (retryCount < maxRetries && isNetworkError) {
+                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // 1s, 2s, 4s max
+                console.log(`[Inventory] Retrying fetch in ${delay}ms...`);
                 isFetching.current = false; // Release lock for retry
-                setTimeout(() => fetchProducts(pageNum, pageSizeNum, false), 2000);
+                setTimeout(() => fetchProducts(pageNum, pageSizeNum, retryCount + 1), delay);
                 return;
             } else {
-                // Only clear if final attempt failed
-                setProducts(prev => prev.length === 0 ? [] : prev);
+                // Final failure - keep existing data if any, just stop loading
+                console.log('[Inventory] Max retries reached or non-retryable error, keeping existing data');
                 setIsLoading(false);
+                
+                // Invalidate cache so we try again on next mount
+                setProductsCache(prev => ({ ...prev, timestamp: null }));
             }
         } finally {
-            if (!retry) {
-                isFetching.current = false;
-            }
+            isFetching.current = false;
         }
-        isFetching.current = false;
     }, [activeStore?.id]);
 
     useEffect(() => {

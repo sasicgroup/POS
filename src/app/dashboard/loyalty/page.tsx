@@ -287,6 +287,22 @@ export default function LoyaltyPage() {
 
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+    
+    // Load campaigns from DB
+    useEffect(() => {
+        const loadCampaigns = async () => {
+            if (activeStore?.id) {
+                const { data } = await supabase
+                    .from('loyalty_campaigns')
+                    .select('*')
+                    .eq('store_id', activeStore.id)
+                    .gte('end_date', new Date().toISOString()) // Active campaigns only
+                    .order('created_at', { ascending: false });
+                if (data) setCampaigns(data);
+            }
+        };
+        loadCampaigns();
+    }, [activeStore?.id]);
 
 
 

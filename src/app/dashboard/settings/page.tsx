@@ -20,8 +20,19 @@ import {
     Tag,
     Package,
     Edit2,
-    Trash2
+    Trash2,
+    Layout,
+    Eye,
+    EyeOff,
+    Archive,
+    RotateCcw,
+    Barcode,
+    QrCode,
+    RefreshCw,
+    ShieldAlert,
+    Key
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 export default function SettingsPage() {
     const { activeStore, user, updateStoreSettings, teamMembers, addTeamMember, updateTeamMember, removeTeamMember } = useAuth();
@@ -55,6 +66,26 @@ export default function SettingsPage() {
         username: ''
     });
     const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+    // Store Management State
+    const [storeToDelete, setStoreToDelete] = useState<any>(null);
+    const [deletionOtcInput, setDeletionOtcInput] = useState('');
+    const [otcSent, setOtcSent] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // Barcode Generator State
+    const [barcodeCount, setBarcodeCount] = useState(10);
+    const [generatedBarcodes, setGeneratedBarcodes] = useState<string[]>([]);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [barcodeList, setBarcodeList] = useState<any[]>([]);
+
+    const {
+        updateStoreStatus,
+        requestStoreDeletionOTC,
+        verifyStoreDeletionOTC,
+        deleteStore,
+        stores
+    } = useAuth();
 
 
 
@@ -151,6 +182,112 @@ export default function SettingsPage() {
         }
     };
 
+    const fetchBarcodeLibrary = async () => {
+        if (!activeStore?.id) return;
+        const { data, error } = await supabase
+            .from('generated_barcodes')
+            .select('*')
+            .eq('store_id', activeStore.id)
+            .order('created_at', { ascending: false });
+
+        if (!error && data) {
+            setBarcodeList(data);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'barcodes') {
+            fetchBarcodeLibrary();
+        }
+    }, [activeTab]);
+
+    const handleGenerateBarcodes = async () => {
+        if (!activeStore?.id || barcodeCount <= 0) return;
+        setIsGenerating(true);
+
+        try {
+            const newCodes = [];
+            const timestamp = Date.now().toString().slice(-6);
+            for (let i = 0; i < barcodeCount; i++) {
+                const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+                const code = `BC-${timestamp}-${random}`;
+                newCodes.push({
+                    store_id: activeStore.id,
+                    code: code,
+                    is_assigned: false
+                });
+            }
+
+            const { error } = await supabase
+                .from('generated_barcodes')
+                .insert(newCodes);
+
+            if (error) throw error;
+
+            showToast('success', `Successfully generated ${barcodeCount} barcodes`);
+            fetchBarcodeLibrary();
+        } catch (err) {
+            console.error(err);
+            showToast('error', 'Failed to generate barcodes');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleRequestDeletion = async (store: any) => {
+        setStoreToDelete(store);
+        const success = await requestStoreDeletionOTC(store.id);
+        if (success) {
+            setOtcSent(true);
+            showToast('success', 'Deletion code sent to your phone');
+        } else {
+            showToast('error', 'Failed to send deletion code');
+        }
+    };
+
+    const handleVerifyAndDelete = async () => {
+        if (!storeToDelete || !deletionOtcInput) return;
+        setIsDeleting(true);
+
+        try {
+            const isValid = await verifyStoreDeletionOTC(storeToDelete.id, deletionOtcInput);
+            if (isValid) {
+                await deleteStore(storeToDelete.id);
+                showToast('success', 'Store deleted successfully');
+                setStoreToDelete(null);
+                setDeletionOtcInput('');
+                setOtcSent(false);
+            } else {
+                showToast('error', 'Invalid or expired code');
+            }
+        } catch (err) {
+            showToast('error', 'Deletion failed');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const downloadBarcodesPDF = () => {
+        if (barcodeList.length === 0) return;
+        const doc = new jsPDF();
+        doc.setFontSize(20);
+        doc.text('Barcode Library', 10, 20);
+        doc.setFontSize(12);
+
+        let y = 40;
+        barcodeList.forEach((item, index) => {
+            if (y > 270) {
+                doc.addPage();
+                y = 20;
+            }
+            doc.text(`${index + 1}. Code: ${item.code} (${item.is_assigned ? 'Assigned' : 'Available'})`, 10, y);
+            y += 10;
+        });
+
+        doc.save('barcode-library.pdf');
+        showToast('success', 'Barcode library exported to PDF');
+    };
+
     if (!activeStore || !user || !smsConfig) return null;
 
     const tabs = [
@@ -158,7 +295,8 @@ export default function SettingsPage() {
         { id: 'profile', label: 'My Profile', icon: Users },
         { id: 'products', label: 'Product Settings', icon: Package },
         { id: 'users', label: 'Team Members', icon: Users },
-
+        { id: 'stores', label: 'Store Management', icon: Layout },
+        { id: 'barcodes', label: 'Barcode Generator', icon: Barcode },
         { id: 'sms', label: 'SMS & Notifications', icon: MessageSquare },
     ];
 
@@ -728,6 +866,138 @@ export default function SettingsPage() {
                         </div>
                     )}
 
+                    {activeTab === 'stores' && (
+                        <div className="space-y-6">
+                            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Store Management</h2>
+                                    <span className="text-xs font-mono text-slate-500">Total: {stores.length}</span>
+                                </div>
+
+                                <div className="grid gap-4">
+                                    {stores.map((store: any) => (
+                                        <div key={store.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
+                                            <div className="flex items-center gap-4">
+                                                <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
+                                                    <Building2 className="h-5 w-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-900 dark:text-white">{store.name}</p>
+                                                    <p className="text-xs text-slate-500">{store.location}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${store.status === 'active' ? 'bg-green-100 text-green-700' :
+                                                    store.status === 'hidden' ? 'bg-slate-200 text-slate-600' :
+                                                        store.status === 'archived' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                                                    }`}>
+                                                    {store.status || 'active'}
+                                                </span>
+
+                                                <div className="h-4 w-px bg-slate-200 mx-1"></div>
+
+                                                <button
+                                                    onClick={() => updateStoreStatus(store.id, store.status === 'hidden' ? 'active' : 'hidden')}
+                                                    className="p-2 rounded-lg hover:bg-white text-slate-500 hover:text-indigo-600 transition-all shadow-sm"
+                                                    title={store.status === 'hidden' ? 'Show Store' : 'Hide Store'}
+                                                >
+                                                    {store.status === 'hidden' ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                                                </button>
+
+                                                <button
+                                                    onClick={() => updateStoreStatus(store.id, store.status === 'archived' ? 'active' : 'archived')}
+                                                    className="p-2 rounded-lg hover:bg-white text-slate-500 hover:text-amber-600 transition-all shadow-sm"
+                                                    title={store.status === 'archived' ? 'Restore Store' : 'Archive Store'}
+                                                >
+                                                    {store.status === 'archived' ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleRequestDeletion(store)}
+                                                    className="p-2 rounded-lg hover:bg-white text-slate-500 hover:text-red-600 transition-all shadow-sm"
+                                                    title="Permanently Delete"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'barcodes' && (
+                        <div className="space-y-6">
+                            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Barcode Generator</h2>
+
+                                <div className="flex flex-col sm:flex-row gap-4 p-4 rounded-xl bg-indigo-50 border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/30">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-indigo-700 dark:text-indigo-400 mb-2 uppercase">Quantity to Generate</label>
+                                        <input
+                                            type="number"
+                                            value={barcodeCount}
+                                            onChange={(e) => setBarcodeCount(parseInt(e.target.value) || 1)}
+                                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700"
+                                            min="1"
+                                            max="100"
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        <button
+                                            onClick={handleGenerateBarcodes}
+                                            disabled={isGenerating}
+                                            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                                        >
+                                            <RefreshCw className={`h-4 w-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                                            {isGenerating ? 'Generating...' : 'Generate Codes'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                            <QrCode className="h-4 w-4 text-indigo-500" />
+                                            Barcode Library
+                                        </h3>
+                                        <button
+                                            onClick={downloadBarcodesPDF}
+                                            className="text-xs text-indigo-600 hover:underline font-bold"
+                                        >
+                                            Download All (PDF)
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {barcodeList.map((item) => (
+                                            <div key={item.id} className="p-3 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col items-center gap-2 group hover:border-indigo-300 transition-all">
+                                                <div className="w-full h-8 bg-slate-100 rounded flex items-center justify-center">
+                                                    <div className="h-4 w-full flex items-center justify-center gap-0.5 px-2">
+                                                        {[...Array(20)].map((_, i) => (
+                                                            <div key={i} className={`h-full w-px bg-slate-900 ${i % 3 === 0 ? 'w-[2px]' : ''}`} />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400">{item.code}</span>
+                                                <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${item.is_assigned ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {item.is_assigned ? 'Assigned' : 'Available'}
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {barcodeList.length === 0 && (
+                                            <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl">
+                                                <p className="text-sm text-slate-400">No barcodes generated yet</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'sms' && (
                         <div className="space-y-6">
                             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -961,6 +1231,59 @@ export default function SettingsPage() {
                     </div>
                 )
             }
+            {/* Store Deletion / OTC Modal */}
+            {storeToDelete && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-red-100 dark:border-red-900/30">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/40 mb-4 animate-bounce">
+                            <ShieldAlert className="h-8 w-8 text-red-600 dark:text-red-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center text-slate-900 dark:text-white mb-2 uppercase tracking-wide">Security Checkpoint</h3>
+                        <p className="text-sm text-center text-slate-500 mb-6 font-medium">
+                            You are about to permanently delete <span className="font-bold text-red-600">{storeToDelete.name}</span>. This will destroy all sales data, inventory, and analytics.
+                        </p>
+
+                        {!otcSent ? (
+                            <button
+                                onClick={() => handleRequestDeletion(storeToDelete)}
+                                className="w-full rounded-xl bg-red-600 py-4 font-bold text-white hover:bg-red-700 shadow-lg shadow-red-500/30 transition-all flex items-center justify-center gap-2"
+                            >
+                                <Key className="h-5 w-5" />
+                                REQUEST DELETION OTC
+                            </button>
+                        ) : (
+                            <div className="space-y-4 animate-in slide-in-from-bottom-2">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Enter 6-Digit Code</label>
+                                    <input
+                                        type="text"
+                                        maxLength={6}
+                                        value={deletionOtcInput}
+                                        onChange={(e) => setDeletionOtcInput(e.target.value)}
+                                        placeholder="000000"
+                                        className="w-full h-14 text-center text-2xl font-bold tracking-widest rounded-xl border-2 border-slate-200 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all dark:bg-slate-800 dark:border-slate-700"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleVerifyAndDelete}
+                                    disabled={isDeleting || deletionOtcInput.length < 6}
+                                    className="w-full rounded-xl bg-red-600 py-4 font-bold text-white hover:bg-red-700 shadow-lg shadow-red-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isDeleting ? <RefreshCw className="h-5 w-5 animate-spin" /> : 'CONFIRM PERMANENT DELETION'}
+                                </button>
+                                <p className="text-[10px] text-center text-slate-400 italic">Code expires in 10 minutes</p>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => { setStoreToDelete(null); setOtcSent(false); setDeletionOtcInput(''); }}
+                            className="mt-4 w-full py-2 text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                        >
+                            CANCEL
+                        </button>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }
