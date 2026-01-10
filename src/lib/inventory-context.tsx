@@ -503,11 +503,27 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     // --- Cart Helpers ---
     const addToCart = React.useCallback((product: any) => {
+        // Prevent adding items with 0 stock
+        if (product.stock <= 0) {
+            console.warn('Cannot add product with 0 stock to cart');
+            return;
+        }
+        
         setCart(current => {
             const existing = current.find(item => item.id === product.id);
             if (existing) {
+                // Check if adding would exceed available stock
+                const newQty = existing.quantity + 1;
+                const productInList = products.find(p => p.id === product.id);
+                const maxStock = productInList?.stock || 0;
+                
+                if (newQty > maxStock) {
+                    console.warn('Cannot add more than available stock');
+                    return current;
+                }
+                
                 return current.map(item =>
-                    item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                    item.id === product.id ? { ...item, quantity: newQty } : item
                 );
             }
             return [...current, {
@@ -522,7 +538,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 status: product.status
             }];
         });
-    }, []);
+    }, [products]);
 
     const removeFromCart = React.useCallback((id: any) => {
         setCart(current => current.filter(item => item.id !== id));
@@ -531,21 +547,25 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const updateCartQuantity = React.useCallback((id: any, delta: number) => {
         setCart(current => current.map(item => {
             if (item.id === id) {
-                const newQty = Math.max(1, item.quantity + delta);
+                const product = products.find(p => p.id === id);
+                const maxStock = product?.stock || 0;
+                const newQty = Math.max(1, Math.min(item.quantity + delta, maxStock));
                 return { ...item, quantity: newQty };
             }
             return item;
         }));
-    }, []);
+    }, [products]);
 
     const setCartQuantity = React.useCallback((id: any, quantity: number) => {
         setCart(current => current.map(item => {
             if (item.id === id) {
-                return { ...item, quantity: Math.max(1, quantity) };
+                const product = products.find(p => p.id === id);
+                const maxStock = product?.stock || 0;
+                return { ...item, quantity: Math.max(1, Math.min(quantity, maxStock)) };
             }
             return item;
         }));
-    }, []);
+    }, [products]);
 
     const clearCart = React.useCallback(() => {
         setCart([]);
