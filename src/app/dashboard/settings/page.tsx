@@ -122,7 +122,15 @@ export default function SettingsPage() {
     // Team Management State
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [editingMember, setEditingMember] = useState<any>(null);
+    const [otpEnabled, setOtpEnabled] = useState(true);
     const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<{ id: string, name: string } | null>(null);
+
+    // Reset OTP state when modal opens/closes
+    useEffect(() => {
+        if (showInviteModal) {
+            setOtpEnabled(editingMember ? editingMember.otp_enabled !== false : true);
+        }
+    }, [showInviteModal, editingMember]);
 
     // Edit State for Types/Categories
     const [editingType, setEditingType] = useState<string | null>(null);
@@ -710,7 +718,7 @@ export default function SettingsPage() {
                                         username: formData.get('username') as string,
                                         phone: formData.get('phone') as string,
                                         pin: formData.get('pin') as string,
-                                        otp_enabled: formData.get('otp_enabled') === 'on',
+                                        otp_enabled: otpEnabled,
                                         role: formData.get('role') as any
                                     };
 
@@ -759,7 +767,8 @@ export default function SettingsPage() {
                                                 type="checkbox"
                                                 name="otp_enabled"
                                                 id="otp_enabled_edit"
-                                                defaultChecked={editingMember ? editingMember.otp_enabled : true}
+                                                checked={otpEnabled}
+                                                onChange={(e) => setOtpEnabled(e.target.checked)}
                                                 className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                             />
                                             <label htmlFor="otp_enabled_edit" className="text-sm text-slate-700 dark:text-slate-300">Enable OTP (Requires Phone Number)</label>
