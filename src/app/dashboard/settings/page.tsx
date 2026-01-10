@@ -339,14 +339,16 @@ export default function SettingsPage() {
         doc.setFontSize(10);
 
         let y = 35;
-        let x = 10;
-        const barcodeWidth = 70;
-        const barcodeHeight = 15;
+        let x = 15;
+        const barcodeWidth = 60;
+        const barcodeHeight = 12;
+        const colGap = 25;  // Space between columns
+        const rowGap = 25;  // Space between rows
 
         for (let i = 0; i < barcodeList.length; i++) {
             const item = barcodeList[i];
             
-            if (y + barcodeHeight + 20 > 280) {
+            if (y + barcodeHeight + 18 > 280) {
                 doc.addPage();
                 y = 20;
             }
@@ -356,15 +358,15 @@ export default function SettingsPage() {
 
             // Add code text below barcode
             doc.setFontSize(8);
-            doc.text(item.code, x + barcodeWidth / 2, y + barcodeHeight + 5, { align: 'center' });
+            doc.text(item.code, x + barcodeWidth / 2, y + barcodeHeight + 4, { align: 'center' });
             doc.setFontSize(7);
-            doc.text(item.is_assigned ? 'Assigned' : 'Available', x + barcodeWidth / 2, y + barcodeHeight + 9, { align: 'center' });
+            doc.text(item.is_assigned ? 'Assigned' : 'Available', x + barcodeWidth / 2, y + barcodeHeight + 8, { align: 'center' });
 
             // Move to next position (2 columns)
-            x += barcodeWidth + 5;
-            if (x + barcodeWidth > 200) {
-                x = 10;
-                y += 35;
+            x += barcodeWidth + colGap;
+            if (x + barcodeWidth > 190) {
+                x = 15;
+                y += barcodeHeight + rowGap;
             }
         }
 
