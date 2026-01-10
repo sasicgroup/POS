@@ -93,27 +93,25 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-4">
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150 mix-blend-overlay"></div>
-
-            <div className="z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl">
-                <div className="p-8 text-white">
+        <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
+            <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="p-8">
                     <div className="mb-6 flex justify-center">
-                        <div className="rounded-full bg-white/20 p-4 shadow-lg ring-1 ring-white/30">
-                            {step === 'otp' ? <Lock className="h-10 w-10 text-white" /> : <Store className="h-10 w-10 text-white" />}
+                        <div className="rounded-full bg-indigo-100 p-4 shadow-lg">
+                            {step === 'otp' ? <Lock className="h-10 w-10 text-indigo-600" /> : <Store className="h-10 w-10 text-indigo-600" />}
                         </div>
                     </div>
 
-                    <h2 className="mb-2 text-center text-3xl font-bold tracking-tight">{step === 'otp' ? 'Security Check' : 'Store Access'}</h2>
-                    <p className="mb-8 text-center text-indigo-100">{step === 'otp' ? 'Enter the code sent to your phone' : 'Enter your credentials to continue'}</p>
+                    <h2 className="mb-2 text-center text-3xl font-bold tracking-tight text-slate-900">{step === 'otp' ? 'Security Check' : 'Store Access'}</h2>
+                    <p className="mb-8 text-center text-slate-500">{step === 'otp' ? 'Enter the code sent to your phone' : 'Enter your credentials to continue'}</p>
 
                     {step === 'credentials' ? (
                         <form onSubmit={handleCredentialsSubmit} className="space-y-6">
                             <div className="space-y-4">
                                 <div>
-                                    <label className="mb-1 block text-sm font-medium text-indigo-100">Username</label>
+                                    <label className="mb-1 block text-sm font-medium text-slate-700">Username</label>
                                     <div className="relative">
-                                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-indigo-200" />
+                                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                                         <input
                                             type="text"
                                             value={username}
@@ -121,14 +119,14 @@ export default function LoginPage() {
                                                 setUsername(e.target.value);
                                                 setError('');
                                             }}
-                                            className="block w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-4 text-white placeholder-indigo-200 shadow-sm transition-all focus:border-indigo-300 focus:bg-white/10 focus:ring focus:ring-indigo-300/20 outline-none"
+                                            className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-slate-900 placeholder-slate-400 shadow-sm transition-all focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none"
                                             placeholder="Enter username"
                                             required
                                         />
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="mb-1 block text-sm font-medium text-indigo-100">Security PIN</label>
+                                    <label className="mb-1 block text-sm font-medium text-slate-700">Security PIN</label>
                                     <input
                                         type="password"
                                         value={pin}
@@ -137,7 +135,7 @@ export default function LoginPage() {
                                             setPin(val);
                                             setError('');
                                         }}
-                                        className="block w-full text-center text-2xl tracking-[0.5em] rounded-xl border border-white/10 bg-white/5 p-3 text-white placeholder-indigo-200 shadow-sm transition-all focus:border-indigo-300 focus:bg-white/10 focus:ring focus:ring-indigo-300/20 outline-none font-mono"
+                                        className="block w-full text-center text-2xl tracking-[0.5em] rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900 placeholder-slate-400 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none font-mono"
                                         placeholder="••••"
                                         required
                                     />
@@ -145,13 +143,13 @@ export default function LoginPage() {
                             </div>
 
                             {error && (
-                                <p className="text-center text-sm text-pink-300 font-medium animate-pulse bg-pink-500/20 p-2 rounded-lg border border-pink-500/30">{error}</p>
+                                <p className="text-center text-sm text-red-600 font-medium animate-pulse bg-red-50 p-2 rounded-lg border border-red-200">{error}</p>
                             )}
 
                             <button
                                 type="submit"
                                 disabled={loading || pin.length < 4 || !username}
-                                className="group relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-white p-3 font-semibold text-indigo-600 shadow-lg transition-all hover:bg-indigo-50 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                                className="group relative flex w-full items-center justify-center overflow-hidden rounded-xl bg-indigo-600 p-3 font-semibold text-white shadow-lg transition-all hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
                             >
                                 {loading ? 'Verifying...' : (
                                     <span className="flex items-center gap-2">
@@ -163,7 +161,7 @@ export default function LoginPage() {
                     ) : (
                         <form onSubmit={handleOtpSubmit} className="space-y-6">
                             <div>
-                                <label className="mb-1 block text-sm font-medium text-indigo-100 text-center">One-Time Password</label>
+                                <label className="mb-1 block text-sm font-medium text-slate-700 text-center">One-Time Password</label>
                                 <input
                                     type="text"
                                     value={otp}
@@ -172,20 +170,20 @@ export default function LoginPage() {
                                         setOtp(val);
                                         setError('');
                                     }}
-                                    className="block w-full text-center text-3xl tracking-[0.5em] rounded-xl border border-white/10 bg-white/5 p-3 text-white placeholder-indigo-200 shadow-sm transition-all focus:border-indigo-300 focus:bg-white/10 focus:ring focus:ring-indigo-300/20 outline-none font-mono"
+                                    className="block w-full text-center text-3xl tracking-[0.5em] rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900 placeholder-slate-300 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none font-mono"
                                     placeholder="••••••"
                                     autoFocus
                                     required
                                 />
                                 {error && (
-                                    <p className="mt-2 text-center text-sm text-pink-300 font-medium animate-pulse">{error}</p>
+                                    <p className="mt-2 text-center text-sm text-red-600 font-medium animate-pulse">{error}</p>
                                 )}
                             </div>
 
                             <button
                                 type="submit"
                                 disabled={loading || otp.length < 6}
-                                className="w-full rounded-lg bg-white p-3 font-semibold text-indigo-600 shadow-lg transition-all hover:bg-indigo-50 active:scale-[0.98] disabled:opacity-70"
+                                className="w-full rounded-xl bg-indigo-600 p-3 font-semibold text-white shadow-lg transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-70"
                             >
                                 {loading ? 'Verifying...' : 'Verify Code'}
                             </button>
@@ -194,7 +192,7 @@ export default function LoginPage() {
                                 <button
                                     type="button"
                                     onClick={() => setStep('credentials')}
-                                    className="text-indigo-200 hover:text-white underline"
+                                    className="text-slate-500 hover:text-indigo-600 underline"
                                 >
                                     Back to Login
                                 </button>
@@ -202,7 +200,7 @@ export default function LoginPage() {
                                     type="button"
                                     disabled={resendCooldown > 0 || loading}
                                     onClick={handleResendOTP}
-                                    className="text-indigo-200 hover:text-white disabled:opacity-50"
+                                    className="text-slate-500 hover:text-indigo-600 disabled:opacity-50"
                                 >
                                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
                                 </button>
@@ -210,10 +208,10 @@ export default function LoginPage() {
                         </form>
                     )}
 
-                    <div className="mt-8 flex items-center justify-center gap-4 text-xs text-indigo-200/60">
-                        <span>Restricted Access</span>
-                        <span>•</span>
-                        <span>POS v3.1</span>
+                    <div className="mt-8 pt-6 border-t border-slate-100">
+                        <p className="text-center text-xs text-slate-400">
+                            Powered by <a href="https://sasicgroup.com/sasicbusiness" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-medium">Sasic Business</a>
+                        </p>
                     </div>
                 </div>
             </div>
