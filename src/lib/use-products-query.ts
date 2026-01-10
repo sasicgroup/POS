@@ -59,7 +59,7 @@ export function useProducts() {
         queryFn: () => fetchProducts(activeStore!.id),
         enabled: !!activeStore?.id, // Only run if we have a store
         staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
-        cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+        gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
     });
 
     // Mutation for adding a product

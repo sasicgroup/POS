@@ -75,7 +75,7 @@ export function useDashboardStats() {
         queryFn: () => fetchDashboardStats(activeStore!.id),
         enabled: !!activeStore?.id,
         staleTime: 1 * 60 * 1000, // 1 minute - dashboard should be relatively fresh
-        cacheTime: 5 * 60 * 1000,
+        gcTime: 5 * 60 * 1000,
         refetchInterval: 2 * 60 * 1000, // Auto-refetch every 2 minutes
     });
 

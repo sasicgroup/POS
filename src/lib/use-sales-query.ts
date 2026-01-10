@@ -42,7 +42,7 @@ export function useSales() {
         queryFn: () => fetchSales(activeStore!.id),
         enabled: !!activeStore?.id,
         staleTime: 2 * 60 * 1000, // 2 minutes - sales change frequently
-        cacheTime: 5 * 60 * 1000,
+        gcTime: 5 * 60 * 1000,
     });
 
     // Mutation for deleting a sale

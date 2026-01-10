@@ -38,7 +38,7 @@ export function useCustomers() {
         queryFn: () => fetchCustomers(activeStore!.id),
         enabled: !!activeStore?.id,
         staleTime: 3 * 60 * 1000, // 3 minutes
-        cacheTime: 10 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
     });
 
     // Mutation for adding a customer

@@ -38,7 +38,7 @@ export function useEmployees() {
         queryFn: () => fetchEmployees(activeStore!.id),
         enabled: !!activeStore?.id,
         staleTime: 5 * 60 * 1000, // 5 minutes - employees don't change often
-        cacheTime: 15 * 60 * 1000,
+        gcTime: 15 * 60 * 1000,
     });
 
     // Mutation for adding an employee
