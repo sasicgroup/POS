@@ -5,11 +5,22 @@ import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
 import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
-    const { products, isLoading, addProduct, activeCategories, deleteProduct, updateProduct } = useInventory(); // Assuming deleteProduct exists or will be added
+    const {
+        products,
+        isLoading,
+        addProduct,
+        activeCategories,
+        deleteProduct,
+        updateProduct,
+        page,
+        setPage,
+        pageSize,
+        setPageSize,
+        totalCount
+    } = useInventory();
     const { showToast } = useToast();
 
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
@@ -81,6 +92,21 @@ export default function InventoryPage() {
         return matchesSearch && matchesCategory;
     });
 
+    // Pagination/Lazy Loading
+    const observer = useRef<IntersectionObserver | null>(null);
+    const loadMoreRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        if (!loadMoreRef.current) return;
+        if (observer.current) observer.current.disconnect();
+        observer.current = new window.IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && !isLoading && products.length < totalCount) {
+                setPage(page + 1);
+            }
+        });
+        observer.current.observe(loadMoreRef.current);
+        return () => observer.current?.disconnect();
+    }, [products, isLoading, totalCount, page, setPage]);
+
     const handleSelectProduct = (id: number) => {
         setSelectedProducts(prev =>
             prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
@@ -95,6 +121,7 @@ export default function InventoryPage() {
         }
     };
 
+
     const handleBulkDelete = () => {
         if (selectedProducts.length === 0) return;
         if (!confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) return;
@@ -103,59 +130,9 @@ export default function InventoryPage() {
         setSelectedProducts([]);
     };
 
-    const handleBulkBarcode = () => {
-        if (!activeStore) return;
-        const selectedItems = products.filter(p => selectedProducts.includes(p.id));
-        if (selectedItems.length === 0) return;
-
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        if (!printWindow) return;
-
-        const html = `
-            <html>
-                <head>
-                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
-                    <style>
-                        body { font-family: sans-serif; padding: 20px; }
-                        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; }
-                        .item { text-align: center; border: 1px dashed #ccc; padding: 10px; page-break-inside: avoid; }
-                        @media print { .item { break-inside: avoid; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="grid">
-                        ${selectedItems.map(p => `
-                            <div class="item">
-                                <div style="font-weight: bold; font-size: 10px; margin-bottom: 5px;">${activeStore.name}</div>
-                                <div style="font-size: 10px; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.name}</div>
-                                <svg class="barcode" data-sku="${p.sku}"></svg>
-                                <div style="font-weight: bold; font-size: 12px; margin-top: 2px;">GHS ${p.price.toFixed(2)}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <script>
-                        document.querySelectorAll('.barcode').forEach(el => {
-                            JsBarcode(el, el.dataset.sku, {
-                                format: "CODE128",
-                                width: 1.5,
-                                height: 30,
-                                fontSize: 10,
-                                displayValue: true
-                            });
-                        });
-                        setTimeout(() => {
-                            window.print();
-                            window.close();
-                        }, 1000);
-                    </script>
-                </body>
-            </html>
-        `;
-        printWindow.document.write(html);
-        printWindow.document.close();
-    };
-
+    // Fix: Add missing handleBulkAddToCart
     const handleBulkAddToCart = () => {
+        if (selectedProducts.length === 0) return;
         const selectedItems = products.filter(p => selectedProducts.includes(p.id));
         if (selectedItems.length === 0) return;
 
@@ -169,20 +146,101 @@ export default function InventoryPage() {
         let addedCount = 0;
 
         selectedItems.forEach(product => {
-            const existingItemIndex = currentCart.findIndex((item: any) => item.id === product.id);
+            const minimalProduct = {
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                quantity: 1,
+                sku: product.sku,
+                image: (product.image && product.image.length < 500) ? product.image : undefined,
+                category: product.category,
+                costPrice: product.costPrice,
+                status: product.status
+            };
+            const existingItemIndex = currentCart.findIndex((item) => item.id === product.id);
             if (existingItemIndex >= 0) {
                 // Increment
                 currentCart[existingItemIndex].quantity += 1;
             } else {
                 // Add new
-                currentCart.push({
-                    ...product,
-                    quantity: 1
-                });
+                currentCart.push(minimalProduct);
             }
             addedCount++;
         });
 
+        // Save back
+        try {
+            localStorage.setItem('sms_cart', JSON.stringify(currentCart));
+        } catch (e) {
+            console.error('Failed to save cart', e);
+            showToast('error', 'Cart storage full');
+        }
+
+        showToast('success', `${addedCount} items added to cart`);
+        setSelectedProducts([]);
+    };
+
+    const handleBulkBarcode = () => {
+            {/* Product List - List View */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto dark:bg-slate-800 dark:border-slate-700 pb-20 lg:pb-0">
+                <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50">
+                        {/* ...existing code for table head... */}
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-800 dark:divide-slate-700">
+                        {isLoading && products.length === 0 ? (
+                            Array.from({ length: 5 }).map((_, i) => (
+                                <tr key={`skeleton-${i}`} className="animate-pulse">
+                                    {/* ...existing code for skeleton row... */}
+                                </tr>
+                            ))
+                        ) : filteredProducts.length === 0 ? (
+                            <tr>
+                                <td colSpan={7} className="px-6 py-12 text-center">
+                                    <div className="text-slate-400 dark:text-slate-500">
+                                        <p className="text-lg font-medium mb-2">No products found</p>
+                                        <p className="text-sm">Add your first product to get started</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        ) : (
+                            filteredProducts.map((product) => (
+                                <tr
+                                    key={product.id}
+                                    id={`product-${product.id}`}
+                                    className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
+                                    onClick={(e) => {
+                                        if (!(e.target as HTMLElement).closest('button')) {
+                                            handleSelectProduct(product.id);
+                                        }
+                                    }}
+                                >
+                                    {/* ...existing code for product row... */}
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+                {/* Infinite scroll loader */}
+                <div ref={loadMoreRef} style={{ height: 40 }} />
+                {isLoading && products.length > 0 && (
+                    <div className="text-center py-4 text-slate-400 dark:text-slate-500">Loading more...</div>
+                )}
+                {/* Pagination controls (fallback for non-infinite scroll) */}
+                <div className="flex justify-center items-center gap-2 py-4">
+                    <button
+                        className="px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                        onClick={() => setPage(Math.max(1, page - 1))}
+                        disabled={page === 1}
+                    >Prev</button>
+                    <span className="text-sm text-slate-600 dark:text-slate-300">Page {page} of {Math.ceil(totalCount / pageSize) || 1}</span>
+                    <button
+                        className="px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                        onClick={() => setPage(page + 1)}
+                        disabled={products.length < pageSize || products.length >= totalCount}
+                    >Next</button>
+                </div>
+            </div>
         // Save back
         try {
             localStorage.setItem('sms_cart', JSON.stringify(currentCart));
@@ -203,16 +261,25 @@ export default function InventoryPage() {
             if (saved) currentCart = JSON.parse(saved);
         } catch (e) { console.error(e); }
 
+        const minimalProduct = {
+            id: product.id,
+            name: product.name,
+            price: product.price,
+            quantity: 1,
+            sku: product.sku,
+            image: (product.image && product.image.length < 500) ? product.image : undefined,
+            category: product.category,
+            costPrice: product.costPrice,
+            status: product.status
+        };
+
         const existingItemIndex = currentCart.findIndex((item: any) => item.id === product.id);
         if (existingItemIndex >= 0) {
             // Increment
             currentCart[existingItemIndex].quantity += 1;
         } else {
             // Add new
-            currentCart.push({
-                ...product,
-                quantity: 1
-            });
+            currentCart.push(minimalProduct);
         }
 
         // Save back

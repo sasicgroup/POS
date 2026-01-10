@@ -50,6 +50,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategories, setActiveCategories] = useState<string[]>(['All']);
+    // Pagination state
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
+    const [totalCount, setTotalCount] = useState(0);
 
     // Cache state
     const [productsCache, setProductsCache] = useState<{
@@ -95,7 +99,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (activeStore?.id) {
-            // Check if we have valid cache for this store
+            // Check if we have valid cache for this store and page
             const isCacheValid =
                 productsCache.storeId === activeStore.id &&
                 productsCache.timestamp &&
@@ -106,15 +110,15 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setProducts(productsCache.data);
                 setIsLoading(false);
             } else {
-                fetchProducts();
+                fetchProducts(page, pageSize);
             }
         } else {
             setProducts([]);
             setIsLoading(false); // Ensure loading stops when no store
         }
-    }, [activeStore?.id]);
+    }, [activeStore?.id, page, pageSize]);
 
-    const fetchProducts = async (retry = true) => {
+    const fetchProducts = async (pageNum = 1, pageSizeNum = 20, retry = true) => {
         if (!activeStore?.id) {
             setIsLoading(false);
             return;
@@ -126,20 +130,27 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        console.log('[Inventory] Fetching products for store:', activeStore.id);
+        console.log(`[Inventory] Fetching products for store: ${activeStore.id}, page: ${pageNum}, pageSize: ${pageSizeNum}`);
         isFetching.current = true;
         setIsLoading(true);
 
+        const startTime = Date.now();
         try {
-            const { data, error } = await supabase
+            // Use range for pagination
+            const from = (pageNum - 1) * pageSizeNum;
+            const to = from + pageSizeNum - 1;
+            const { data, error, count } = await supabase
                 .from('products')
-                .select('*')
-                .eq('store_id', activeStore.id);
+                .select('*', { count: 'exact' })
+                .eq('store_id', activeStore.id)
+                .range(from, to);
 
+            const duration = Date.now() - startTime;
             if (error) {
+                console.error(`[Inventory] Supabase error (duration: ${duration}ms):`, error.message || error);
                 throw error;
             } else if (data) {
-                console.log('[Inventory] Fetched products:', data.length);
+                console.log(`[Inventory] Fetched products: ${data.length}, Total: ${count}, Duration: ${duration}ms`);
                 const mappedProducts = data.map((p: any) => ({
                     ...p,
                     costPrice: p.cost_price || 0,
@@ -148,6 +159,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                     image: p.image || ''
                 }));
                 setProducts(mappedProducts);
+                setTotalCount(count || 0);
 
                 // Update cache
                 setProductsCache({
@@ -159,13 +171,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setIsLoading(false);
             }
         } catch (err: any) {
-            console.error('[Inventory] Error fetching products:', err.message || err);
+            const duration = Date.now() - startTime;
+            console.error(`[Inventory] Error fetching products (duration: ${duration}ms):`, err.message || err);
 
             // Simple retry logic
             if (retry) {
                 console.log('[Inventory] Retrying fetch in 2s...');
                 isFetching.current = false; // Release lock for retry
-                setTimeout(() => fetchProducts(false), 2000);
+                setTimeout(() => fetchProducts(pageNum, pageSizeNum, false), 2000);
                 return;
             } else {
                 // Only clear if final attempt failed
@@ -176,12 +189,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             if (!retry) {
                 isFetching.current = false;
             }
-            // Note: If retrying, we released lock above before setTimeout, 
-            // but if we are successfully done (no error), we must release here.
-            // If error caught and retry=true, we returned early, so this finally block runs?
-            // Wait, finally runs before return? Yes.
-
-            // Let's simplify logic to avoid confusion.
         }
         isFetching.current = false;
     };
@@ -456,7 +463,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             processSale,
             addProduct,
             deleteProduct,
-            updateProduct
+            updateProduct,
+            // Pagination controls
+            page,
+            setPage,
+            pageSize,
+            setPageSize,
+            totalCount
         }}>
             {children}
         </InventoryContext.Provider>
