@@ -270,25 +270,106 @@ export default function SettingsPage() {
         }
     };
 
-    const downloadBarcodesPDF = () => {
+    const drawBarcode = (doc: jsPDF, code: string, x: number, y: number, width: number, height: number) => {
+        // Draw Code39 style barcode
+        const barWidth = width / (code.length * 11 + 12);
+        let currentX = x + barWidth * 2;
+        
+        // Code39 encoding: 0 = narrow space, 1 = narrow bar, 2 = wide space, 3 = wide bar
+        const code39Map: Record<string, number[]> = {
+            '0': [1,0,2,0,1,0,1,0,2], '1': [2,0,1,0,2,0,1,0,1], '2': [1,0,2,0,2,0,1,0,1],
+            '3': [2,0,2,0,1,0,1,0,1], '4': [1,0,1,0,2,0,2,0,1], '5': [2,0,1,0,1,0,2,0,1],
+            '6': [1,0,2,0,2,0,1,0,2], '7': [1,0,1,0,1,0,2,0,2], '8': [2,0,1,0,1,0,1,0,2],
+            '9': [2,0,1,0,2,0,1,0,2], 'A': [2,0,1,0,1,0,2,0,1], 'B': [1,0,2,0,1,0,2,0,1],
+            'C': [2,0,2,0,1,0,1,0,1], 'D': [1,0,1,0,2,0,2,0,1], 'E': [2,0,1,0,1,0,2,0,1],
+            'F': [1,0,2,0,2,0,1,0,2], 'G': [1,0,1,0,1,0,2,0,2], 'H': [2,0,1,0,1,0,1,0,2],
+            'I': [1,0,2,0,1,0,1,0,2], 'J': [1,0,1,0,2,0,1,0,2], 'K': [2,0,1,0,1,0,1,0,3],
+            'L': [1,0,2,0,1,0,1,0,3], 'M': [2,0,2,0,1,0,1,0,3], 'N': [1,0,1,0,2,0,1,0,3],
+            'O': [2,0,1,0,1,0,1,0,3], 'P': [1,0,2,0,2,0,1,0,3], 'Q': [1,0,1,0,1,0,2,0,3],
+            'R': [2,0,1,0,1,0,2,0,3], 'S': [1,0,2,0,1,0,2,0,3], 'T': [1,0,1,0,1,0,1,0,3],
+            'U': [3,0,1,0,1,0,2,0,1], 'V': [3,0,1,0,1,0,2,0,1], 'W': [3,0,2,0,1,0,1,0,1],
+            'X': [3,0,1,0,2,0,1,0,1], 'Y': [3,0,2,0,1,0,1,0,1], 'Z': [3,0,1,0,1,0,2,0,1],
+            '-': [3,0,1,0,1,0,2,0,1], '.': [3,0,1,0,2,0,1,0,1], ' ': [3,0,1,0,1,0,2,0,1],
+            '$': [3,0,3,0,1,0,1,0,1], '/': [3,0,1,0,3,0,1,0,1], '+': [3,0,1,0,1,0,3,0,1],
+            '%': [1,0,3,0,3,0,1,0,1], '*': [3,0,1,0,2,0,1,0,3]
+        };
+
+        const upperCode = code.toUpperCase();
+        const startPattern = code39Map['*'] || [];
+        
+        startPattern.forEach((val, i) => {
+            const isBar = i % 2 === 0;
+            const w = (val % 2 === 0 ? barWidth : barWidth * 2);
+            if (isBar) {
+                doc.rect(currentX, y, w, height, 'F');
+            }
+            currentX += w;
+        });
+
+        for (let char of upperCode) {
+            const pattern = code39Map[char] || code39Map[' '] || [];
+            pattern.forEach((val, i) => {
+                const isBar = i % 2 === 0;
+                const w = (val % 2 === 0 ? barWidth : barWidth * 2);
+                if (isBar) {
+                    doc.rect(currentX, y, w, height, 'F');
+                }
+                currentX += w;
+            });
+        }
+
+        const endPattern = code39Map['*'] || [];
+        endPattern.forEach((val, i) => {
+            const isBar = i % 2 === 0;
+            const w = (val % 2 === 0 ? barWidth : barWidth * 2);
+            if (isBar) {
+                doc.rect(currentX, y, w, height, 'F');
+            }
+            currentX += w;
+        });
+
+        return currentX;
+    };
+
+    const downloadBarcodesPDF = async () => {
         if (barcodeList.length === 0) return;
         const doc = new jsPDF();
         doc.setFontSize(20);
         doc.text('Barcode Library', 10, 20);
-        doc.setFontSize(12);
+        doc.setFontSize(10);
 
-        let y = 40;
-        barcodeList.forEach((item, index) => {
-            if (y > 270) {
+        let y = 35;
+        let x = 10;
+        const barcodeWidth = 70;
+        const barcodeHeight = 15;
+
+        for (let i = 0; i < barcodeList.length; i++) {
+            const item = barcodeList[i];
+            
+            if (y + barcodeHeight + 20 > 280) {
                 doc.addPage();
                 y = 20;
             }
-            doc.text(`${index + 1}. Code: ${item.code} (${item.is_assigned ? 'Assigned' : 'Available'})`, 10, y);
-            y += 10;
-        });
+
+            // Draw barcode visual
+            drawBarcode(doc, item.code, x, y, barcodeWidth, barcodeHeight);
+
+            // Add code text below barcode
+            doc.setFontSize(8);
+            doc.text(item.code, x + barcodeWidth / 2, y + barcodeHeight + 5, { align: 'center' });
+            doc.setFontSize(7);
+            doc.text(item.is_assigned ? 'Assigned' : 'Available', x + barcodeWidth / 2, y + barcodeHeight + 9, { align: 'center' });
+
+            // Move to next position (2 columns)
+            x += barcodeWidth + 5;
+            if (x + barcodeWidth > 200) {
+                x = 10;
+                y += 35;
+            }
+        }
 
         doc.save('barcode-library.pdf');
-        showToast('success', 'Barcode library exported to PDF');
+        showToast('success', 'Barcode library exported to PDF with visuals');
     };
 
     if (!activeStore || !user || !smsConfig) return null;
