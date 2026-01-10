@@ -47,18 +47,23 @@ export default function LoginPage() {
 
     const handleOtpSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        console.log('[Login] OTP submit clicked, username:', username, 'otp:', otp);
         setLoading(true);
         setError('');
 
         try {
+            console.log('[Login] Calling verifyOTP...');
             const success = await verifyOTP(username, otp);
+            console.log('[Login] verifyOTP result:', success);
             if (success) {
+                console.log('[Login] OTP verified, redirecting...');
                 router.push('/dashboard');
             } else {
                 setError('Invalid or expired OTP code.');
                 setLoading(false);
             }
         } catch (err) {
+            console.error('[Login] verifyOTP error:', err);
             setError('Verification failed.');
             setLoading(false);
         }
@@ -215,4 +220,3 @@ export default function LoginPage() {
         </div>
     );
 }
-
