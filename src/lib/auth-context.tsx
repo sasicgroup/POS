@@ -11,6 +11,7 @@ export interface Store {
     id?: any; // Added ID
     name: string;
     location: string;
+    phone?: string; // Store contact phone
     currency: string;
     taxSettings?: {
         enabled: boolean;
@@ -148,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
                         receiptPrefix: s.receipt_prefix,
                         receiptSuffix: s.receipt_suffix,
+                        phone: s.phone,
                         rolePermissions: s.role_permissions,
                         lastTransactionNumber: s.last_transaction_number || 0
                     }));
@@ -213,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 taxSettings: s.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
                 receiptPrefix: s.receipt_prefix,
                 receiptSuffix: s.receipt_suffix,
+                phone: s.phone,
                 lastTransactionNumber: s.last_transaction_number || 0
             }));
             setStores(mappedStores);
@@ -687,6 +690,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (settings.receiptSuffix !== undefined) {
                 dbUpdates.receipt_suffix = settings.receiptSuffix;
                 delete dbUpdates.receiptSuffix;
+            }
+            if (settings.phone !== undefined) {
+                dbUpdates.phone = settings.phone;
+                delete dbUpdates.phone;
             }
             if (settings.rolePermissions) {
                 dbUpdates.role_permissions = settings.rolePermissions;
