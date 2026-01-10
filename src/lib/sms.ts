@@ -26,10 +26,19 @@ export interface SMSConfig {
             whatsapp: boolean;
         };
     };
+    automations: {
+        lowStockAlert: {
+            enabled: boolean;
+            threshold: number; // Alert when stock <= this number
+            sms: boolean;
+            whatsapp: boolean;
+        };
+    };
     templates: {
         welcome: string;
         receipt: string;
         ownerSale?: string;
+        lowStockAlert?: string;
     };
 }
 
@@ -48,10 +57,19 @@ let smsConfig: SMSConfig = {
         owner: { sms: true, whatsapp: false },
         customer: { sms: true, whatsapp: false }
     },
+    automations: {
+        lowStockAlert: {
+            enabled: false,
+            threshold: 1,
+            sms: true,
+            whatsapp: false
+        }
+    },
     templates: {
         welcome: "Welcome {Name}! You have been registered. Shop with us to earn points.",
         receipt: "Thanks for buying! Total: GHS {Amount}. See you soon!",
-        ownerSale: "New Sale Alert: GHS {Amount} by {Name}. Total Today: {TotalOrders} orders."
+        ownerSale: "New Sale Alert: GHS {Amount} by {Name}. Total Today: {TotalOrders} orders.",
+        lowStockAlert: "Low Stock Alert: {Product} has only {Stock} left! Please restock."
     }
 };
 
@@ -319,6 +337,39 @@ export const sendDirectMessage = async (phone: string, message: string, channels
     if (channels.includes('whatsapp') && config.meta?.accessToken) {
         await sendMetaWhatsApp(config, phone, message);
         await logSMS(phone, message, 'whatsapp', 'sent', storeId);
+    }
+};
+
+export const sendLowStockAlert = async (product: { name: string; stock: number }, storeId: string, ownerPhone: string) => {
+    const config = getSMSConfig();
+    const { automations } = config;
+
+    // Check if automation is enabled
+    if (!automations?.lowStockAlert?.enabled) {
+        return;
+    }
+
+    // Check if stock is below threshold
+    if (product.stock > automations.lowStockAlert.threshold) {
+        return;
+    }
+
+    // Build message with placeholders
+    const template = config.templates.lowStockAlert || "Low Stock Alert: {Product} has only {Stock} left! Please restock.";
+    let message = template
+        .replace(/{Product}/g, product.name)
+        .replace(/{product}/g, product.name)
+        .replace(/{Stock}/g, product.stock.toString())
+        .replace(/{stock}/g, product.stock.toString());
+
+    console.log(`[LowStockAlert] Sending alert for ${product.name} (stock: ${product.stock})`);
+
+    // Send via configured channels
+    if (automations.lowStockAlert.sms) {
+        await sendDirectMessage(ownerPhone, message, ['sms'], storeId);
+    }
+    if (automations.lowStockAlert.whatsapp) {
+        await sendDirectMessage(ownerPhone, message, ['whatsapp'], storeId);
     }
 };
 

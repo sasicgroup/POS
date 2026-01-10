@@ -1279,6 +1279,131 @@ export default function SettingsPage() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Low Stock Alert Automation */}
+                                    <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
+                                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
+                                            <Package className="h-4 w-4 text-amber-500" />
+                                            Low Stock Alert Automation
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mb-4">
+                                            Automatically send SMS/WhatsApp alerts when product stock falls below the threshold.
+                                        </p>
+                                        
+                                        <div className="space-y-4 p-4 rounded-xl bg-amber-50 border border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30">
+                                            {/* Enable Toggle */}
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-slate-700 dark:text-slate-300">Enable Low Stock Alerts</span>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="sr-only peer"
+                                                        checked={smsConfig.automations?.lowStockAlert?.enabled ?? false}
+                                                        onChange={(e) => setSmsConfig({ 
+                                                            ...smsConfig, 
+                                                            automations: { 
+                                                                ...smsConfig.automations, 
+                                                                lowStockAlert: { 
+                                                                    ...smsConfig.automations?.lowStockAlert, 
+                                                                    enabled: e.target.checked 
+                                                                } 
+                                                            } 
+                                                        })}
+                                                    />
+                                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 dark:peer-focus:ring-amber-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-amber-500"></div>
+                                                </label>
+                                            </div>
+
+                                            {/* Threshold */}
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-slate-700 dark:text-slate-300">Alert when stock is ≤</span>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="100"
+                                                    value={smsConfig.automations?.lowStockAlert?.threshold ?? 1}
+                                                    onChange={(e) => setSmsConfig({ 
+                                                        ...smsConfig, 
+                                                        automations: { 
+                                                            ...smsConfig.automations, 
+                                                            lowStockAlert: { 
+                                                                ...smsConfig.automations?.lowStockAlert, 
+                                                                threshold: parseInt(e.target.value) || 1
+                                                            } 
+                                                        } 
+                                                    })}
+                                                    className="w-20 rounded-lg border border-slate-200 bg-white py-1.5 px-3 text-sm text-center outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                />
+                                            </div>
+
+                                            {/* SMS Channel */}
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-slate-700 dark:text-slate-300">Send SMS</span>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="sr-only peer"
+                                                        checked={smsConfig.automations?.lowStockAlert?.sms ?? true}
+                                                        onChange={(e) => setSmsConfig({ 
+                                                            ...smsConfig, 
+                                                            automations: { 
+                                                                ...smsConfig.automations, 
+                                                                lowStockAlert: { 
+                                                                    ...smsConfig.automations?.lowStockAlert, 
+                                                                    sms: e.target.checked 
+                                                                } 
+                                                            } 
+                                                        })}
+                                                    />
+                                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 dark:peer-focus:ring-amber-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-amber-500"></div>
+                                                </label>
+                                            </div>
+
+                                            {/* WhatsApp Channel */}
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-slate-700 dark:text-slate-300">Send WhatsApp</span>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="sr-only peer"
+                                                        checked={smsConfig.automations?.lowStockAlert?.whatsapp ?? false}
+                                                        onChange={(e) => setSmsConfig({ 
+                                                            ...smsConfig, 
+                                                            automations: { 
+                                                                ...smsConfig.automations, 
+                                                                lowStockAlert: { 
+                                                                    ...smsConfig.automations?.lowStockAlert, 
+                                                                    whatsapp: e.target.checked 
+                                                                } 
+                                                            } 
+                                                        })}
+                                                    />
+                                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 dark:peer-focus:ring-amber-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-500"></div>
+                                                </label>
+                                            </div>
+
+                                            {/* Message Template */}
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Message Template</label>
+                                                <textarea
+                                                    value={smsConfig.templates?.lowStockAlert || ''}
+                                                    onChange={(e) => setSmsConfig({ 
+                                                        ...smsConfig, 
+                                                        templates: { 
+                                                            ...smsConfig.templates, 
+                                                            lowStockAlert: e.target.value 
+                                                        } 
+                                                    })}
+                                                    placeholder="Low Stock Alert: {Product} has only {Stock} left! Please restock."
+                                                    rows={3}
+                                                    className="w-full rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
+                                                />
+                                                <p className="text-[10px] text-slate-500">
+                                                    Placeholders: <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">{'{Product}'}</code> for product name, <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">{'{Stock}'}</code> for stock quantity
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

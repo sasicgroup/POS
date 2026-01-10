@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
 import { useAuth } from './auth-context';
+import { sendLowStockAlert } from './sms';
 
 interface Product {
     id: any;
@@ -442,8 +443,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                         .update({ stock: newStock })
                         .eq('id', item.id);
 
-                    // Create low stock notification if stock is low
-                    if (newStock <= 10 && newStock > 0) {
+                    // Check for low stock and send SMS alert
+                    if (newStock <= 10) {
+                        // Create in-app notification
                         await supabase.from('notifications').insert({
                             store_id: activeStore.id,
                             type: 'low_stock',
@@ -451,6 +453,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                             message: `${product.name} is running low (${newStock} items left).`,
                             metadata: { product_id: product.id, stock: newStock }
                         });
+
+                        // Send SMS alert to store owner (async, non-blocking)
+                        sendLowStockAlert(
+                            { name: product.name, stock: newStock },
+                            activeStore.id,
+                            activeStore.phone || ''
+                        ).catch(err => console.error('Failed to send low stock SMS:', err));
                     }
                 }
             }
