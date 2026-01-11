@@ -59,10 +59,18 @@ export default function SettingsPage() {
     const [showCreateStoreModal, setShowCreateStoreModal] = useState(false);
     const [newStoreData, setNewStoreData] = useState({ name: '', location: '' });
 
-    // PWA Icon Upload State
+    // PWA Settings State
+    const [pwaSettings, setPwaSettings] = useState({
+        app_name: 'Store Management Software',
+        short_name: 'POS System',
+        theme_color: '#4f46e5',
+        icon_192: null as string | null,
+        icon_512: null as string | null
+    });
     const [icon192, setIcon192] = useState<string | null>(null);
     const [icon512, setIcon512] = useState<string | null>(null);
     const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+    const [isSavingPWA, setIsSavingPWA] = useState(false);
     const icon192Ref = useRef<HTMLInputElement>(null);
     const icon512Ref = useRef<HTMLInputElement>(null);
     const [smsBalance, setSmsBalance] = useState<number | null>(null);
@@ -117,6 +125,57 @@ export default function SettingsPage() {
         if (showInviteModal) setOtpEnabled(editingMember ? editingMember.otp_enabled !== false : true);
     }, [showInviteModal, editingMember]);
 
+    // Load PWA Settings from Database
+    useEffect(() => {
+        const loadPWASettings = async () => {
+            if (!activeStore?.id) return;
+
+            const { data } = await supabase
+                .from('stores')
+                .select('pwa_settings')
+                .eq('id', activeStore.id)
+                .single();
+
+            if (data?.pwa_settings) {
+                setPwaSettings(data.pwa_settings);
+                setIcon192(data.pwa_settings.icon_192);
+                setIcon512(data.pwa_settings.icon_512);
+            }
+        };
+
+        if (activeTab === 'pwa') {
+            loadPWASettings();
+        }
+    }, [activeTab, activeStore?.id]);
+
+    // Save PWA Settings to Database
+    const handleSavePWASettings = async () => {
+        if (!activeStore?.id) return;
+        setIsSavingPWA(true);
+
+        try {
+            const { error } = await supabase
+                .from('stores')
+                .update({
+                    pwa_settings: {
+                        ...pwaSettings,
+                        icon_192: icon192,
+                        icon_512: icon512
+                    }
+                })
+                .eq('id', activeStore.id);
+
+            if (error) throw error;
+
+            showToast('success', 'PWA settings saved successfully!');
+        } catch (error) {
+            console.error('Error saving PWA settings:', error);
+            showToast('error', 'Failed to save PWA settings');
+        } finally {
+            setIsSavingPWA(false);
+        }
+    };
+
     // Handle PWA Icon Upload
     const handleIconUpload = async (file: File, size: 192 | 512) => {
         if (!file) return;
@@ -142,17 +201,15 @@ export default function SettingsPage() {
                         return;
                     }
 
-                    // Save to state and localStorage
+                    // Save to state only (will be saved to DB when user clicks Save)
                     const dataUrl = e.target?.result as string;
                     if (size === 192) {
                         setIcon192(dataUrl);
-                        localStorage.setItem('pwa_icon_192', dataUrl);
                     } else {
                         setIcon512(dataUrl);
-                        localStorage.setItem('pwa_icon_512', dataUrl);
                     }
 
-                    showToast('success', `${size}x${size} icon uploaded successfully!`);
+                    showToast('success', `${size}x${size} icon uploaded! Click Save to persist.`);
                     setIsUploadingIcon(false);
                 };
                 img.src = e.target?.result as string;
