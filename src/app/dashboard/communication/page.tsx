@@ -127,7 +127,7 @@ export default function CommunicationPage() {
     const [templates, setTemplates] = useState<any[]>([]);
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<any>(null);
-    
+
     // Load templates from DB
     useEffect(() => {
         const loadTemplates = async () => {
@@ -180,10 +180,10 @@ export default function CommunicationPage() {
                     for (const cust of customers) {
                         if (cust.phone) {
                             // Format last visit date
-                            const lastVisit = cust.last_visit 
-                                ? new Date(cust.last_visit).toLocaleDateString() 
+                            const lastVisit = cust.last_visit
+                                ? new Date(cust.last_visit).toLocaleDateString()
                                 : ' visit';
-                            
+
                             // Build final message with all available placeholders
                             let finalMsg = messageContent
                                 .replace('{Name}', cust.name || 'Valued Customer')
@@ -483,7 +483,12 @@ export default function CommunicationPage() {
                                         onChange={(e) => setConfig({ ...config, templates: { ...config.templates, welcome: e.target.value } })}
                                         className="w-full h-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                     />
-                                    <p className="text-xs text-slate-400 mt-2">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Name}`}</span></p>
+                                    <div className="flex justify-between items-start mt-2">
+                                        <p className="text-xs text-slate-400">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Name}`}</span></p>
+                                        <p className={`text-xs font-mono ${config.templates.welcome.length > 160 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                            {config.templates.welcome.length} chars ({Math.ceil(Math.max(config.templates.welcome.length, 1) / 160)} SMS)
+                                        </p>
+                                    </div>
                                 </div>
 
                                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
@@ -497,7 +502,12 @@ export default function CommunicationPage() {
                                         onChange={(e) => setConfig({ ...config, templates: { ...config.templates, receipt: e.target.value } })}
                                         className="w-full h-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                     />
-                                    <p className="text-xs text-slate-400 mt-2">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Amount}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Receipt}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{PointsEarned}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{TotalPoints}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Staff}`}</span></p>
+                                    <div className="flex justify-between items-start mt-2">
+                                        <p className="text-xs text-slate-400">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Amount}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Receipt}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{PointsEarned}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{TotalPoints}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Staff}`}</span></p>
+                                        <p className={`text-xs font-mono ml-4 whitespace-nowrap ${config.templates.receipt.length > 160 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                            {config.templates.receipt.length} chars ({Math.ceil(Math.max(config.templates.receipt.length, 1) / 160)} SMS)
+                                        </p>
+                                    </div>
                                 </div>
 
                                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
@@ -512,7 +522,12 @@ export default function CommunicationPage() {
                                         className="w-full h-24 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                         placeholder="New sale: GHS {Amount} by {Name}..."
                                     />
-                                    <p className="text-xs text-slate-400 mt-2">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Amount}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Name}`}</span></p>
+                                    <div className="flex justify-between items-start mt-2">
+                                        <p className="text-xs text-slate-400">Available Variables: <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Amount}`}</span> <span className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{`{Name}`}</span></p>
+                                        <p className={`text-xs font-mono ml-4 whitespace-nowrap ${(config.templates.ownerSale || '').length > 160 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                            {(config.templates.ownerSale || '').length} chars ({Math.ceil(Math.max((config.templates.ownerSale || '').length, 1) / 160)} SMS)
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
