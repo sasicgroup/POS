@@ -22,7 +22,7 @@ import { useAuth } from '@/lib/auth-context';
 // ... interface ...
 
 export default function CustomersPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, user } = useAuth();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -135,19 +135,78 @@ export default function CustomersPage() {
     const handleUpdatePoints = async () => {
         if (!selectedCustomer || !activeStore?.id) return;
 
+        // Calculate difference
+        const oldPoints = selectedCustomer.points || 0;
+        const newPoints = editPoints;
+        const difference = newPoints - oldPoints;
+
+        if (difference === 0) {
+            setEditingField(null);
+            return;
+        }
+
+        // Update Customer Points
         const { error } = await supabase
             .from('customers')
-            .update({ points: editPoints })
+            .update({ points: newPoints })
             .eq('id', selectedCustomer.id);
 
         if (error) {
             console.error('Error updating points', error);
             alert('Failed to update points');
         } else {
-            const updated = { ...selectedCustomer, points: editPoints };
+            // Log to Loyalty History
+            await supabase.from('loyalty_logs').insert({
+                store_id: activeStore.id,
+                customer_id: selectedCustomer.id,
+                points: Math.abs(difference),
+                type: difference > 0 ? 'earned' : 'redeemed', // or 'manual_adjustment' if we want to be specific, but strictly 'earned'/'redeemed' usually fits schema
+                description: `Manual adjustment: ${difference > 0 ? 'Added' : 'Removed'} ${Math.abs(difference)} points`,
+                created_at: new Date().toISOString()
+            });
+
+            // Update Local State
+            const updated = { ...selectedCustomer, points: newPoints };
             setSelectedCustomer(updated);
             setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
             setEditingField(null);
+
+            // Refresh history to show new log
+            fetchHistory(selectedCustomer.id);
+        }
+    };
+
+    const handleResetPoints = async () => {
+        if (!selectedCustomer || !activeStore?.id) return;
+        if (!confirm('Are you sure you want to reset all points for this customer? This action cannot be undone.')) return;
+
+        const oldPoints = selectedCustomer.points || 0;
+        if (oldPoints === 0) return;
+
+        const { error } = await supabase
+            .from('customers')
+            .update({ points: 0 })
+            .eq('id', selectedCustomer.id);
+
+        if (error) {
+            console.error('Error resetting points', error);
+            alert('Failed to reset points');
+        } else {
+            // Log to Loyalty History
+            await supabase.from('loyalty_logs').insert({
+                store_id: activeStore.id,
+                customer_id: selectedCustomer.id,
+                points: oldPoints,
+                type: 'redeemed',
+                description: `Manual reset: Removed ${oldPoints} points`,
+                created_at: new Date().toISOString()
+            });
+
+            const updated = { ...selectedCustomer, points: 0 };
+            setSelectedCustomer(updated);
+            setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+            setShowOptions(false);
+            fetchHistory(selectedCustomer.id);
         }
     };
 
@@ -279,7 +338,7 @@ export default function CustomersPage() {
                                     </button>
 
                                     {showOptions && (
-                                        <div className="absolute right-0 top-8 w-40 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-10 dark:bg-slate-800 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
+                                        <div className="absolute right-0 top-8 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-10 dark:bg-slate-800 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
                                             <button
                                                 onClick={() => {
                                                     setEditingField('name');
@@ -288,7 +347,7 @@ export default function CustomersPage() {
                                                 }}
                                                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 dark:text-slate-300 dark:hover:bg-slate-700"
                                             >
-                                                <Pencil className="h-3 w-3" /> Edit Name
+                                                <Pencil className="h-3.5 w-3.5" /> Edit Name
                                             </button>
                                             <button
                                                 onClick={() => {
@@ -298,18 +357,31 @@ export default function CustomersPage() {
                                                 }}
                                                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 dark:text-slate-300 dark:hover:bg-slate-700"
                                             >
-                                                <Phone className="h-3 w-3" /> Edit Phone
+                                                <Phone className="h-3.5 w-3.5" /> Edit Phone
                                             </button>
-                                            <button
-                                                onClick={() => {
-                                                    setEditingField('points');
-                                                    setEditPoints(selectedCustomer.points || 0);
-                                                    setShowOptions(false);
-                                                }}
-                                                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 dark:text-slate-300 dark:hover:bg-slate-700"
-                                            >
-                                                <Pencil className="h-3 w-3" /> Edit Points
-                                            </button>
+
+                                            {/* Protected Actions */}
+                                            {(user?.role === 'owner' || user?.role === 'manager') && (
+                                                <>
+                                                    <div className="my-1 border-t border-slate-100 dark:border-slate-700"></div>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingField('points');
+                                                            setEditPoints(selectedCustomer.points || 0);
+                                                            setShowOptions(false);
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 text-sm text-indigo-600 hover:bg-indigo-50 flex items-center gap-2 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
+                                                    >
+                                                        <Pencil className="h-3.5 w-3.5" /> Edit Points
+                                                    </button>
+                                                    <button
+                                                        onClick={handleResetPoints}
+                                                        className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2 dark:text-rose-400 dark:hover:bg-rose-900/20"
+                                                    >
+                                                        <X className="h-3.5 w-3.5" /> Reset Points
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -465,7 +537,7 @@ export default function CustomersPage() {
                                                 <div key={log.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50 text-sm">
                                                     <div className="flex justify-between items-center mb-1">
                                                         <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${log.type === 'earned' ? 'bg-green-100 text-green-700' :
-                                                                log.type === 'redeemed' ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'
+                                                            log.type === 'redeemed' ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'
                                                             }`}>
                                                             {log.type}
                                                         </span>

@@ -6,6 +6,7 @@ import { Search, Calendar, Filter, ArrowUpRight, ArrowDownRight, Printer, Eye, X
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Define Sale Interface
 // Update Sale Interface
@@ -80,6 +81,40 @@ export default function SalesHistoryPage() {
     };
 
     const handleDeleteSale = async (saleId: string) => {
+        // 0. Fetch Sale Details for Points Reversal
+        const { data: saleToDelete } = await supabase.from('sales').select('*, customers(id, points)').eq('id', saleId).single();
+
+        if (saleToDelete && saleToDelete.customer_id) {
+            // Calculate points to revoke (1 Point = 1 GHS approx, or just use 1:1 rule)
+            const pointsToRevoke = Math.floor(saleToDelete.total_amount);
+
+            if (pointsToRevoke > 0) {
+                // Deduct points from customer
+                const { error: pointsError } = await supabase.rpc('decrement_points', {
+                    row_id: saleToDelete.customer_id,
+                    amount: pointsToRevoke
+                });
+
+                // Fallback if RPC fails or not exists, do manual update
+                if (pointsError) {
+                    // Fetch current points
+                    const { data: customer } = await supabase.from('customers').select('points').eq('id', saleToDelete.customer_id).single();
+                    if (customer) {
+                        const newPoints = Math.max(0, (customer.points || 0) - pointsToRevoke);
+                        await supabase.from('customers').update({ points: newPoints }).eq('id', saleToDelete.customer_id);
+                    }
+                }
+
+                // Log Loyalty Reversal
+                await supabase.from('loyalty_logs').insert({
+                    customer_id: saleToDelete.customer_id,
+                    points: -pointsToRevoke,
+                    type: 'revoked', // or 'refund'
+                    description: `Transaction #${saleId.slice(0, 6)} deleted`
+                });
+            }
+        }
+
         // 1. Delete Items first (to be safe if cascade missing)
         await supabase.from('sale_items').delete().eq('sale_id', saleId);
 
@@ -430,34 +465,21 @@ export default function SalesHistoryPage() {
                     </div>
                 </div>
             )}
-            {/* Delete Confirmation Modal */}
-            {deleteConfirmation && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
-                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-                            <Trash2 className="h-6 w-6 text-red-600 dark:text-red-400" />
-                        </div>
-                        <h3 className="text-lg font-bold text-center text-slate-900 dark:text-white mb-2">Delete Transaction?</h3>
-                        <p className="text-sm text-center text-slate-500 mb-6">
-                            Are you sure you want to delete transaction <span className="font-mono font-medium">{deleteConfirmation.id.toString().slice(0, 8)}...</span>? This action cannot be undone.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setDeleteConfirmation(null)}
-                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => handleDeleteSale(deleteConfirmation.id)}
-                                className="flex-1 rounded-xl bg-red-600 py-3 font-bold text-white hover:bg-red-700"
-                            >
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
+            {/* Delete Standardized Modal */}
+            <ConfirmDialog
+                isOpen={!!deleteConfirmation}
+                onClose={() => setDeleteConfirmation(null)}
+                onConfirm={() => {
+                    if (deleteConfirmation) {
+                        handleDeleteSale(deleteConfirmation.id);
+                    }
+                }}
+                title="Delete Transaction?"
+                description={`Are you sure you want to delete transaction ${deleteConfirmation?.id.toString().slice(0, 8)}...? This will also revoke any points earned from this sale.`}
+                confirmText="Delete Permanently"
+                variant="danger"
+            />
         </div>
     );
 }

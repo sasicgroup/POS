@@ -101,6 +101,17 @@ create table public.app_settings (
     whatsapp_config jsonb
 );
 
+-- 9. Other Income Table
+create table public.other_income (
+    id uuid default uuid_generate_v4() primary key,
+    store_id uuid references public.stores(id) on delete cascade,
+    source text not null,
+    amount numeric not null,
+    description text,
+    date date default CURRENT_DATE,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- RLS Policies (Row Level Security) - optional but recommended
 alter table public.stores enable row level security;
 alter table public.employees enable row level security;
@@ -115,7 +126,9 @@ create policy "Public Access" on public.customers for all using (true);
 create policy "Public Access" on public.sales for all using (true);
 create policy "Public Access" on public.sale_items for all using (true);
 create policy "Public Access" on public.payroll_runs for all using (true);
+create policy "Public Access" on public.payroll_runs for all using (true);
 create policy "Public Access" on public.app_settings for all using (true);
+create policy "Public Access" on public.other_income for all using (true);
 
 -- Insert Default Store
 insert into public.stores (name, location) values ('My Awesome Store', 'Accra, Ghana');

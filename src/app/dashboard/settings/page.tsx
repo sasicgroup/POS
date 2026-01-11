@@ -45,6 +45,7 @@ export default function SettingsPage() {
     const [otpEnabled, setOtpEnabled] = useState(true);
     const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<{ id: string, name: string } | null>(null);
     const [storeToDelete, setStoreToDelete] = useState<any>(null);
+    const [editingStore, setEditingStore] = useState<any>(null);
     const [deletionOtcInput, setDeletionOtcInput] = useState('');
     const [otcSent, setOtcSent] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -52,6 +53,8 @@ export default function SettingsPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [barcodeList, setBarcodeList] = useState<any[]>([]);
     const [newCategory, setNewCategory] = useState('');
+    const [newBusinessType, setNewBusinessType] = useState('');
+    const [editingItem, setEditingItem] = useState<{ type: 'business' | 'category', original: string, current: string } | null>(null);
 
     const [showCreateStoreModal, setShowCreateStoreModal] = useState(false);
     const [newStoreData, setNewStoreData] = useState({ name: '', location: '' });
@@ -148,16 +151,47 @@ export default function SettingsPage() {
         } finally { setIsSaving(false); }
     };
 
-    const handleCreateStore = async () => {
+    const handleCreateOrUpdateStore = async () => {
         if (!newStoreData.name || !newStoreData.location) return;
         try {
-            await createStore(newStoreData.name, newStoreData.location);
-            showToast('success', 'Store created successfully');
+            if (editingStore) {
+                // Update existing store logic (assuming we have an updateStore function or using Supabase directly)
+                const { error } = await supabase.from('stores').update({ name: newStoreData.name, location: newStoreData.location }).eq('id', editingStore.id);
+                if (error) throw error;
+                showToast('success', 'Store updated successfully');
+                // Trigger a refresh of stores if possible, or manually update local state if stores comes from context
+                // Reloading window is a crude way, ideally updateStores() context method exists.
+                // Assuming stores updates automatically via subscription or context refresh
+                window.location.reload(); // Temporary fix if no live update
+            } else {
+                await createStore(newStoreData.name, newStoreData.location);
+                showToast('success', 'Store created successfully');
+            }
             setShowCreateStoreModal(false);
             setNewStoreData({ name: '', location: '' });
+            setEditingStore(null);
         } catch (e) {
-            showToast('error', 'Failed to create store');
+            showToast('error', `Failed to ${editingStore ? 'update' : 'create'} store`);
+            console.error(e);
         }
+    };
+
+    const handleEditStore = (store: any) => {
+        setEditingStore(store);
+        setNewStoreData({ name: store.name, location: store.location });
+        setShowCreateStoreModal(true);
+    };
+
+    const handleHideStore = async (store: any) => {
+        if (confirm(`Are you sure you want to hide "${store.name}"? It will not be accessible until restored.`)) {
+            await updateStoreStatus(store.id, 'hidden');
+            showToast('success', 'Store hidden');
+        }
+    };
+
+    const handleRestoreStore = async (store: any) => {
+        await updateStoreStatus(store.id, 'active');
+        showToast('success', 'Store restored');
     };
 
     const handleSendTestSMS = async () => {
@@ -225,6 +259,41 @@ export default function SettingsPage() {
             addCustomCategory(newCategory.trim());
             setNewCategory('');
             showToast('success', 'Category added');
+        }
+    };
+
+    const handleAddBusinessType = () => {
+        if (newBusinessType.trim()) {
+            addCustomBusinessType(newBusinessType.trim());
+            setNewBusinessType('');
+            showToast('success', 'Business Type added');
+        }
+    };
+
+    const handleStartEdit = (type: 'business' | 'category', value: string) => {
+        setEditingItem({ type, original: value, current: value });
+    };
+
+    const handleCancelEdit = () => {
+        setEditingItem(null);
+    };
+
+    const handleSaveEdit = () => {
+        if (!editingItem || !editingItem.current.trim()) return;
+        if (editingItem.type === 'business') {
+            updateBusinessType(editingItem.original, editingItem.current.trim());
+        } else {
+            updateCustomCategory(editingItem.original, editingItem.current.trim());
+        }
+        setEditingItem(null);
+        showToast('success', 'Updated successfully');
+    };
+
+    const handleDeleteItem = (type: 'business' | 'category', value: string) => {
+        if (confirm(`Delete ${value}?`)) {
+            if (type === 'business') deleteBusinessType(value);
+            else removeCustomCategory(value);
+            showToast('success', 'Deleted successfully');
         }
     };
 
@@ -467,19 +536,57 @@ export default function SettingsPage() {
                         <div className="grid gap-6">
                             <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
                                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Business Types</h2>
+                                <div className="flex gap-2 mb-4">
+                                    <input
+                                        type="text"
+                                        value={newBusinessType}
+                                        onChange={(e) => setNewBusinessType(e.target.value)}
+                                        placeholder="New Business Type"
+                                        className="flex-1 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                    />
+                                    <button onClick={handleAddBusinessType} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                                        <Plus className="h-5 w-5" />
+                                    </button>
+                                </div>
                                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                     {availableBusinessTypes.map((type) => (
                                         <div key={type}
-                                            onClick={() => toggleBusinessType(type)}
                                             className={`
-                                                    cursor-pointer p-3 rounded-lg border transition-all flex items-center justify-between
+                                                    group p-3 rounded-lg border transition-all flex items-center justify-between
                                                     ${businessTypes.includes(type)
                                                     ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-600'
                                                     : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'}
                                                 `}
+                                            onClick={() => toggleBusinessType(type)}
                                         >
-                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
-                                            {businessTypes.includes(type) && <Check className="h-4 w-4 text-indigo-600" />}
+                                            {editingItem?.type === 'business' && editingItem.original === type ? (
+                                                <div className="flex items-center gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+                                                    <input
+                                                        type="text"
+                                                        value={editingItem.current}
+                                                        onChange={(e) => setEditingItem({ ...editingItem, current: e.target.value })}
+                                                        className="w-full px-2 py-1 text-sm rounded border border-indigo-200 outline-none dark:bg-slate-950 dark:border-slate-700"
+                                                        autoFocus
+                                                    />
+                                                    <button onClick={handleSaveEdit} className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded"><Check className="h-4 w-4" /></button>
+                                                    <button onClick={handleCancelEdit} className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"><X className="h-4 w-4" /></button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        {businessTypes.includes(type) && <Check className="h-4 w-4 text-indigo-600" />}
+                                                        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                                                            <button onClick={() => handleStartEdit('business', type)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded transition-colors">
+                                                                <Edit2 className="h-3.5 w-3.5" />
+                                                            </button>
+                                                            <button onClick={() => handleDeleteItem('business', type)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded transition-colors">
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -491,15 +598,32 @@ export default function SettingsPage() {
                                     <button onClick={handleAddCategory} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"><Plus className="h-5 w-5" /></button>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                    {activeCategories.map(cat => (
-                                        <span key={cat} className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                            {cat}
-                                        </span>
-                                    ))}
                                     {customCategories.map(cat => (
-                                        <span key={cat} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800">
+                                        <div key={cat} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800">
+                                            {editingItem?.type === 'category' && editingItem.original === cat ? (
+                                                <div className="flex items-center gap-1">
+                                                    <input
+                                                        type="text"
+                                                        value={editingItem.current}
+                                                        onChange={(e) => setEditingItem({ ...editingItem, current: e.target.value })}
+                                                        className="w-24 px-1 py-0.5 text-xs rounded border border-indigo-300 outline-none bg-white dark:bg-slate-950 dark:border-slate-700"
+                                                        autoFocus
+                                                    />
+                                                    <Check onClick={handleSaveEdit} className="h-3 w-3 cursor-pointer hover:text-green-600" />
+                                                    <X onClick={handleCancelEdit} className="h-3 w-3 cursor-pointer hover:text-slate-500" />
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {cat}
+                                                    <Edit2 onClick={() => handleStartEdit('category', cat)} className="h-3 w-3 cursor-pointer hover:text-indigo-900 opacity-50 hover:opacity-100" />
+                                                    <X onClick={() => handleDeleteItem('category', cat)} className="h-3 w-3 cursor-pointer hover:text-red-500 opacity-50 hover:opacity-100" />
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {activeCategories.filter(c => !customCategories.includes(c)).map(cat => (
+                                        <span key={cat} className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                             {cat}
-                                            <X onClick={() => removeCustomCategory(cat)} className="h-3 w-3 cursor-pointer hover:text-red-500" />
                                         </span>
                                     ))}
                                 </div>
@@ -534,8 +658,11 @@ export default function SettingsPage() {
                     {activeTab === 'users' && (
                         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                             <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Team Members</h2>
-                                <button onClick={() => { setEditingMember(null); setShowInviteModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Team Members</h2>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Manage access and roles for your store.</p>
+                                </div>
+                                <button onClick={() => { setEditingMember(null); setShowInviteModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20">
                                     <Plus className="h-4 w-4" /> Add Member
                                 </button>
                             </div>
@@ -543,57 +670,100 @@ export default function SettingsPage() {
                                 {teamMembers.map((member) => (
                                     <div key={member.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between group">
                                         <div className="flex items-center gap-4">
-                                            <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 font-bold">
+                                            <div className="h-10 w-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold border border-indigo-100 dark:border-indigo-800">
                                                 {member.name.charAt(0)}
                                             </div>
                                             <div>
-                                                <div className="font-medium text-slate-900 dark:text-white">{member.name}</div>
-                                                <div className="text-sm text-slate-500 flex items-center gap-2">
-                                                    <span>{member.role}</span>
-                                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                                                    <span>{member.phone}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium text-slate-900 dark:text-white">{member.name}</span>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${member.role === 'owner' ? 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}>
+                                                        {member.role}
+                                                    </span>
+                                                </div>
+                                                <div className="text-sm text-slate-500 flex items-center gap-2 mt-0.5">
+                                                    <span className="tabular-nums">{member.phone}</span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => { setEditingMember(member); setShowInviteModal(true); }} className="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 rounded-lg">
-                                                <Edit2 className="h-4 w-4" />
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => { setEditingMember(member); setShowInviteModal(true); }}
+                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40 rounded-lg transition-colors border border-indigo-100 dark:border-indigo-800"
+                                            >
+                                                <Edit2 className="h-3.5 w-3.5" />
+                                                Edit
                                             </button>
-                                            <button onClick={() => setDeleteMemberConfirm({ id: member.id, name: member.name })} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 rounded-lg">
-                                                <Trash2 className="h-4 w-4" />
+                                            <button
+                                                onClick={() => setDeleteMemberConfirm({ id: member.id, name: member.name })}
+                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:hover:bg-rose-900/40 rounded-lg transition-colors border border-rose-100 dark:border-rose-800"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                                Delete
                                             </button>
                                         </div>
                                     </div>
                                 ))}
-                                {teamMembers.length === 0 && <div className="p-8 text-center text-slate-500">No team members yet.</div>}
+                                {teamMembers.length === 0 && (
+                                    <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
+                                        <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                                            <Users className="h-6 w-6 text-slate-400" />
+                                        </div>
+                                        <p>No team members found.</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
 
                     {/* STORE MANAGEMENT */}
+                    {/* STORE MANAGEMENT */}
                     {activeTab === 'stores' && (
                         <div className="grid gap-4">
-                            <section className="flex justify-end mb-2">
-                                <button onClick={() => setShowCreateStoreModal(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors">
+                            <section className="flex justify-between items-center mb-2">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">All Stores</h2>
+                                    <p className="text-sm text-slate-500">Manage your multi-store configurations.</p>
+                                </div>
+                                <button onClick={() => { setEditingStore(null); setNewStoreData({ name: '', location: '' }); setShowCreateStoreModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20">
                                     <Plus className="h-4 w-4" /> Create New Store
                                 </button>
                             </section>
                             {stores.map((store) => (
-                                <div key={store.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        <div className="h-12 w-12 rounded-xl bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center">
-                                            <Store className="h-6 w-6 text-orange-600" />
+                                <div key={store.id} className={`bg-white dark:bg-slate-900 rounded-xl border p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 transition-all ${store.status === 'hidden' ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/30' : 'border-slate-200 dark:border-slate-800'}`}>
+                                    <div className="flex items-center gap-4 w-full md:w-auto">
+                                        <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${store.status === 'hidden' ? 'bg-amber-100 text-amber-600' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600'}`}>
+                                            {store.status === 'hidden' ? <EyeOff className="h-6 w-6" /> : <Store className="h-6 w-6" />}
                                         </div>
                                         <div>
-                                            <h3 className="font-semibold text-slate-900 dark:text-white">{store.name}</h3>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="font-semibold text-slate-900 dark:text-white">{store.name}</h3>
+                                                {store.status === 'hidden' && <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Hidden</span>}
+                                            </div>
                                             <p className="text-sm text-slate-500">{store.location} • <span className="capitalize">{store.status || 'Active'}</span></p>
                                         </div>
                                     </div>
-                                    {stores.length > 1 && (
-                                        <button onClick={() => handleRequestDeletion(store)} className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg font-medium transition-colors">
-                                            Delete Store
+
+                                    <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                                        <button onClick={() => handleEditStore(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 dark:text-slate-400 dark:hover:bg-indigo-900/20 rounded-lg transition-colors border border-slate-200 dark:border-slate-800">
+                                            <Edit2 className="h-4 w-4" /> Edit
                                         </button>
-                                    )}
+
+                                        {store.status === 'hidden' ? (
+                                            <button onClick={() => handleRestoreStore(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-500 dark:hover:bg-emerald-900/20 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-900/30">
+                                                <RotateCcw className="h-4 w-4" /> Restore
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => handleHideStore(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-500 dark:hover:bg-amber-900/20 rounded-lg transition-colors border border-amber-200 dark:border-amber-900/30">
+                                                <EyeOff className="h-4 w-4" /> Hide
+                                            </button>
+                                        )}
+
+                                        {stores.length > 1 && (
+                                            <button onClick={() => handleRequestDeletion(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-500 dark:hover:bg-rose-900/20 rounded-lg transition-colors border border-rose-200 dark:border-rose-900/30">
+                                                <Trash2 className="h-4 w-4" /> Delete
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>

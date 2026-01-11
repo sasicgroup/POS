@@ -6,6 +6,7 @@ import { useToast } from '@/lib/toast-context';
 import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
@@ -42,6 +43,7 @@ export default function InventoryPage() {
     const [showAiAnalysis, setShowAiAnalysis] = useState(false);
     const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState<any | null>(null);
     const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+    const [showMoreActions, setShowMoreActions] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterCategory, setFilterCategory] = useState('All');
 
@@ -169,12 +171,18 @@ export default function InventoryPage() {
     };
 
 
+    const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+
     const handleBulkDelete = () => {
         if (selectedProducts.length === 0) return;
-        if (!confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) return;
+        setBulkDeleteConfirmOpen(true);
+    };
+
+    const performBulkDelete = () => {
         selectedProducts.forEach(id => deleteProduct(id));
         showToast('success', `Deleted ${selectedProducts.length} products successfully`);
         setSelectedProducts([]);
+        setBulkDeleteConfirmOpen(false);
     };
 
     // Fix: Add missing handleBulkAddToCart
@@ -566,32 +574,35 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">SKU</label>
-                                    <div className="flex gap-2">
-                                        <div className="relative flex-1">
-                                            <input required type="text" value={newProduct.sku} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white pr-10" onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })} />
+                                    <div className="flex flex-col gap-2">
+                                        <input
+                                            required
+                                            type="text"
+                                            value={newProduct.sku}
+                                            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                                            onChange={e => setNewProduct({ ...newProduct, sku: e.target.value })}
+                                            placeholder="Scan or enter SKU"
+                                        />
+                                        <div className="flex gap-2">
                                             <button
                                                 type="button"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setIsScanning(true);
-                                                }}
-                                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors z-10 cursor-pointer"
-                                                title="Scan Barcode"
+                                                onClick={() => setIsScanning(true)}
+                                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
                                             >
                                                 <Scan className="h-4 w-4" />
+                                                Scan
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const randomSku = 'SKU-' + Math.floor(100000 + Math.random() * 900000);
+                                                    setNewProduct({ ...newProduct, sku: randomSku });
+                                                }}
+                                                className="flex-1 px-3 py-2 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50 transition-colors"
+                                            >
+                                                Generate
                                             </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const randomSku = 'SKU-' + Math.floor(100000 + Math.random() * 900000);
-                                                setNewProduct({ ...newProduct, sku: randomSku });
-                                            }}
-                                            className="px-3 py-2 mt-1 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50 transition-colors"
-                                        >
-                                            Generate
-                                        </button>
                                     </div>
                                 </div>
                                 <div>
@@ -879,8 +890,9 @@ export default function InventoryPage() {
             </div>
 
             {/* Bulk Action Sticky Bar */}
+            {/* Bulk Action Sticky Bar */}
             <div className={`fixed bottom-20 lg:bottom-4 left-1/2 transform -translate-x-1/2 w-full max-w-2xl px-4 z-[60] transition-all duration-300 ${selectedProducts.length > 0 ? 'translate-y-0 opacity-100' : 'translate-y-[200%] opacity-0'}`}>
-                <div className="bg-slate-900 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between dark:bg-white dark:text-slate-900 border border-slate-800 dark:border-slate-200">
+                <div className="bg-slate-900 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between dark:bg-white dark:text-slate-900 border border-slate-800 dark:border-slate-200 relative">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
                             {selectedProducts.length}
@@ -893,7 +905,7 @@ export default function InventoryPage() {
                             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors dark:bg-slate-100 dark:text-slate-600 dark:hover:bg-slate-200 dark:hover:text-slate-900"
                         >
                             <Barcode className="h-4 w-4" />
-                            <span className="text-sm font-medium">Barcodes</span>
+                            <span className="text-sm font-medium hidden sm:inline">Barcodes</span>
                         </button>
                         <button
                             onClick={handleBulkAddToCart}
@@ -902,13 +914,39 @@ export default function InventoryPage() {
                             <ShoppingCart className="h-4 w-4" />
                             <span className="text-sm font-medium">Add to Cart</span>
                         </button>
+
+                        {/* Desktop Delete */}
                         <button
                             onClick={handleBulkDelete}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white transition-all"
+                            className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white transition-all"
                         >
                             <Trash2 className="h-4 w-4" />
                             <span className="text-sm font-medium">Delete</span>
                         </button>
+
+                        {/* Mobile More Actions */}
+                        <div className="relative sm:hidden">
+                            <button
+                                onClick={() => setShowMoreActions(!showMoreActions)}
+                                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white dark:bg-slate-100 dark:text-slate-600"
+                            >
+                                <MoreHorizontal className="h-5 w-5" />
+                            </button>
+                            {showMoreActions && (
+                                <div className="absolute right-0 bottom-full mb-2 w-40 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                    <button
+                                        onClick={() => {
+                                            handleBulkDelete();
+                                            setShowMoreActions(false);
+                                        }}
+                                        className="w-full text-left px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                    >
+                                        <Trash2 className="h-4 w-4" /> Delete
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="w-px h-6 bg-slate-700 dark:bg-slate-200 mx-1"></div>
                         <button
                             onClick={() => setSelectedProducts([])}
@@ -1058,38 +1096,33 @@ export default function InventoryPage() {
                 </div>
             )}
 
-            {/* Delete Confirmation Modal */}
-            {deleteConfirmation && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
-                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-                            <Trash2 className="h-6 w-6 text-red-600 dark:text-red-400" />
-                        </div>
-                        <h3 className="text-lg font-bold text-center text-slate-900 dark:text-white mb-2">Delete Product?</h3>
-                        <p className="text-sm text-center text-slate-500 mb-6">
-                            Are you sure you want to delete <span className="font-semibold text-slate-900 dark:text-slate-100">{deleteConfirmation.name}</span>? This action cannot be undone.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setDeleteConfirmation(null)}
-                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => {
-                                    deleteProduct(deleteConfirmation.id);
-                                    setDeleteConfirmation(null);
-                                    showToast('success', 'Product deleted successfully');
-                                }}
-                                className="flex-1 rounded-xl bg-red-600 py-3 font-bold text-white hover:bg-red-700"
-                            >
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Delete Confirmation Modal (Single) */}
+            <ConfirmDialog
+                isOpen={!!deleteConfirmation}
+                onClose={() => setDeleteConfirmation(null)}
+                onConfirm={() => {
+                    if (deleteConfirmation) {
+                        deleteProduct(deleteConfirmation.id);
+                        setDeleteConfirmation(null);
+                        showToast('success', 'Product deleted successfully');
+                    }
+                }}
+                title="Delete Product?"
+                description={`Are you sure you want to delete "${deleteConfirmation?.name}"? This action cannot be undone.`}
+                confirmText="Delete Product"
+                variant="danger"
+            />
+
+            {/* Bulk Delete Dialog */}
+            <ConfirmDialog
+                isOpen={bulkDeleteConfirmOpen}
+                onClose={() => setBulkDeleteConfirmOpen(false)}
+                onConfirm={performBulkDelete}
+                title={`Delete ${selectedProducts.length} Products?`}
+                description={`Are you sure you want to delete ${selectedProducts.length} selected products? This action cannot be undone.`}
+                confirmText={`Delete ${selectedProducts.length} Items`}
+                variant="danger"
+            />
         </div>
     );
 }

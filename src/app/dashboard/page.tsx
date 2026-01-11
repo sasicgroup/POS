@@ -28,6 +28,8 @@ export default function DashboardPage() {
 
     const [dateRange, setDateRange] = useState('7d'); // 1d, 7d, 1m, 3m, 6m, 1y
 
+    const [salesData, setSalesData] = useState<any[]>([]);
+
     useEffect(() => {
         if (activeStore) {
             fetchDashboardData();
@@ -36,9 +38,11 @@ export default function DashboardPage() {
 
     const fetchDashboardData = async () => {
         // Fetch Sales & Revenue (Total)
-        const { data: salesData } = await supabase.from('sales').select('*').eq('store_id', activeStore?.id);
-        const totalRevenue = salesData?.reduce((acc, curr) => acc + (curr.total_amount || 0), 0) || 0;
-        const totalOrders = salesData?.length || 0;
+        const { data: sales } = await supabase.from('sales').select('*').eq('store_id', activeStore?.id);
+        const totalRevenue = sales?.reduce((acc, curr) => acc + (curr.total_amount || 0), 0) || 0;
+        const totalOrders = sales?.length || 0;
+
+        if (sales) setSalesData(sales);
 
         // Fetch Customers Count
         const { count: customerCount } = await supabase.from('customers').select('*', { count: 'exact', head: true }).eq('store_id', activeStore?.id);
@@ -63,43 +67,112 @@ export default function DashboardPage() {
         }
     };
 
-    // Helper to generate mock chart data based on range
+    // Helper to generate REAL chart data based on range
     const getChartData = () => {
-        // In a real app, this would query the DB with group_by logic
-        const data = [];
-        const today = new Date();
+        if (!salesData.length) return [];
+
+        const now = new Date();
+        const dataMap = new Map<string, number>();
+        let labels: string[] = [];
+        let formatKey: (date: Date) => string = (d) => d.toISOString(); // Default
 
         if (dateRange === '1d') {
-            // Hourly (9am - 6pm)
-            for (let i = 9; i <= 18; i++) {
-                const hour = i > 12 ? `${i - 12} PM` : `${i} AM`;
-                data.push({ label: hour, value: Math.floor(Math.random() * 200) });
+            // Today Hourly (0-23)
+            // Filter for today
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const todaySales = salesData.filter(s => new Date(s.created_at) >= startOfDay);
+
+            // Initialize all hours with 0
+            for (let i = 8; i <= 20; i++) { // Show business hours mostly
+                const hourLabel = i > 12 ? `${i - 12} PM` : (i === 12 ? '12 PM' : `${i} AM`);
+                dataMap.set(hourLabel, 0);
+                labels.push(hourLabel);
             }
+
+            todaySales.forEach(sale => {
+                const d = new Date(sale.created_at);
+                const h = d.getHours();
+                if (h >= 8 && h <= 20) {
+                    const hourLabel = h > 12 ? `${h - 12} PM` : (h === 12 ? '12 PM' : `${h} AM`);
+                    dataMap.set(hourLabel, (dataMap.get(hourLabel) || 0) + sale.total_amount);
+                }
+            });
+
+            return labels.map(label => ({ label, value: dataMap.get(label) || 0 }));
         }
         else if (dateRange === '7d') {
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            // Last 7 days
             for (let i = 6; i >= 0; i--) {
-                const d = new Date(today);
-                d.setDate(today.getDate() - i);
-                data.push({ label: days[d.getDay()], value: Math.floor(Math.random() * 800) + 100 });
+                const d = new Date(now);
+                d.setDate(now.getDate() - i);
+                const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                dataMap.set(dayName, 0); // Init
+                labels.push(dayName);
             }
+
+            const cutoff = new Date(now);
+            cutoff.setDate(now.getDate() - 7);
+
+            salesData.filter(s => new Date(s.created_at) >= cutoff).forEach(sale => {
+                const d = new Date(sale.created_at);
+                const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                if (dataMap.has(dayName)) {
+                    dataMap.set(dayName, (dataMap.get(dayName) || 0) + sale.total_amount);
+                }
+            });
+            return labels.map(label => ({ label, value: dataMap.get(label) || 0 }));
         }
         else if (dateRange === '1m') {
-            // 4 Weeks
-            for (let i = 1; i <= 4; i++) {
-                data.push({ label: `Wk ${i}`, value: Math.floor(Math.random() * 3000) + 500 });
+            // Last 30 Days (Group by week or every 5 days to save space?) Let's do weeks or simple days
+            // Let's do 4 weeks
+            for (let i = 3; i >= 0; i--) {
+                // This is rough "Week X" logic, or we can just show last 4 weeks
+                const label = i === 0 ? 'This Week' : `${i} Week${i > 1 ? 's' : ''} Ago`;
+                dataMap.set(label, 0);
+                labels.push(label);
             }
+
+            // Simple week bucketing
+            const oneWeek = 7 * 24 * 60 * 60 * 1000;
+            salesData.forEach(sale => {
+                const diff = now.getTime() - new Date(sale.created_at).getTime();
+                if (diff <= oneWeek * 4) {
+                    const weekIdx = Math.floor(diff / oneWeek);
+                    const label = weekIdx === 0 ? 'This Week' : `${weekIdx} Week${weekIdx > 1 ? 's' : ''} Ago`;
+                    if (dataMap.has(label)) {
+                        dataMap.set(label, (dataMap.get(label) || 0) + sale.total_amount);
+                    }
+                }
+            });
+            // Reverse labels to show oldest to newest? No, "3 Weeks Ago" -> "This Week"
+            return labels.reverse().map(label => ({ label, value: dataMap.get(label) || 0 }));
         }
-        else if (['3m', '6m', '1y'].includes(dateRange)) {
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const count = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : 12;
-            for (let i = count - 1; i >= 0; i--) {
-                const d = new Date(today);
-                d.setMonth(today.getMonth() - i);
-                data.push({ label: months[d.getMonth()], value: Math.floor(Math.random() * 10000) + 2000 });
+        else {
+            // Months (3m, 6m, 1y)
+            const monthCount = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : 12;
+
+            for (let i = monthCount - 1; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+                const key = `${monthName}-${d.getFullYear()}`; // Unique key
+                dataMap.set(key, 0);
+                labels.push(key);
             }
+
+            const cutoff = new Date(now);
+            cutoff.setMonth(now.getMonth() - monthCount);
+
+            salesData.filter(s => new Date(s.created_at) >= cutoff).forEach(sale => {
+                const d = new Date(sale.created_at);
+                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+                const key = `${monthName}-${d.getFullYear()}`;
+                if (dataMap.has(key)) {
+                    dataMap.set(key, (dataMap.get(key) || 0) + sale.total_amount);
+                }
+            });
+
+            return labels.map(key => ({ label: key.split('-')[0], value: dataMap.get(key) || 0 }));
         }
-        return data;
     };
 
     const chartData = getChartData();

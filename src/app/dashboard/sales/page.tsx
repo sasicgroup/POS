@@ -42,6 +42,7 @@ export default function SalesPage() {
     const [customerPhone, setCustomerPhone] = useState('');
     const [loyaltyPoints, setLoyaltyPoints] = useState(0);
     const [redeemPoints, setRedeemPoints] = useState(false);
+    const [pointsToRedeem, setPointsToRedeem] = useState(100);
     const [existingCustomer, setExistingCustomer] = useState<any>(null);
     const [isLoadingCustomer, setIsLoadingCustomer] = useState(false);
 
@@ -293,10 +294,10 @@ export default function SalesPage() {
         : 0;
 
     // Loyalty Redemption Calculation
-    const loyaltyRedeemPoints = loyaltyConfig?.min_points_to_redeem || 100;
-    const loyaltyRedeemValue = loyaltyRedeemPoints * (loyaltyConfig?.redemption_rate || 0.05);
+    const minRedeemPoints = loyaltyConfig?.min_points_to_redeem || 100;
+    const loyaltyRedeemValue = (redeemPoints ? pointsToRedeem : 0) * (loyaltyConfig?.redemption_rate || 0.05);
 
-    const grandTotal = cartTotal + taxAmount - (redeemPoints ? loyaltyRedeemValue : 0);
+    const grandTotal = Math.max(0, cartTotal + taxAmount - loyaltyRedeemValue);
 
     const handlePrintReceipt = (transactionId: string) => {
         const receiptWindow = window.open('', '_blank', 'width=400,height=600');
@@ -394,10 +395,10 @@ export default function SalesPage() {
                 ${(customerName && loyaltyConfig?.enabled) ? `
                 <div class="loyalty-section">
                     <div class="loyalty-title">LOYALTY SUMMARY</div>
-                    ${redeemPoints ? `<div class="summary-row"><span>Points Used:</span> <span>${loyaltyRedeemPoints}</span></div>` : ''}
+                    ${redeemPoints ? `<div class="summary-row"><span>Points Used:</span> <span>${pointsToRedeem}</span></div>` : ''}
                     <div class="summary-row"><span>Points Earned:</span> <span>+${pointsEarned}</span></div>
                     <div class="summary-row" style="font-weight: bold; border-top: 0.5px solid #ccc; margin-top: 3px; padding-top: 3px;">
-                        <span>New Balance:</span> <span>${redeemPoints ? (loyaltyPoints - loyaltyRedeemPoints + pointsEarned) : (loyaltyPoints + pointsEarned)}</span>
+                        <span>New Balance:</span> <span>${redeemPoints ? (loyaltyPoints - pointsToRedeem + pointsEarned) : (loyaltyPoints + pointsEarned)}</span>
                     </div>
                 </div>` : ''}
 
@@ -513,10 +514,10 @@ export default function SalesPage() {
                     // If redeeming, we subtract 100, then add earned. 
                     // Note: grandTotal already has the discount applied if redeemPoints was true, 
                     // so we don't need to adjust pointsEarned, just the starting balance.
-                    // If redeeming, we subtrac the redemption amount
+                    // If redeeming, we subtract the redemption amount
                     // Note: grandTotal already has the discount applied if redeemPoints was true
                     const finalPoints = redeemPoints
-                        ? (currentDbPoints - loyaltyRedeemPoints) + pointsEarned
+                        ? (currentDbPoints - pointsToRedeem) + pointsEarned
                         : currentDbPoints + pointsEarned;
 
                     await supabase.from('customers').update({
@@ -1004,18 +1005,52 @@ export default function SalesPage() {
                                         <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{loyaltyPoints} Points</span>
                                     </div>
                                     {loyaltyPoints >= (loyaltyConfig?.min_points_to_redeem || 100) && (
-                                        <label className="flex items-center gap-2 cursor-pointer mt-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={redeemPoints}
-                                                onChange={(e) => setRedeemPoints(e.target.checked)}
-                                                className="h-3 w-3 rounded text-indigo-600 focus:ring-indigo-500"
-                                            />
-                                            <span className="text-xs text-slate-600 dark:text-slate-400">
-                                                Redeem {loyaltyConfig?.min_points_to_redeem || 100} pts
-                                                (Get GHS {(loyaltyRedeemValue).toFixed(2)} off)
-                                            </span>
-                                        </label>
+                                        <div className="mt-2 space-y-2">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={redeemPoints}
+                                                    onChange={(e) => {
+                                                        const isChecked = e.target.checked;
+                                                        setRedeemPoints(isChecked);
+                                                        if (isChecked) {
+                                                            setPointsToRedeem(loyaltyConfig?.min_points_to_redeem || 100);
+                                                        }
+                                                    }}
+                                                    className="h-3 w-3 rounded text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                                    Redeem Loyalty Points
+                                                </span>
+                                            </label>
+
+                                            {redeemPoints && (
+                                                <div className="flex items-center justify-between p-2 bg-indigo-50/50 rounded-lg border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-800">
+                                                    <div className="flex items-center gap-3">
+                                                        <button
+                                                            onClick={() => setPointsToRedeem(Math.max(loyaltyConfig?.min_points_to_redeem || 100, pointsToRedeem - 100))}
+                                                            disabled={pointsToRedeem <= (loyaltyConfig?.min_points_to_redeem || 100)}
+                                                            className="h-6 w-6 flex items-center justify-center rounded bg-white shadow text-indigo-600 disabled:opacity-50 dark:bg-slate-800"
+                                                        >
+                                                            <Minus className="h-3 w-3" />
+                                                        </button>
+                                                        <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400 w-12 text-center">
+                                                            {pointsToRedeem}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => setPointsToRedeem(Math.min(loyaltyPoints, pointsToRedeem + 100))}
+                                                            disabled={pointsToRedeem + 100 > loyaltyPoints}
+                                                            className="h-6 w-6 flex items-center justify-center rounded bg-white shadow text-indigo-600 disabled:opacity-50 dark:bg-slate-800"
+                                                        >
+                                                            <Plus className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                                        -GHS {((pointsToRedeem) * (loyaltyConfig?.redemption_rate || 0.05)).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             )}
