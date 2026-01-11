@@ -723,6 +723,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 dbUpdates.role_permissions = settings.rolePermissions;
                 delete dbUpdates.rolePermissions;
             }
+            // Map lastTransactionNumber
+            if (settings.lastTransactionNumber !== undefined) {
+                dbUpdates.last_transaction_number = settings.lastTransactionNumber;
+                delete dbUpdates.lastTransactionNumber;
+            }
             if (settings.branding) {
                 // Assumes 'branding' column exists (JSONB)
                 dbUpdates.branding = settings.branding;
