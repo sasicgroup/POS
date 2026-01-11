@@ -329,8 +329,8 @@ export default function InventoryPage() {
                     { facingMode: "environment" },
                     config,
                     (decodedText: string) => {
-                        setNewProduct(prev => ({ ...prev, sku: decodedText }));
-                        setIsScanning(false);
+                        // Call handleScan to search for product and provide feedback
+                        handleScan(decodedText);
                         if (scannerRef.current) {
                             scannerRef.current.stop().catch(console.error);
                         }
