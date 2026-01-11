@@ -312,7 +312,7 @@ export default function SalesPage() {
         }, 0);
 
         const pointsEarned = loyaltyConfig?.enabled
-            ? Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1))
+            ? Math.floor(cartTotal * (loyaltyConfig.points_per_currency || 0.01)) // Use cartTotal (before tax) for points
             : 0;
 
         const receiptContent = `
@@ -495,7 +495,7 @@ export default function SalesPage() {
             });
 
             const pointsEarned = loyaltyConfig?.enabled
-                ? Math.floor(grandTotal * (loyaltyConfig.points_per_currency || 1)) // Default to 1 if missing, but config should exist
+                ? Math.floor(cartTotal * (loyaltyConfig.points_per_currency || 0.01)) // Use cartTotal (before tax) for points
                 : 0;
 
             // --- Update Customer Loyalty Points & Stats ---
