@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { getSMSConfig, updateSMSConfig, SMSConfig, sendDirectMessage, getSMSBalance } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     Building2, Users, Save, Globe, MessageSquare, X, Tag, Package,
     Edit2, Trash2, Layout, Eye, EyeOff, Archive, RotateCcw,
@@ -58,6 +58,13 @@ export default function SettingsPage() {
 
     const [showCreateStoreModal, setShowCreateStoreModal] = useState(false);
     const [newStoreData, setNewStoreData] = useState({ name: '', location: '' });
+
+    // PWA Icon Upload State
+    const [icon192, setIcon192] = useState<string | null>(null);
+    const [icon512, setIcon512] = useState<string | null>(null);
+    const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+    const icon192Ref = useRef<HTMLInputElement>(null);
+    const icon512Ref = useRef<HTMLInputElement>(null);
     const [smsBalance, setSmsBalance] = useState<number | null>(null);
     const [testSMSPhone, setTestSMSPhone] = useState('');
     const [isSendingTest, setIsSendingTest] = useState(false);
@@ -109,6 +116,54 @@ export default function SettingsPage() {
     useEffect(() => {
         if (showInviteModal) setOtpEnabled(editingMember ? editingMember.otp_enabled !== false : true);
     }, [showInviteModal, editingMember]);
+
+    // Handle PWA Icon Upload
+    const handleIconUpload = async (file: File, size: 192 | 512) => {
+        if (!file) return;
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            showToast('error', 'Please upload an image file');
+            return;
+        }
+
+        setIsUploadingIcon(true);
+
+        try {
+            // Read file as data URL
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = document.createElement('img');
+                img.onload = () => {
+                    // Validate dimensions
+                    if (img.width !== size || img.height !== size) {
+                        showToast('error', `Image must be exactly ${size}x${size} pixels`);
+                        setIsUploadingIcon(false);
+                        return;
+                    }
+
+                    // Save to state and localStorage
+                    const dataUrl = e.target?.result as string;
+                    if (size === 192) {
+                        setIcon192(dataUrl);
+                        localStorage.setItem('pwa_icon_192', dataUrl);
+                    } else {
+                        setIcon512(dataUrl);
+                        localStorage.setItem('pwa_icon_512', dataUrl);
+                    }
+
+                    showToast('success', `${size}x${size} icon uploaded successfully!`);
+                    setIsUploadingIcon(false);
+                };
+                img.src = e.target?.result as string;
+            };
+            reader.readAsDataURL(file);
+        } catch (error) {
+            console.error('Upload error:', error);
+            showToast('error', 'Failed to upload icon');
+            setIsUploadingIcon(false);
+        }
+    };
 
     const fetchBarcodeLibrary = async () => {
         if (!activeStore?.id) return;
@@ -938,29 +993,65 @@ export default function SettingsPage() {
                                         <div className="grid gap-4 md:grid-cols-2">
                                             <div className="p-4 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors">
                                                 <div className="flex flex-col items-center gap-3">
-                                                    <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
-                                                        <Smartphone className="h-12 w-12 text-white" />
-                                                    </div>
+                                                    {icon192 ? (
+                                                        <img src={icon192} alt="192x192 Icon" className="h-24 w-24 rounded-2xl shadow-lg object-cover" />
+                                                    ) : (
+                                                        <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                                                            <Smartphone className="h-12 w-12 text-white" />
+                                                        </div>
+                                                    )}
                                                     <div className="text-center">
                                                         <p className="text-sm font-medium text-slate-900 dark:text-white">192x192 Icon</p>
                                                         <p className="text-xs text-slate-500">Required for home screen</p>
                                                     </div>
-                                                    <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg font-medium transition-colors">
-                                                        Upload Icon
+                                                    <input
+                                                        ref={icon192Ref}
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) handleIconUpload(file, 192);
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => icon192Ref.current?.click()}
+                                                        disabled={isUploadingIcon}
+                                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg font-medium transition-colors disabled:opacity-50"
+                                                    >
+                                                        {isUploadingIcon ? 'Uploading...' : 'Upload Icon'}
                                                     </button>
                                                 </div>
                                             </div>
                                             <div className="p-4 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors">
                                                 <div className="flex flex-col items-center gap-3">
-                                                    <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
-                                                        <Smartphone className="h-12 w-12 text-white" />
-                                                    </div>
+                                                    {icon512 ? (
+                                                        <img src={icon512} alt="512x512 Icon" className="h-24 w-24 rounded-2xl shadow-lg object-cover" />
+                                                    ) : (
+                                                        <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                                                            <Smartphone className="h-12 w-12 text-white" />
+                                                        </div>
+                                                    )}
                                                     <div className="text-center">
                                                         <p className="text-sm font-medium text-slate-900 dark:text-white">512x512 Icon</p>
                                                         <p className="text-xs text-slate-500">Required for splash screen</p>
                                                     </div>
-                                                    <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg font-medium transition-colors">
-                                                        Upload Icon
+                                                    <input
+                                                        ref={icon512Ref}
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) handleIconUpload(file, 512);
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => icon512Ref.current?.click()}
+                                                        disabled={isUploadingIcon}
+                                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg font-medium transition-colors disabled:opacity-50"
+                                                    >
+                                                        {isUploadingIcon ? 'Uploading...' : 'Upload Icon'}
                                                     </button>
                                                 </div>
                                             </div>
