@@ -301,9 +301,11 @@ export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
         if (type === 'sale') {
             const template = config.templates.ownerSale || "New sale: GHS {Amount} by {Name}.";
             msg = template
-                .replace('{Amount}', Number(data.amount).toFixed(2))
-                .replace('{Name}', data.customerName || 'Customer')
-                .replace('{TotalOrders}', (data.totalOrders || '0').toString());
+                .replace(/{Amount}/g, Number(data.amount).toFixed(2))
+                .replace(/{Name}/g, data.customerName || 'Customer')
+                .replace(/{TotalOrders}/g, (data.totalOrders || '0').toString())
+                .replace(/{Receipt}/g, (data.id || '').toString())
+                .replace(/{Staff}/g, data.staffName || 'Staff');
         }
 
         if (msg) {
