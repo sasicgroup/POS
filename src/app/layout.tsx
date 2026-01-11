@@ -1,11 +1,24 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import '../styles/globals.css'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
     title: 'Store Management System',
     description: 'Premium Store Management Solution',
-}
+    manifest: "/manifest.json",
+    appleWebApp: {
+        capable: true,
+        statusBarStyle: "default",
+        title: "POS System",
+    },
+    formatDetection: {
+        telephone: false,
+    },
+};
+
+export const viewport: Viewport = {
+    themeColor: "#4f46e5",
+};
 
 export default function RootLayout({
     children,
