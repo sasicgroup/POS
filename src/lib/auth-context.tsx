@@ -22,10 +22,17 @@ export interface Store {
     receiptSuffix?: string; // e.g., "-A", "2024"
     lastTransactionNumber?: number; // Sequential counter
     rolePermissions?: Record<string, Record<string, boolean>>; // { manager: { view_dashboard: true }, staff: { ... } }
+    branding?: {
+        name?: string;
+        logoUrl?: string; // or logo_url if mapped from DB
+        color?: string;
+    };
     status?: 'active' | 'hidden' | 'deleted' | 'archived';
     deletion_otc?: string;
     deletion_otc_expiry?: string;
 }
+
+
 
 // Default Permissions
 export const DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
@@ -151,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         receiptSuffix: s.receipt_suffix,
                         phone: s.phone,
                         rolePermissions: s.role_permissions,
+                        branding: s.branding,
                         lastTransactionNumber: s.last_transaction_number || 0
                     }));
                     setStores(mappedStores);
@@ -368,7 +376,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const now = new Date();
             const exp = new Date(employees.otp_expiry);
             console.log('[OTP] Expiry:', exp, '| Now:', now, '| Valid:', now <= exp);
-            
+
             if (now <= exp) {
                 // Success
                 // Clear OTP fields
@@ -715,6 +723,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 dbUpdates.role_permissions = settings.rolePermissions;
                 delete dbUpdates.rolePermissions;
             }
+            if (settings.branding) {
+                // Assumes 'branding' column exists (JSONB)
+                dbUpdates.branding = settings.branding;
+            }
 
             const { error } = await supabase.from('stores').update(dbUpdates).eq('id', activeStore.id);
 
@@ -726,6 +738,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     console.warn("Attempting fallback save without new columns...");
                     delete dbUpdates.receipt_prefix;
                     delete dbUpdates.receipt_suffix;
+                    if (dbUpdates.branding) delete dbUpdates.branding; // Remove branding in fallback if it caused error
 
                     // If there are still properties to update
                     if (Object.keys(dbUpdates).length > 0) {

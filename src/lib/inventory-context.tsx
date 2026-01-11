@@ -130,8 +130,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
 
         const startTime = Date.now();
-        const TIMEOUT_MS = 30000; // 30 second timeout
-        
+        const TIMEOUT_MS = 60000; // 60 second timeout
+
         // Create abort controller for timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -140,17 +140,17 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Use range for pagination
             const from = (pageNum - 1) * pageSizeNum;
             const to = from + pageSizeNum - 1;
-            
+
             const { data, error, count } = await supabase
                 .from('products')
-                .select('*', { count: 'exact' })
+                .select('*', { count: 'estimated' })
                 .eq('store_id', activeStore.id)
                 .range(from, to)
                 .abortSignal(controller.signal);
 
             clearTimeout(timeoutId);
             const duration = Date.now() - startTime;
-            
+
             if (error) {
                 console.error(`[Inventory] Supabase error (duration: ${duration}ms):`, error.message || error);
                 throw error;
@@ -178,15 +178,15 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         } catch (err: any) {
             clearTimeout(timeoutId);
             const duration = Date.now() - startTime;
-            
+
             // Check for specific error types
-            const isNetworkError = err.name === 'AbortError' || 
-                                   err.message === 'Failed to fetch' || 
-                                   err.message.includes('network') ||
-                                   err.name === 'TypeError';
-            
+            const isNetworkError = err.name === 'AbortError' ||
+                err.message === 'Failed to fetch' ||
+                err.message.includes('network') ||
+                err.name === 'TypeError';
+
             console.error(`[Inventory] Error fetching products (duration: ${duration}ms, attempt: ${retryCount + 1}):`, err.message || err);
-            
+
             // Retry with exponential backoff (max 3 attempts)
             const maxRetries = 3;
             if (retryCount < maxRetries && isNetworkError) {
@@ -199,7 +199,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 // Final failure - keep existing data if any, just stop loading
                 console.log('[Inventory] Max retries reached or non-retryable error, keeping existing data');
                 setIsLoading(false);
-                
+
                 // Invalidate cache so we try again on next mount
                 setProductsCache(prev => ({ ...prev, timestamp: null }));
             }
@@ -517,7 +517,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             console.warn('Cannot add product with 0 stock to cart');
             return;
         }
-        
+
         setCart(current => {
             const existing = current.find(item => item.id === product.id);
             if (existing) {
@@ -525,12 +525,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 const newQty = existing.quantity + 1;
                 const productInList = products.find(p => p.id === product.id);
                 const maxStock = productInList?.stock || 0;
-                
+
                 if (newQty > maxStock) {
                     console.warn('Cannot add more than available stock');
                     return current;
                 }
-                
+
                 return current.map(item =>
                     item.id === product.id ? { ...item, quantity: newQty } : item
                 );

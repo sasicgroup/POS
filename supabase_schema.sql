@@ -3,12 +3,17 @@
 create extension if not exists "uuid-ossp";
 
 -- 1. Stores Table
-create table public.stores (
     id uuid default uuid_generate_v4() primary key,
     name text not null,
     location text,
+    phone text,
     currency text default 'GHS',
     tax_settings jsonb default '{"enabled": true, "type": "percentage", "value": 12.5}'::jsonb,
+    branding jsonb,
+    receipt_prefix text,
+    receipt_suffix text,
+    role_permissions jsonb,
+    last_transaction_number integer default 0,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
