@@ -11,7 +11,7 @@ import {
     Edit2, Trash2, Layout, Eye, EyeOff, Archive, RotateCcw,
     Barcode, QrCode, RefreshCw, ShieldAlert, Key, Palette, Image,
     Type, DollarSign, Percent, Store, Check, Plus, Search, ChevronRight,
-    CreditCard
+    CreditCard, Smartphone, Download
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
@@ -338,6 +338,7 @@ export default function SettingsPage() {
         { id: 'stores', label: 'Store Management', description: 'Multi-store config', icon: Store },
         { id: 'barcodes', label: 'Barcodes', description: 'Generate & export', icon: Barcode },
         { id: 'sms', label: 'SMS Config', description: 'Gateway settings', icon: MessageSquare },
+        { id: 'pwa', label: 'PWA Settings', description: 'App installation', icon: Smartphone },
     ];
 
     return (
@@ -876,6 +877,162 @@ export default function SettingsPage() {
                             </div>
                         </section>
                     </div>
+                    )}
+
+                    {activeTab === 'pwa' && (
+                        <div className="space-y-6">
+                            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex items-center justify-between mb-6">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Progressive Web App (PWA)</h2>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Configure your app for installation on devices</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/20">
+                                        <div className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></div>
+                                        <span className="text-xs font-medium text-indigo-700 dark:text-indigo-400">Active</span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-6">
+                                    {/* App Information */}
+                                    <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                        <h3 className="font-semibold text-sm uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-4">App Information</h3>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">App Name</label>
+                                                <input
+                                                    type="text"
+                                                    defaultValue="Store Management Software"
+                                                    className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Short Name</label>
+                                                <input
+                                                    type="text"
+                                                    defaultValue="POS System"
+                                                    className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="mt-4">
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Theme Color</label>
+                                            <div className="flex gap-3">
+                                                <input
+                                                    type="color"
+                                                    defaultValue="#4f46e5"
+                                                    className="h-10 w-20 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    defaultValue="#4f46e5"
+                                                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* App Icons */}
+                                    <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                        <h3 className="font-semibold text-sm uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-4">App Icons</h3>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div className="p-4 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                                                        <Smartphone className="h-12 w-12 text-white" />
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">192x192 Icon</p>
+                                                        <p className="text-xs text-slate-500">Required for home screen</p>
+                                                    </div>
+                                                    <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg font-medium transition-colors">
+                                                        Upload Icon
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="p-4 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                                                        <Smartphone className="h-12 w-12 text-white" />
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">512x512 Icon</p>
+                                                        <p className="text-xs text-slate-500">Required for splash screen</p>
+                                                    </div>
+                                                    <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg font-medium transition-colors">
+                                                        Upload Icon
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-4">
+                                            💡 Tip: Use square PNG images with transparent backgrounds for best results
+                                        </p>
+                                    </div>
+
+                                    {/* Installation Instructions */}
+                                    <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/20 dark:to-purple-950/20">
+                                        <div className="flex items-start gap-3 mb-4">
+                                            <div className="p-2 rounded-lg bg-indigo-600">
+                                                <Download className="h-5 w-5 text-white" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-semibold text-slate-900 dark:text-white">How to Install</h3>
+                                                <p className="text-sm text-slate-600 dark:text-slate-400">Follow these steps to install the app on your device</p>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <div className="flex gap-3 p-3 rounded-lg bg-white/50 dark:bg-slate-900/50">
+                                                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">1</div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Open in Browser</p>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400">Visit this site in Chrome, Safari, or Edge</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 p-3 rounded-lg bg-white/50 dark:bg-slate-900/50">
+                                                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">2</div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Find Install Option</p>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400">Look for "Add to Home Screen" or "Install App" in browser menu</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 p-3 rounded-lg bg-white/50 dark:bg-slate-900/50">
+                                                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">3</div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Confirm Installation</p>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400">The app will be added to your home screen like a native app</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Features */}
+                                    <div className="grid gap-4 md:grid-cols-3">
+                                        <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                                <h4 className="font-semibold text-sm text-emerald-900 dark:text-emerald-100">Offline Access</h4>
+                                            </div>
+                                            <p className="text-xs text-emerald-700 dark:text-emerald-300">Works without internet connection</p>
+                                        </div>
+                                        <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                                <h4 className="font-semibold text-sm text-blue-900 dark:text-blue-100">Fast Loading</h4>
+                                            </div>
+                                            <p className="text-xs text-blue-700 dark:text-blue-300">Instant startup like native apps</p>
+                                        </div>
+                                        <div className="p-4 rounded-lg bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/30">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Check className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                                                <h4 className="font-semibold text-sm text-purple-900 dark:text-purple-100">Full Screen</h4>
+                                            </div>
+                                            <p className="text-xs text-purple-700 dark:text-purple-300">Immersive app experience</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>
