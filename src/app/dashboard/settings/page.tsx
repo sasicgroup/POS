@@ -1014,7 +1014,8 @@ export default function SettingsPage() {
                                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">App Name</label>
                                                 <input
                                                     type="text"
-                                                    defaultValue="Store Management Software"
+                                                    value={pwaSettings.app_name}
+                                                    onChange={(e) => setPwaSettings({ ...pwaSettings, app_name: e.target.value })}
                                                     className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                                 />
                                             </div>
@@ -1022,7 +1023,8 @@ export default function SettingsPage() {
                                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Short Name</label>
                                                 <input
                                                     type="text"
-                                                    defaultValue="POS System"
+                                                    value={pwaSettings.short_name}
+                                                    onChange={(e) => setPwaSettings({ ...pwaSettings, short_name: e.target.value })}
                                                     className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                                 />
                                             </div>
@@ -1032,12 +1034,14 @@ export default function SettingsPage() {
                                             <div className="flex gap-3">
                                                 <input
                                                     type="color"
-                                                    defaultValue="#4f46e5"
+                                                    value={pwaSettings.theme_color}
+                                                    onChange={(e) => setPwaSettings({ ...pwaSettings, theme_color: e.target.value })}
                                                     className="h-10 w-20 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer"
                                                 />
                                                 <input
                                                     type="text"
-                                                    defaultValue="#4f46e5"
+                                                    value={pwaSettings.theme_color}
+                                                    onChange={(e) => setPwaSettings({ ...pwaSettings, theme_color: e.target.value })}
                                                     className="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                                 />
                                             </div>
@@ -1178,6 +1182,18 @@ export default function SettingsPage() {
                                             <p className="text-xs text-purple-700 dark:text-purple-300">Immersive app experience</p>
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Save Button */}
+                                <div className="flex justify-end pt-4">
+                                    <button
+                                        onClick={handleSavePWASettings}
+                                        disabled={isSavingPWA}
+                                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/30"
+                                    >
+                                        <Save className="h-4 w-4" />
+                                        {isSavingPWA ? 'Saving...' : 'Save PWA Settings'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
