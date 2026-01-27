@@ -450,6 +450,7 @@ export default function SalesPage() {
             const trxId = `${prefix}-${paddedNumber}${suffix}`;
 
             // Process Inventory Sync & DB Save
+
             const saleId = await processSale({
                 items: cart.map(item => ({
                     id: item.id,
@@ -579,6 +580,7 @@ export default function SalesPage() {
             setCustomerName('');
             setCustomerPhone('');
             setLoyaltyPoints(0);
+            setLoyaltyPoints(0);
             setRedeemPoints(false);
 
             setTimeout(() => {
@@ -615,9 +617,20 @@ export default function SalesPage() {
                                 <X className="h-6 w-6 text-slate-500" />
                             </button>
                         </div>
-                        <div className="flex-1 min-h-0 flex items-center justify-center relative bg-slate-950 rounded-xl overflow-hidden mb-6">
-                            {/* Real Camera Feed */}
-                            <div id="sales-scanner-reader" className="w-full h-full"></div>
+                        <div className="flex-1 min-h-0 flex items-center justify-center mb-6">
+                            <div className="relative w-full max-w-[300px] aspect-square bg-slate-950 rounded-xl overflow-hidden border-2 border-white/20 shadow-inner">
+                                {/* Real Camera Feed */}
+                                <div id="sales-scanner-reader" className="w-full h-full"></div>
+                                {/* Scanning Overlay Guide */}
+                                <div className="absolute inset-0 border-[30px] border-black/50 pointer-events-none">
+                                    <div className="w-full h-full border-2 border-indigo-500/50 rounded-lg relative">
+                                        <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-indigo-500"></div>
+                                        <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-indigo-500"></div>
+                                        <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-indigo-500"></div>
+                                        <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-indigo-500"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-indigo-50 dark:bg-indigo-900/20">
                             <p className="text-sm text-center text-indigo-700 dark:text-indigo-400 font-medium">
@@ -1129,6 +1142,7 @@ export default function SalesPage() {
                                 <p className="text-slate-500 mb-6">
                                     Are you sure you want to place this order for <span className="font-bold text-slate-900 dark:text-slate-100">GHS {grandTotal.toFixed(2)}</span>?
                                 </p>
+
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setShowCheckoutConfirm(false)}

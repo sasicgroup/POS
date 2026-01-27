@@ -30,6 +30,8 @@ export interface Store {
     status?: 'active' | 'hidden' | 'deleted' | 'archived';
     deletion_otc?: string;
     deletion_otc_expiry?: string;
+    businessTypes?: string[];
+    categories?: string[];
 }
 
 
@@ -95,6 +97,14 @@ interface AuthContextType {
     requestStoreDeletionOTC: (storeId: any) => Promise<boolean>;
     verifyStoreDeletionOTC: (storeId: any, otc: string) => Promise<boolean>;
     deleteStore: (storeId: any) => Promise<void>;
+    globalSettings: GlobalSettings;
+    updateGlobalSettings: (settings: Partial<GlobalSettings>) => Promise<void>;
+}
+
+export interface GlobalSettings {
+    appName: string;
+    appLogo?: string;
+    primaryColor?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,6 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [activeStore, setActiveStore] = useState<Store | null>(null);
     const [stores, setStores] = useState<Store[]>([]);
+    const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({ appName: 'SASIC STORES', primaryColor: '#4f46e5' });
 
     useEffect(() => {
         const initAuth = async () => {
@@ -121,11 +132,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     return;
                 }
 
+                // Load Global Settings
+                const { data: gSettings } = await supabase.from('global_settings').select('*').single();
+                if (gSettings) {
+                    setGlobalSettings({
+                        appName: gSettings.app_name,
+                        appLogo: gSettings.app_logo,
+                        primaryColor: gSettings.primary_color
+                    });
+                }
+
                 // Load Stores based on User Access
                 let validStores: any[] = [];
                 let accessIds: any[] = [];
 
-                if (currentUser.id !== 'owner-1') {
+                if (currentUser.id !== 'owner-1' && currentUser.role !== 'owner') {
                     // 1. Get Access IDs from Junction Table
                     const { data: accessData } = await supabase
                         .from('employee_access')
@@ -141,11 +162,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Fetch Stores
                 if (accessIds.length > 0) {
-                    const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds);
+                    const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).order('created_at', { ascending: true });
                     if (userStores) validStores = userStores;
                 } else {
-                    if (currentUser.id === 'owner-1') {
-                        const { data: all } = await supabase.from('stores').select('*');
+                    if (currentUser.id === 'owner-1' || currentUser.role === 'owner') {
+                        const { data: all } = await supabase.from('stores').select('*').order('created_at', { ascending: true });
                         if (all) validStores = all;
                     }
                 }
@@ -159,7 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         phone: s.phone,
                         rolePermissions: s.role_permissions,
                         branding: s.branding,
-                        lastTransactionNumber: s.last_transaction_number || 0
+                        lastTransactionNumber: s.last_transaction_number || 0,
+                        businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
+                        categories: s.categories || []
                     }));
                     setStores(mappedStores);
 
@@ -201,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let validStores: any[] = [];
         let accessIds: any[] = [];
 
-        if (loggedUser.id !== 'owner-1') {
+        if (loggedUser.id !== 'owner-1' && loggedUser.role !== 'owner') {
             const { data: accessData } = await supabase.from('employee_access').select('store_id').eq('employee_id', loggedUser.id);
             if (accessData) accessIds = accessData.map(a => a.store_id);
 
@@ -210,10 +233,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (accessIds.length > 0) {
-            const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds);
+            const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).order('created_at', { ascending: true });
             if (userStores) validStores = userStores;
-        } else if (loggedUser.id === 'owner-1') {
-            const { data: all } = await supabase.from('stores').select('*');
+        } else if (loggedUser.id === 'owner-1' || loggedUser.role === 'owner') {
+            const { data: all } = await supabase.from('stores').select('*').order('created_at', { ascending: true });
             if (all) validStores = all;
         }
 
@@ -224,7 +247,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 receiptPrefix: s.receipt_prefix,
                 receiptSuffix: s.receipt_suffix,
                 phone: s.phone,
-                lastTransactionNumber: s.last_transaction_number || 0
+                lastTransactionNumber: s.last_transaction_number || 0,
+                businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
+                categories: s.categories || []
             }));
             setStores(mappedStores);
             setActiveStore(mappedStores[0]);
@@ -696,6 +721,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         await logActivity('DELETE_STORE', { store_id: storeId }, user?.id, storeId);
+        if (activeStore?.id === storeId) {
+            setActiveStore(stores.find(s => s.id !== storeId) || null);
+        }
+
+        await logActivity('DELETE_STORE', { store_id: storeId }, user?.id, storeId);
+    };
+
+    const updateGlobalSettings = async (settings: Partial<GlobalSettings>) => {
+        const update: any = {};
+        if (settings.appName) update.app_name = settings.appName;
+        if (settings.appLogo) update.app_logo = settings.appLogo;
+        if (settings.primaryColor) update.primary_color = settings.primaryColor;
+
+        const { error } = await supabase.from('global_settings').update(update).eq('id', 1).select();
+
+        if (error) {
+            // Fallback insert if not exists (though migration handles it, good for robustness)
+            if (error.details?.includes('0 rows')) {
+                await supabase.from('global_settings').insert({ id: 1, ...update });
+            } else {
+                console.error("Failed to update global settings", error);
+                return;
+            }
+        }
+
+        setGlobalSettings(prev => ({ ...prev, ...settings }));
     };
 
     const updateStoreSettings = async (settings: Partial<Store>): Promise<{ success: boolean; error?: any }> => {
@@ -717,7 +768,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             if (settings.phone !== undefined) {
                 dbUpdates.phone = settings.phone;
-                delete dbUpdates.phone;
+                // do not delete if key is same
             }
             if (settings.rolePermissions) {
                 dbUpdates.role_permissions = settings.rolePermissions;
@@ -732,6 +783,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Assumes 'branding' column exists (JSONB)
                 dbUpdates.branding = settings.branding;
             }
+            if (settings.businessTypes) {
+                dbUpdates.business_types = settings.businessTypes;
+                delete dbUpdates.businessTypes;
+            }
+            if (settings.categories) {
+                dbUpdates.categories = settings.categories;
+                // do not delete if key is same
+            }
 
             const { error } = await supabase.from('stores').update(dbUpdates).eq('id', activeStore.id);
 
@@ -744,6 +803,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     delete dbUpdates.receipt_prefix;
                     delete dbUpdates.receipt_suffix;
                     if (dbUpdates.branding) delete dbUpdates.branding; // Remove branding in fallback if it caused error
+                    if (dbUpdates.business_types) delete dbUpdates.business_types;
+                    if (dbUpdates.categories) delete dbUpdates.categories;
 
                     // If there are still properties to update
                     if (Object.keys(dbUpdates).length > 0) {
@@ -775,9 +836,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setActiveStore(newStore);
         const { data } = await supabase.from('stores').insert([{ name, location }]).select().single();
         if (data) {
-            setStores(prev => prev.map(s => s.id === tempId ? data : s));
-            setActiveStore(data);
-            if (user) logActivity('CREATE_STORE', { store_name: name, store_id: data.id }, user.id, data.id);
+            // Map the fresh DB data to matching Store interface
+            const mappedStore: Store = {
+                ...data,
+                taxSettings: data.tax_settings || { enabled: true, type: 'percentage', value: 12.5 },
+                receiptPrefix: data.receipt_prefix,
+                receiptSuffix: data.receipt_suffix,
+                phone: data.phone,
+                rolePermissions: data.role_permissions,
+                branding: data.branding,
+                lastTransactionNumber: data.last_transaction_number || 0,
+                businessTypes: data.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
+                categories: data.categories || []
+            };
+
+            setStores(prev => prev.map(s => s.id === tempId ? mappedStore : s));
+            setActiveStore(mappedStore);
+            if (user) {
+                // Determine user ID correctly
+                const userId = user.id;
+
+                // If the user is NOT the hardcoded super-admin, we must grant them explicit access to the new store
+                if (userId !== 'owner-1') {
+                    const { error: accessError } = await supabase.from('employee_access').insert({
+                        employee_id: userId,
+                        store_id: data.id,
+                        role: 'owner'
+                    });
+                    if (accessError) console.error("Failed to grant creator access to new store:", accessError);
+                }
+
+                logActivity('CREATE_STORE', { store_name: name, store_id: data.id }, userId, data.id);
+            }
         }
     };
 
@@ -838,7 +928,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             updateStoreStatus,
             requestStoreDeletionOTC,
             verifyStoreDeletionOTC,
-            deleteStore
+            deleteStore,
+            globalSettings,
+            updateGlobalSettings
         }}>
             {children}
         </AuthContext.Provider>

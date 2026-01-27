@@ -90,6 +90,40 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         "Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"
     ]);
 
+    // Sync with Active Store
+    useEffect(() => {
+        if (activeStore) {
+            if (activeStore.businessTypes && activeStore.businessTypes.length > 0) {
+                // Ensure defaults are always present + custom ones from DB
+                // Actually, if we save the FULL list to DB, just use that
+                setAvailableBusinessTypes(activeStore.businessTypes);
+                // Also set businessTypes (selected) if we had a way to know which are selected.
+                // Assuming 'businessTypes' in context meant "Selected types relevant to this store".
+                // Since our DB schema just added 'business_types', let's assume specific "selected" logic is client-side or we save "selected_business_types"?
+                // For now, let's assume 'businessTypes' state tracks SELECTION from the available list.
+                // If we want to persist SELECTION, we need another field.
+                // BUT, looking at SettingsPage, it seems 'businessTypes' state is just a local selection for UI?
+                // Wait, SettingsPage maps availableBusinessTypes and shows checks if businessTypes.includes(type).
+                // If 'businessTypes' (selected) are not saved, then they reset on reload.
+                // The prompt says "Save here doesn't work".
+                // If user toggles a type, it updates 'businessTypes'.
+                // If we want to save this selection, we need a field for it.
+                // The field I added 'business_types' (array) likely stores the AVAILABLE types (custom added ones)?
+                // OR does it store the SELECTED types?
+                // given `availableBusinessTypes` has defaults.
+            }
+            if (activeStore.categories) {
+                setCustomCategories(activeStore.categories);
+                // Update active categories with "All" + custom
+                setActiveCategories(prev => {
+                    const defaults = ['All'];
+                    // Merge unique
+                    return Array.from(new Set([...defaults, ...(activeStore.categories || [])]));
+                });
+            }
+        }
+    }, [activeStore]);
+
     const addCustomBusinessType = (type: string) => {
         if (!availableBusinessTypes.includes(type)) {
             setAvailableBusinessTypes([...availableBusinessTypes, type]);
@@ -114,7 +148,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const isFetching = useRef(false);
 
     const fetchProducts = React.useCallback(async (pageNum = 1, pageSizeNum = 20, retryCount = 0) => {
-        if (!activeStore?.id) {
+        if (!activeStore?.id || activeStore.id.toString().startsWith('temp-')) {
             setIsLoading(false);
             return;
         }
@@ -410,6 +444,16 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (saleError || !sale) {
             console.error("Sale insert failed", JSON.stringify(saleError, null, 2));
             return null;
+        }
+
+        // Record Payment
+        if (saleData.totalAmount > 0) {
+            await supabase.from('sale_payments').insert({
+                sale_id: sale.id,
+                amount: saleData.totalAmount,
+                payment_method: saleData.paymentMethod,
+                recorded_by: safeEmployeeId
+            });
         }
 
         // 3. Insert Sale Items

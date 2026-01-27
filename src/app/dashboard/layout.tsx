@@ -2,31 +2,20 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { InventoryProvider } from '@/lib/inventory-context';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
     ShoppingBag,
     Users,
-    Settings,
-    LogOut,
-    Store,
-    ChevronDown,
-    Menu,
-    X,
-    CreditCard,
-    Package,
-    Bell,
-    TrendingUp,
-    MessageSquare,
-    Sparkles,
-    Award,
-    CalendarClock,
-    ShieldCheck,
-    Receipt,
-    Activity
+    Package, FileText, CalendarClock, Sparkles, Award, Receipt, TrendingUp, Settings,
+    Edit2, Trash2, Layout, Eye, EyeOff, Archive, RotateCcw,
+    Barcode, QrCode, RefreshCw, ShieldAlert, Key, Palette, Image,
+    Type, DollarSign, Percent, Store, Check, Plus, Search, ChevronRight,
+    CreditCard, Smartphone, Download, Globe,
+    Activity, ShieldCheck, MessageSquare, Menu, Bell, User, LogOut, Moon, Sun, X, ChevronDown
 } from 'lucide-react';
 
 
@@ -35,7 +24,7 @@ import { NotificationsProvider, useNotifications } from '@/lib/notifications-con
 import { useActivityTracker } from '@/lib/activity-tracker';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
-    const { user, logout, activeStore, stores, switchStore, createStore, hasPermission } = useAuth();
+    const { user, logout, activeStore, stores, switchStore, createStore, hasPermission, globalSettings } = useAuth();
     const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
     // Automatically track page visits
@@ -43,10 +32,27 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     const router = useRouter();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+
+    // Handle Store Switch via URL
+    useEffect(() => {
+        const queryStoreId = searchParams.get('storeId');
+        if (queryStoreId && stores.length > 0 && activeStore?.id !== queryStoreId) {
+            // Only switch if we have access to this store
+            const target = stores.find(s => s.id === queryStoreId);
+            if (target) {
+                switchStore(queryStoreId);
+            }
+        }
+    }, [searchParams, stores, activeStore, switchStore]);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
+
+    // New Store Modal State
+    const [newStoreName, setNewStoreName] = useState('');
+    const [newStoreLocation, setNewStoreLocation] = useState('');
 
     // Format relative time
     const formatRelativeTime = (dateString: string) => {
@@ -76,6 +82,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
         { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
         { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
+        { name: 'Invoices', href: '/dashboard/invoices', icon: FileText, permission: 'access_pos' },
         { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock, permission: 'view_sales_history' },
         { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'view_analytics' },
         { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award, permission: 'manage_customers' },
@@ -86,10 +93,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { name: 'Activity Logs', href: '/dashboard/logs', icon: Activity, permission: 'view_analytics' },
         { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck, permission: 'view_roles' },
         { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare, permission: 'manage_customers' },
+        { name: 'HQ Dashboard', href: '/dashboard/hq', icon: Globe, permission: 'owner_only' },
+        { name: 'Global Branding', href: '/dashboard/settings?tab=global-branding', icon: Palette, permission: 'access_settings' },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
     ];
 
-    const filteredNavigation = navigation.filter(item => !item.permission || hasPermission(item.permission));
+    const filteredNavigation = navigation.filter(item => {
+        if (item.permission === 'owner_only') return user.role === 'owner';
+        return !item.permission || hasPermission(item.permission);
+    });
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
@@ -104,11 +116,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             {/* Sidebar */}
             <aside className={`fixed inset-y-0 left-0 z-30 w-64 transform border-r border-slate-200 bg-white/80 backdrop-blur-md transition-transform duration-300 ease-in-out dark:border-slate-800 dark:bg-slate-950/80 lg:static lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="flex h-full flex-col">
-                    {/* Logo */}
-                    <div className="flex h-16 items-center border-b border-slate-200 px-6 dark:border-slate-800">
-                        <Store className="mr-2 h-8 w-8 text-indigo-600" />
-                        <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600">
-                            SASIC STORES
+                    {/* Logo (Global Branding) */}
+                    <div className="flex h-16 items-center border-b border-slate-200 px-6 dark:border-slate-800 gap-3">
+                        {globalSettings?.appLogo ? (
+                            <img src={globalSettings.appLogo} alt="Logo" className="h-8 w-8 rounded object-cover" />
+                        ) : (
+                            <Store className="h-8 w-8" style={{ color: globalSettings?.primaryColor || '#4f46e5' }} />
+                        )}
+                        <span
+                            className="text-xl font-bold truncate bg-clip-text text-transparent bg-gradient-to-r"
+                            style={{
+                                backgroundImage: `linear-gradient(to right, ${globalSettings?.primaryColor || '#4f46e5'}, ${globalSettings?.primaryColor ? globalSettings.primaryColor : '#7c3aed'})`
+                            }}
+                        >
+                            {globalSettings?.appName || 'SASIC STORES'}
                         </span>
                     </div>
 
@@ -184,40 +205,43 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         </button>
 
                         {isStoreMenuOpen && (
-                            <div className="absolute left-0 mt-2 w-60 origin-top-left rounded-lg border border-slate-200 bg-white p-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 animate-in fade-in slide-in-from-top-2 z-50">
-                                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                    Switch Business
-                                </div>
-                                {stores.map((store) => (
+                            <>
+                                <div className="fixed inset-0 z-[48] cursor-default" onClick={() => setIsStoreMenuOpen(false)} />
+                                <div className="absolute left-0 mt-2 w-60 origin-top-left rounded-lg border border-slate-200 bg-white p-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 animate-in fade-in slide-in-from-top-2 z-[49]">
+                                    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        Switch Business
+                                    </div>
+                                    {stores.map((store) => (
+                                        <button
+                                            key={store.id}
+                                            onClick={() => {
+                                                switchStore(store.id);
+                                                setIsStoreMenuOpen(false);
+                                            }}
+                                            className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${activeStore?.id === store.id
+                                                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
+                                                : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
+                                                }`}
+                                        >
+                                            <div className={`h-2 w-2 rounded-full ${activeStore?.id === store.id ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                                            <div>
+                                                <div className="font-medium">{store.name}</div>
+                                                <div className="text-xs text-slate-400">{store.location}</div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                    <div className="my-1 border-t border-slate-100 dark:border-slate-800"></div>
                                     <button
-                                        key={store.id}
                                         onClick={() => {
-                                            switchStore(store.id);
                                             setIsStoreMenuOpen(false);
+                                            setIsAddStoreModalOpen(true);
                                         }}
-                                        className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${activeStore?.id === store.id
-                                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
-                                            : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-                                            }`}
+                                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30"
                                     >
-                                        <div className={`h-2 w-2 rounded-full ${activeStore?.id === store.id ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-                                        <div>
-                                            <div className="font-medium">{store.name}</div>
-                                            <div className="text-xs text-slate-400">{store.location}</div>
-                                        </div>
+                                        + Add New Store
                                     </button>
-                                ))}
-                                <div className="my-1 border-t border-slate-100 dark:border-slate-800"></div>
-                                <button
-                                    onClick={() => {
-                                        setIsStoreMenuOpen(false);
-                                        setIsAddStoreModalOpen(true);
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30"
-                                >
-                                    + Add New Store
-                                </button>
-                            </div>
+                                </div>
+                            </>
                         )}
                     </div>
 
@@ -318,6 +342,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Add New Store Modal */}
+            {/* Add New Store Modal */}
             {isAddStoreModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
                     <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-slate-900 animate-in zoom-in-95 duration-200">
@@ -335,7 +360,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                     type="text"
                                     placeholder="e.g. Downtown Branch"
                                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    id="new-store-name"
+                                    value={newStoreName}
+                                    onChange={(e) => setNewStoreName(e.target.value)}
                                 />
                             </div>
                             <div>
@@ -344,7 +370,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                     type="text"
                                     placeholder="e.g. 123 Main St, Accra"
                                     className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    id="new-store-location"
+                                    value={newStoreLocation}
+                                    onChange={(e) => setNewStoreLocation(e.target.value)}
                                 />
                             </div>
                         </div>
@@ -358,15 +385,19 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                             </button>
                             <button
                                 onClick={async () => {
-                                    const nameInput = document.getElementById('new-store-name') as HTMLInputElement;
-                                    const locInput = document.getElementById('new-store-location') as HTMLInputElement;
-
-                                    if (nameInput.value && locInput.value) {
-                                        await createStore(nameInput.value, locInput.value);
-                                        setIsAddStoreModalOpen(false);
+                                    if (newStoreName && newStoreLocation) {
+                                        try {
+                                            await createStore(newStoreName, newStoreLocation);
+                                            setIsAddStoreModalOpen(false);
+                                            setNewStoreName('');
+                                            setNewStoreLocation('');
+                                        } catch (error) {
+                                            console.error("Failed to create store:", error);
+                                        }
                                     }
                                 }}
-                                className="px-4 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700"
+                                disabled={!newStoreName || !newStoreLocation}
+                                className="px-4 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Create Store
                             </button>

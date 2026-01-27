@@ -55,7 +55,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
                 .limit(50);
 
             if (error) {
-                console.error('[Notifications] Error fetching:', error);
+                // Ignore "relation does not exist" error if migration hasn't run yet
+                if (error.code !== '42P01') {
+                    console.error('[Notifications] Error fetching:', error);
+                }
             } else if (data) {
                 setNotifications(data);
             }

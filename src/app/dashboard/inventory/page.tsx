@@ -3,8 +3,9 @@
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
-import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart } from 'lucide-react';
+import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { Html5Qrcode } from 'html5-qrcode';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
@@ -46,6 +47,8 @@ export default function InventoryPage() {
     const [showMoreActions, setShowMoreActions] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterCategory, setFilterCategory] = useState('All');
+    const [statusFilter, setStatusFilter] = useState('All');
+    const [sortBy, setSortBy] = useState('Recently Added');
 
     const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
@@ -138,7 +141,22 @@ export default function InventoryPage() {
         const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             product.sku.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesCategory = filterCategory === 'All' || product.category === filterCategory;
-        return matchesSearch && matchesCategory;
+
+        let matchesStatus = true;
+        if (statusFilter === 'Low Stock') matchesStatus = product.stock <= 10 && product.stock > 0;
+        else if (statusFilter === 'Out of Stock') matchesStatus = product.stock === 0;
+        else if (statusFilter === 'In Stock') matchesStatus = product.stock > 0;
+        else if (statusFilter === 'Missing Image') matchesStatus = !product.image || product.image === 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7';
+
+        return matchesSearch && matchesCategory && matchesStatus;
+    }).sort((a, b) => {
+        if (sortBy === 'Price: High to Low') return b.price - a.price;
+        if (sortBy === 'Price: Low to High') return a.price - b.price;
+        if (sortBy === 'Stock: High to Low') return b.stock - a.stock;
+        if (sortBy === 'Stock: Low to High') return a.stock - b.stock;
+        if (sortBy === 'Name') return a.name.localeCompare(b.name);
+        // Default / Recently Added (using ID as proxy for creation time if no created_at, or just reverse original order)
+        return 0; // Keeping original order (usually insertion order)
     });
 
     // Pagination/Lazy Loading
@@ -450,6 +468,12 @@ export default function InventoryPage() {
                     <p className="text-sm text-slate-500 dark:text-slate-400">Manage products for <span className="font-semibold text-indigo-600">{activeStore.name}</span></p>
                 </div>
                 <div className="flex gap-2">
+                    <Link href="/dashboard/inventory/bundles" className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        <Package className="h-4 w-4" /> Bundles
+                    </Link>
+                    <Link href="/dashboard/inventory/stocktake" className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        <ClipboardList className="h-4 w-4" /> Stocktake
+                    </Link>
                     <button
                         onClick={generateAiInsights}
                         className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
@@ -645,32 +669,62 @@ export default function InventoryPage() {
 
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Search products..."
-                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search products..."
+                            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    {/* Select All Toggle for Mobile/Desktop */}
+                    <button
+                        onClick={handleSelectAll}
+                        className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 flex items-center gap-2 text-sm font-medium"
+                    >
+                        <CheckSquare className={`h-4 w-4 ${selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'text-indigo-600' : 'text-slate-400'}`} />
+                        {selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'Deselect All' : 'Select All'}
+                    </button>
                 </div>
-                <select
-                    className="w-full sm:w-48 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                >
-                    <option value="All">All Categories</option>
-                    {activeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
 
-                {/* Select All Toggle for Mobile/Desktop */}
-                <button
-                    onClick={handleSelectAll}
-                    className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 flex items-center gap-2 text-sm font-medium"
-                >
-                    <CheckSquare className={`h-4 w-4 ${selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'text-indigo-600' : 'text-slate-400'}`} />
-                    {selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'Deselect All' : 'Select All'}
-                </button>
+                <div className="flex flex-row gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    <select
+                        className="min-w-[140px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        value={filterCategory}
+                    >
+                        <option value="All">All Categories</option>
+                        {activeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+
+                    <select
+                        className="min-w-[140px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        value={statusFilter}
+                    >
+                        <option value="All">All Status</option>
+                        <option value="In Stock">In Stock</option>
+                        <option value="Low Stock">Low Stock (&le; 10)</option>
+                        <option value="Out of Stock">Out of Stock</option>
+                        <option value="Missing Image">Missing Image</option>
+                    </select>
+
+                    <select
+                        className="min-w-[160px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                        onChange={(e) => setSortBy(e.target.value)}
+                        value={sortBy}
+                    >
+                        <option value="Recently Added">Recently Added</option>
+                        <option value="Name">Name (A-Z)</option>
+                        <option value="Price: Low to High">Price: Low to High</option>
+                        <option value="Price: High to Low">Price: High to Low</option>
+                        <option value="Stock: Low to High">Stock: Low to High</option>
+                        <option value="Stock: High to Low">Stock: High to Low</option>
+                    </select>
+                </div>
             </div>
 
             {/* Product List - List View */}
