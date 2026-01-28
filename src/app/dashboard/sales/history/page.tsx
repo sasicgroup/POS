@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-import { Search, Calendar, Filter, ArrowUpRight, ArrowDownRight, Printer, Eye, X, FileText, ChevronDown, Download, Phone, User as UserIcon, Package, Trash2 } from 'lucide-react';
+import { Search, Calendar, Filter, ArrowUpRight, ArrowDownRight, Printer, Eye, X, FileText, ChevronDown, Download, Phone, User as UserIcon, Package, Trash2, Undo2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -37,6 +37,85 @@ export default function SalesHistoryPage() {
     // Filter State
     const [showFilterMenu, setShowFilterMenu] = useState(false);
     const [dateFilter, setDateFilter] = useState('all'); // all, today, week, month
+
+    // Refund State
+    const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+    const [refundItems, setRefundItems] = useState<{ [key: string]: number }>({});
+    const [refundReason, setRefundReason] = useState('Customer Return');
+    const [refundMethod, setRefundMethod] = useState('cash');
+
+    const handleProcessRefund = async () => {
+        if (!selectedSale || !activeStore) return;
+
+        // Items with refund Qty > 0
+        const itemsToReturn = saleItems.filter(item => (refundItems[item.id] || 0) > 0);
+        if (itemsToReturn.length === 0) {
+            showToast('error', 'Please select items to refund');
+            return;
+        }
+
+        const refundAmount = itemsToReturn.reduce((acc, item) => acc + (item.price_at_sale * (refundItems[item.id] || 0)), 0);
+
+        try {
+            // 1. Create Return Record
+            const { data: returnData, error: returnError } = await supabase.from('returns').insert({
+                store_id: activeStore.id,
+                original_sale_id: selectedSale.id,
+                reason: refundReason,
+                refund_amount: refundAmount,
+                refund_method: refundMethod,
+                status: 'completed',
+                processed_by: user?.id
+            }).select().single();
+
+            if (returnError) throw returnError;
+
+            // 2. Add Return Items & Restore Stock
+            for (const item of itemsToReturn) {
+                const qty = refundItems[item.id];
+
+                // Add to return_items
+                await supabase.from('return_items').insert({
+                    return_id: returnData.id,
+                    product_id: item.product_id,
+                    quantity: qty,
+                    condition: 'sellable'
+                });
+
+                // Restore Stock
+                const { error: stockError } = await supabase.rpc('increment_stock', {
+                    row_id: item.product_id,
+                    quantity: qty
+                });
+
+                // Fallback for stock update
+                if (stockError) {
+                    const { data: prod } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
+                    if (prod) {
+                        await supabase.from('products').update({ stock: prod.stock + qty }).eq('id', item.product_id);
+                    }
+                }
+
+                // Deduct points using existing logic (simplified)
+                if (selectedSale.customers) {
+                    // Logic to deduct points for returned value if needed. Omitted for now to keep simple.
+                }
+            }
+
+            // 3. Update Sale Status
+            await supabase.from('sales').update({ status: 'Refunded' }).eq('id', selectedSale.id);
+
+            showToast('success', `Refund processed: GHS ${refundAmount.toFixed(2)}`);
+            setIsRefundModalOpen(false);
+            setSelectedSale(null);
+            setRefundItems({});
+            fetchSales();
+
+        } catch (e) {
+            console.error(e);
+            showToast('error', 'Refund failed');
+        }
+    };
 
     useEffect(() => {
         if (activeStore?.id) fetchSales();
@@ -455,6 +534,14 @@ export default function SalesHistoryPage() {
                             >
                                 <Printer className="h-4 w-4" /> Print Receipt
                             </button>
+                            {selectedSale.status !== 'Refunded' && selectedSale.status !== 'Returned' && (
+                                <button
+                                    onClick={() => setIsRefundModalOpen(true)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-medium transition-colors dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
+                                >
+                                    <Undo2 className="h-4 w-4" /> Refund
+                                </button>
+                            )}
                             <button
                                 onClick={() => setSelectedSale(null)}
                                 className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors"
@@ -480,6 +567,66 @@ export default function SalesHistoryPage() {
                 confirmText="Delete Permanently"
                 variant="danger"
             />
+
+
+            {/* Refund Modal */}
+            {isRefundModalOpen && selectedSale && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Process Refund</h3>
+                        <div className="space-y-4 max-h-[60vh] overflow-y-auto mb-4">
+                            <table className="w-full text-sm">
+                                <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800">
+                                    <tr>
+                                        <th className="p-2 text-left">Item</th>
+                                        <th className="p-2 text-center">Sold</th>
+                                        <th className="p-2 text-cente">Return</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {saleItems.map(item => (
+                                        <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800">
+                                            <td className="p-2 font-medium">{item.products?.name}</td>
+                                            <td className="p-2 text-center">{item.quantity}</td>
+                                            <td className="p-2 text-center">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max={item.quantity}
+                                                    className="w-16 p-1 border rounded text-center dark:bg-slate-800 dark:border-slate-700"
+                                                    value={refundItems[item.id] || 0}
+                                                    onChange={(e) => {
+                                                        const val = Math.min(item.quantity, Math.max(0, parseInt(e.target.value) || 0));
+                                                        setRefundItems({ ...refundItems, [item.id]: val });
+                                                    }}
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Reason</label>
+                                <select
+                                    className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:border-slate-700"
+                                    value={refundReason}
+                                    onChange={(e) => setRefundReason(e.target.value)}
+                                >
+                                    <option>Customer Return</option>
+                                    <option>Defective/Damaged</option>
+                                    <option>Mistake in Order</option>
+                                    <option>Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                            <button onClick={() => setIsRefundModalOpen(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+                            <button onClick={handleProcessRefund} className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-bold">Confirm Refund</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

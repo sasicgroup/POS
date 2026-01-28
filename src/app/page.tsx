@@ -25,14 +25,25 @@ export default function LoginPage() {
     useEffect(() => {
         const fetchBranding = async () => {
             try {
-                // Fetch the first store's branding (Single Tenant Assumption)
-                const { data } = await supabase.from('stores').select('name, branding').limit(1).maybeSingle();
-                if (data) {
+                // 1. Try Global Settings First (Prioritize this as requested)
+                const { data: globalData } = await supabase.from('global_settings').select('*').single();
+
+                if (globalData) {
                     setBranding({
-                        name: data.branding?.name || data.name,
-                        logoUrl: data.branding?.logoUrl, // JSONB structure preserved
-                        color: data.branding?.color
+                        name: globalData.app_name || 'SASIC STORES',
+                        logoUrl: globalData.app_logo,
+                        color: globalData.primary_color || '#4f46e5'
                     });
+                } else {
+                    // Fallback: Fetch the first store's branding (Single Tenant Assumption)
+                    const { data } = await supabase.from('stores').select('name, branding').limit(1).maybeSingle();
+                    if (data) {
+                        setBranding({
+                            name: data.branding?.name || data.name,
+                            logoUrl: data.branding?.logoUrl,
+                            color: data.branding?.color
+                        });
+                    }
                 }
             } catch (e) {
                 console.error("Failed to fetch branding", e);

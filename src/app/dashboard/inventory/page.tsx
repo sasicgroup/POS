@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
-import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList } from 'lucide-react';
+import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -28,6 +28,11 @@ export default function InventoryPage() {
         setCart
     } = useInventory();
     const { showToast } = useToast();
+
+    // Import/Export State
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [importData, setImportData] = useState<any[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
     const [newProduct, setNewProduct] = useState({
@@ -428,6 +433,88 @@ export default function InventoryPage() {
     const [editingId, setEditingId] = useState<any | null>(null);
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: number, name: string } | null>(null);
 
+
+    // --- Bulk Import/Export Logic ---
+    const handleExport = () => {
+        const headers = ['Name,SKU,Category,Price,Cost Price,Stock,Status,Image'];
+        const csvContent = [headers.join('\n')];
+        products.forEach(p => {
+            const row = [
+                `"${p.name.replace(/"/g, '""')}"`,
+                p.sku,
+                `"${p.category}"`,
+                p.price,
+                p.costPrice || 0,
+                p.stock || 0,
+                p.status || 'In Stock',
+                p.image || ''
+            ];
+            csvContent.push(row.join(','));
+        });
+
+        const blob = new Blob([csvContent.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `inventory_export_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('success', 'Inventory exported successfully');
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const text = event.target?.result as string;
+            const lines = text.split('\n').filter(l => l.trim());
+
+            const result: any[] = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                // Simple CSV parse assuming basic format: Name, SKU, Category, Price, Cost, Stock
+                // Robust parsing would use a library, this is MVP 
+                const row = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+
+                if (row.length >= 4) {
+                    result.push({
+                        name: row[0],
+                        sku: row[1] || `GEN-${Math.floor(Math.random() * 10000)}`,
+                        category: row[2] || 'Uncategorized',
+                        price: parseFloat(row[3]) || 0,
+                        costPrice: parseFloat(row[4]) || 0,
+                        stock: parseInt(row[5]) || 0,
+                        status: 'In Stock',
+                        image: row[7] || '' // optional image at end
+                    });
+                }
+            }
+            setImportData(result);
+            setIsImportModalOpen(true);
+        };
+        reader.readAsText(file);
+        e.target.value = ''; // Reset
+    };
+
+    const confirmImport = async () => {
+        let count = 0;
+        for (const p of importData) {
+            if (p.name) {
+                await addProduct({
+                    ...p,
+                    image: p.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
+                });
+                count++;
+            }
+        }
+        showToast('success', `Imported ${count} products`);
+        setIsImportModalOpen(false);
+        setImportData([]);
+    };
+
     const handleAddProduct = (e: React.FormEvent) => {
         e.preventDefault();
         const productData = {
@@ -474,6 +561,22 @@ export default function InventoryPage() {
                     <Link href="/dashboard/inventory/stocktake" className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         <ClipboardList className="h-4 w-4" /> Stocktake
                     </Link>
+
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                        <Upload className="h-4 w-4" /> Import
+                    </button>
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileUpload} />
+
+                    <button
+                        onClick={handleExport}
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                        <Download className="h-4 w-4" /> Export
+                    </button>
+
                     <button
                         onClick={generateAiInsights}
                         className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
@@ -497,6 +600,28 @@ export default function InventoryPage() {
                     </button>
                 </div>
             </div>
+
+            {isImportModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 animate-in zoom-in-95 duration-200">
+                        <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white">Confirm Import</h2>
+                        <p className="text-sm text-slate-500 mb-4">Found {importData.length} products to import. Proceed?</p>
+                        <div className="max-h-60 overflow-y-auto mb-4 border rounded p-2 text-xs">
+                            {importData.slice(0, 10).map((p, i) => (
+                                <div key={i} className="flex justify-between border-b py-1">
+                                    <span>{p.name}</span>
+                                    <span>{p.price}</span>
+                                </div>
+                            ))}
+                            {importData.length > 10 && <div>...and {importData.length - 10} more</div>}
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setIsImportModalOpen(false)} className="px-4 py-2 rounded-lg text-slate-500 hover:bg-slate-100">Cancel</button>
+                            <button onClick={confirmImport} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Import Products</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {isAddProductOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">

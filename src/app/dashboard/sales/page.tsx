@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { loadSMSConfigFromDB, sendNotification } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2 } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
@@ -114,6 +114,70 @@ export default function SalesPage() {
         };
         loadLoyalty();
     }, [activeStore]);
+
+    // --- Parked Orders Logic ---
+    const [parkedOrders, setParkedOrders] = useState<any[]>([]);
+    const [isParkedModalOpen, setIsParkedModalOpen] = useState(false);
+
+    const fetchParkedOrders = async () => {
+        if (!activeStore) return;
+        const { data } = await supabase
+            .from('parked_orders')
+            .select('*')
+            .eq('store_id', activeStore.id)
+            .order('created_at', { ascending: false });
+        if (data) setParkedOrders(data);
+    };
+
+    useEffect(() => {
+        if (activeStore) fetchParkedOrders();
+    }, [activeStore]);
+
+    const handleParkOrder = async () => {
+        if (cart.length === 0 || !activeStore) return;
+
+        setIsProcessing(true);
+        try {
+            const { error } = await supabase.from('parked_orders').insert({
+                store_id: activeStore.id,
+                items: cart,
+                customer_id: existingCustomer?.id || null,
+                customer_info: { name: customerName, phone: customerPhone },
+                note: 'Parked from POS',
+                created_by: user?.id
+            });
+
+            if (error) throw error;
+
+            clearCart();
+            setCustomerName('');
+            setCustomerPhone('');
+            setExistingCustomer(null);
+            showToast('success', 'Order parked successfully');
+            fetchParkedOrders();
+        } catch (e) {
+            console.error(e);
+            showToast('error', 'Failed to park order');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleResumeOrder = async (order: any) => {
+        if (cart.length > 0) {
+            if (!window.confirm("Current cart will be replaced. Continue?")) return;
+        }
+
+        setCart(order.items);
+        if (order.customer_info?.name) setCustomerName(order.customer_info.name);
+        if (order.customer_info?.phone) setCustomerPhone(order.customer_info.phone);
+
+        // Delete from parked
+        await supabase.from('parked_orders').delete().eq('id', order.id);
+        fetchParkedOrders();
+        setIsParkedModalOpen(false);
+        showToast('info', 'Order resumed');
+    };
 
     const handleEditRegister = () => {
         setTempRegisterId(registerId);
@@ -898,12 +962,27 @@ export default function SalesPage() {
                                 <X className="h-5 w-5 text-slate-500" />
                             </button>
                             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                                <ShoppingCart className="h-5 w-5" /> Current Order
+                                <ShoppingCart className="h-5 w-5 text-indigo-600" />
+                                Current Order
                             </h2>
                         </div>
-                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                            {cart.length} items
-                        </span>
+                        <div className="flex gap-2">
+                            {parkedOrders.length > 0 && (
+                                <button
+                                    onClick={() => setIsParkedModalOpen(true)}
+                                    className="relative p-2 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
+                                    title="View Parked Orders"
+                                >
+                                    <Clock className="h-5 w-5" />
+                                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                                        {parkedOrders.length}
+                                    </span>
+                                </button>
+                            )}
+                            <button onClick={clearCart} className="text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400">
+                                Clear Cart
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1120,6 +1199,13 @@ export default function SalesPage() {
 
                         <div className="grid grid-cols-2 gap-3 mb-4">
                             <button
+                                onClick={handleParkOrder}
+                                disabled={cart.length === 0 || isProcessing}
+                                className="col-span-2 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400 dark:hover:text-slate-200"
+                            >
+                                <PauseCircle className="h-4 w-4" /> Hold / Park Order
+                            </button>
+                            <button
                                 onClick={() => setPaymentMethod('cash')}
                                 className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'cash' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
                             >
@@ -1142,6 +1228,42 @@ export default function SalesPage() {
                             {isProcessing ? 'Processing...' : (paymentMethod ? `Checkout • GHS ${grandTotal.toFixed(2)}` : 'Select Payment Method')}
                         </button>
                     </div>
+
+                    {/* Parked Orders Modal */}
+                    {isParkedModalOpen && (
+                        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 max-h-[80vh] overflow-y-auto">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Parked Orders</h3>
+                                    <button onClick={() => setIsParkedModalOpen(false)}><X className="h-5 w-5" /></button>
+                                </div>
+                                <div className="space-y-3">
+                                    {parkedOrders.length === 0 ? (
+                                        <p className="text-slate-500 text-center py-4">No parked orders.</p>
+                                    ) : (
+                                        parkedOrders.map(order => (
+                                            <div key={order.id} className="p-3 border border-slate-200 rounded-xl bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50 flex justify-between items-center">
+                                                <div>
+                                                    <p className="font-bold text-sm text-slate-900 dark:text-white">
+                                                        {order.customer_info?.name || 'Guest'}
+                                                    </p>
+                                                    <p className="text-xs text-slate-500">
+                                                        {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {order.items?.length || 0} items
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleResumeOrder(order)}
+                                                    className="px-3 py-1.5 text-xs font-bold bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400"
+                                                >
+                                                    Resume
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Checkout Confirmation Modal */}
                     {showCheckoutConfirm && (

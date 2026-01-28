@@ -367,8 +367,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const { data: empStore } = await supabase.from('employee_access').select('store_id').eq('employee_id', employee.id).limit(1).maybeSingle();
                 const storeId = empStore?.store_id || employee.store_id;
                 if (storeId) {
-                    await loadSMSConfigFromDB(storeId);
-                    await sendDirectMessage(employee.phone, `Your OTP is ${code}. Valid for 5 minutes.`);
+                    // Try to load SMS config for this store, so we send using correct credentials
+                    const config = await loadSMSConfigFromDB(storeId);
+                    // Use the loaded config if available, or fall back to 'direct' which uses global
+                    await sendDirectMessage(employee.phone, `Your OTP is ${code}. Valid for 5 minutes.`, ['sms'], storeId);
                 }
 
                 return { success: true, status: 'OTP_REQUIRED', tempUser: userObj };
@@ -445,7 +447,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }).eq('id', employee.id);
 
         console.log('[OTP Resend] New code sent to', employee.phone, ':', code);
-        await sendDirectMessage(employee.phone, `Your new OTP is ${code}. Valid for 5 minutes.`);
+        if (employee.store_id) {
+            await loadSMSConfigFromDB(employee.store_id);
+        }
+        await sendDirectMessage(employee.phone, `Your new OTP is ${code}. Valid for 5 minutes.`, ['sms'], employee.store_id);
         return true;
     };
 
