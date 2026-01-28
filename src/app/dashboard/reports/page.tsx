@@ -38,13 +38,14 @@ export default function ReportsPage() {
 
     const fetchInventoryData = async () => {
         if (!activeStore) return;
+        const storeId = activeStore.id;
         setLoading(true);
         try {
             // 1. Get all products with stock > 0
             const { data: products } = await supabase
                 .from('products')
                 .select('*')
-                .eq('store_id', activeStore.id)
+                .eq('store_id', storeId)
                 .gt('stock', 0);
 
             // 2. Get sales items from last 90 days
@@ -70,6 +71,7 @@ export default function ReportsPage() {
 
     const fetchFinancialData = async () => {
         if (!activeStore) return;
+        const storeId = activeStore.id;
         setLoading(true);
         try {
             // 1. Fetch Sales
@@ -85,14 +87,14 @@ export default function ReportsPage() {
                     ),
                     customers ( name )
                 `)
-                .eq('store_id', activeStore.id)
+                .eq('store_id', storeId)
                 .order('created_at', { ascending: false });
 
             // 2. Fetch Expenses
             const { data: expensesData } = await supabase
                 .from('expenses')
                 .select('amount')
-                .eq('store_id', activeStore.id);
+                .eq('store_id', storeId);
 
             if (salesError || !sales) return;
 
