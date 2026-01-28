@@ -678,7 +678,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) return false;
 
         // In a real app, send OTC via SMS or Email
-        console.log(`STORE DELETION OTC for store ${storeId}: ${otc}`);
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`STORE DELETION OTC for store ${storeId}: ${otc}`);
+        }
 
         // If phone is available, try sending SMS
         if (user.phone) {
