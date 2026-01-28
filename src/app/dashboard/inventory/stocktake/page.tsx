@@ -6,6 +6,7 @@ import { ClipboardList, Plus, Save, Search, CheckCircle, AlertTriangle, ArrowLef
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function StocktakePage() {
     const { activeStore, user } = useAuth();
@@ -14,6 +15,7 @@ export default function StocktakePage() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeSession, setActiveSession] = useState<any>(null); // If creating/viewing one
     const [statusFilter, setStatusFilter] = useState('all');
+    const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
 
     // New Session State
     const [products, setProducts] = useState<any[]>([]);
@@ -121,9 +123,11 @@ export default function StocktakePage() {
         }
     };
 
-    const completeStocktake = async () => {
-        if (!confirm('Finish stocktake? This will update your inventory levels to match the counted amounts.')) return;
+    const handleCompleteClick = () => {
+        setShowCompleteConfirm(true);
+    };
 
+    const confirmCompleteStocktake = async () => {
         await saveProgress();
 
         // Update actual product stock
@@ -139,6 +143,7 @@ export default function StocktakePage() {
 
         showToast('success', 'Stocktake completed and inventory updated.');
         setActiveSession(null);
+        setShowCompleteConfirm(false); // Reset
         fetchStocktakes();
     };
 
@@ -160,7 +165,7 @@ export default function StocktakePage() {
                     </div>
                     <div className="flex gap-2">
                         <button onClick={saveProgress} className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50">Save Progress</button>
-                        <button onClick={completeStocktake} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Complete & Update Stock</button>
+                        <button onClick={handleCompleteClick} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Complete & Update Stock</button>
                     </div>
                 </div>
 
@@ -219,7 +224,17 @@ export default function StocktakePage() {
                         </table>
                     </div>
                 </div>
-            </div>
+
+                <ConfirmDialog
+                    isOpen={showCompleteConfirm}
+                    onClose={() => setShowCompleteConfirm(false)}
+                    onConfirm={confirmCompleteStocktake}
+                    title="Complete Stocktake?"
+                    description="This will update your inventory levels to match the counted amounts. This action cannot be undone."
+                    confirmText="Complete & Update"
+                    variant="warning"
+                />
+            </div >
         );
     }
 

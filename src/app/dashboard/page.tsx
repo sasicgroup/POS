@@ -67,111 +67,118 @@ export default function DashboardPage() {
         }
     };
 
-    // Helper to generate REAL chart data based on range
     const getChartData = () => {
         if (!salesData.length) return [];
 
         const now = new Date();
         const dataMap = new Map<string, number>();
-        let labels: string[] = [];
-        let formatKey: (date: Date) => string = (d) => d.toISOString(); // Default
+
+        // Helper to normalize date to midnight for consistent grouping
+        const getMidnight = (d: Date) => {
+            const newD = new Date(d);
+            newD.setHours(0, 0, 0, 0);
+            return newD;
+        };
 
         if (dateRange === '1d') {
             // Today Hourly (0-23)
-            // Filter for today
-            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const todaySales = salesData.filter(s => new Date(s.created_at) >= startOfDay);
+            const startOfDay = getMidnight(now);
 
-            // Initialize all hours with 0
-            for (let i = 8; i <= 20; i++) { // Show business hours mostly
+            // Initialize hours 8-20
+            const hours: { hour: number; label: string; value: number }[] = [];
+            for (let i = 8; i <= 20; i++) {
                 const hourLabel = i > 12 ? `${i - 12} PM` : (i === 12 ? '12 PM' : `${i} AM`);
-                dataMap.set(hourLabel, 0);
-                labels.push(hourLabel);
+                hours.push({ hour: i, label: hourLabel, value: 0 });
             }
 
-            todaySales.forEach(sale => {
-                const d = new Date(sale.created_at);
-                const h = d.getHours();
-                if (h >= 8 && h <= 20) {
-                    const hourLabel = h > 12 ? `${h - 12} PM` : (h === 12 ? '12 PM' : `${h} AM`);
-                    dataMap.set(hourLabel, (dataMap.get(hourLabel) || 0) + sale.total_amount);
-                }
-            });
-
-            return labels.map(label => ({ label, value: dataMap.get(label) || 0 }));
-        }
-        else if (dateRange === '7d') {
-            // Last 7 days
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date(now);
-                d.setDate(now.getDate() - i);
-                const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-                dataMap.set(dayName, 0); // Init
-                labels.push(dayName);
-            }
-
-            const cutoff = new Date(now);
-            cutoff.setDate(now.getDate() - 7);
-
-            salesData.filter(s => new Date(s.created_at) >= cutoff).forEach(sale => {
-                const d = new Date(sale.created_at);
-                const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-                if (dataMap.has(dayName)) {
-                    dataMap.set(dayName, (dataMap.get(dayName) || 0) + sale.total_amount);
-                }
-            });
-            return labels.map(label => ({ label, value: dataMap.get(label) || 0 }));
-        }
-        else if (dateRange === '1m') {
-            // Last 30 Days (Group by week or every 5 days to save space?) Let's do weeks or simple days
-            // Let's do 4 weeks
-            for (let i = 3; i >= 0; i--) {
-                // This is rough "Week X" logic, or we can just show last 4 weeks
-                const label = i === 0 ? 'This Week' : `${i} Week${i > 1 ? 's' : ''} Ago`;
-                dataMap.set(label, 0);
-                labels.push(label);
-            }
-
-            // Simple week bucketing
-            const oneWeek = 7 * 24 * 60 * 60 * 1000;
             salesData.forEach(sale => {
-                const diff = now.getTime() - new Date(sale.created_at).getTime();
-                if (diff <= oneWeek * 4) {
-                    const weekIdx = Math.floor(diff / oneWeek);
-                    const label = weekIdx === 0 ? 'This Week' : `${weekIdx} Week${weekIdx > 1 ? 's' : ''} Ago`;
-                    if (dataMap.has(label)) {
-                        dataMap.set(label, (dataMap.get(label) || 0) + sale.total_amount);
+                const saleDate = new Date(sale.created_at);
+                if (saleDate >= startOfDay) {
+                    const h = saleDate.getHours();
+                    const target = hours.find(x => x.hour === h);
+                    if (target) {
+                        target.value += (Number(sale.total_amount) || 0);
                     }
                 }
             });
-            // Reverse labels to show oldest to newest? No, "3 Weeks Ago" -> "This Week"
-            return labels.reverse().map(label => ({ label, value: dataMap.get(label) || 0 }));
-        }
-        else {
-            // Months (3m, 6m, 1y)
-            const monthCount = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : 12;
 
-            for (let i = monthCount - 1; i >= 0; i--) {
-                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
-                const key = `${monthName}-${d.getFullYear()}`; // Unique key
-                dataMap.set(key, 0);
-                labels.push(key);
+            return hours.map(h => ({ label: h.label, value: h.value }));
+        }
+        else if (dateRange === '7d') {
+            // Last 7 Days - Robust Logic
+            const days: { dateStr: string; label: string; value: number }[] = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(now.getDate() - i);
+                const midnight = getMidnight(d);
+                days.push({
+                    dateStr: midnight.toISOString().split('T')[0], // YYYY-MM-DD Key
+                    label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+                    value: 0
+                });
             }
 
-            const cutoff = new Date(now);
-            cutoff.setMonth(now.getMonth() - monthCount);
+            // Create cutoff from the first generated day
+            const cutoff = new Date(days[0].dateStr);
 
-            salesData.filter(s => new Date(s.created_at) >= cutoff).forEach(sale => {
-                const d = new Date(sale.created_at);
-                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
-                const key = `${monthName}-${d.getFullYear()}`;
-                if (dataMap.has(key)) {
-                    dataMap.set(key, (dataMap.get(key) || 0) + sale.total_amount);
+            salesData.forEach(sale => {
+                const saleDate = new Date(sale.created_at);
+                if (saleDate >= cutoff) {
+                    const saleDateStr = getMidnight(saleDate).toISOString().split('T')[0];
+                    const target = days.find(d => d.dateStr === saleDateStr);
+                    if (target) {
+                        target.value += (Number(sale.total_amount) || 0);
+                    }
                 }
             });
 
-            return labels.map(key => ({ label: key.split('-')[0], value: dataMap.get(key) || 0 }));
+            return days.map(d => ({ label: d.label, value: d.value }));
+        }
+        else if (dateRange === '1m') {
+            // Last 4 Weeks
+            const weeks = [
+                { label: '3 Weeks Ago', value: 0, minDiff: 21, maxDiff: 28 },
+                { label: '2 Weeks Ago', value: 0, minDiff: 14, maxDiff: 21 },
+                { label: 'Last Week', value: 0, minDiff: 7, maxDiff: 14 },
+                { label: 'This Week', value: 0, minDiff: 0, maxDiff: 7 },
+            ];
+
+            const oneDay = 24 * 60 * 60 * 1000;
+            salesData.forEach(sale => {
+                const diffDays = (now.getTime() - new Date(sale.created_at).getTime()) / oneDay;
+                const target = weeks.find(w => diffDays >= w.minDiff && diffDays < w.maxDiff);
+                if (target) {
+                    target.value += (Number(sale.total_amount) || 0);
+                }
+            });
+
+            return weeks;
+        }
+        else {
+            // Monthly View (3m, 6m, 1y)
+            const monthCount = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : 12;
+            const months: { key: string; label: string; value: number }[] = [];
+
+            for (let i = monthCount - 1; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const key = `${d.getFullYear()}-${d.getMonth()}`;
+                months.push({
+                    key: key,
+                    label: d.toLocaleDateString('en-US', { month: 'short' }),
+                    value: 0
+                });
+            }
+
+            salesData.forEach(sale => {
+                const d = new Date(sale.created_at);
+                const key = `${d.getFullYear()}-${d.getMonth()}`;
+                const target = months.find(m => m.key === key);
+                if (target) {
+                    target.value += (Number(sale.total_amount) || 0);
+                }
+            });
+
+            return months.map(m => ({ label: m.label, value: m.value }));
         }
     };
 

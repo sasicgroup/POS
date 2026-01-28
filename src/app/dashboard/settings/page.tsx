@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { useSearchParams } from 'next/navigation';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function SettingsPage() {
     const { activeStore, user, updateStoreSettings, teamMembers, addTeamMember, updateTeamMember, removeTeamMember, globalSettings, updateGlobalSettings } = useAuth();
@@ -55,6 +56,9 @@ export default function SettingsPage() {
     const [editingMember, setEditingMember] = useState<any>(null);
     const [otpEnabled, setOtpEnabled] = useState(true);
     const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<{ id: string, name: string } | null>(null);
+    const [newUser, setNewUser] = useState({ name: '', phone: '', pin: '', role: 'staff' });
+    const [inviteLoading, setInviteLoading] = useState(false);
+
     const [storeToDelete, setStoreToDelete] = useState<any>(null);
     const [editingStore, setEditingStore] = useState<any>(null);
     const [deletionOtcInput, setDeletionOtcInput] = useState('');
@@ -69,6 +73,10 @@ export default function SettingsPage() {
 
     const [showCreateStoreModal, setShowCreateStoreModal] = useState(false);
     const [newStoreData, setNewStoreData] = useState({ name: '', location: '' });
+
+    // Confirmation States
+    const [archiveStoreConfirm, setArchiveStoreConfirm] = useState<any>(null);
+    const [deleteItemConfirm, setDeleteItemConfirm] = useState<{ type: 'business' | 'category', value: string } | null>(null);
 
     // PWA Settings State
     const [pwaSettings, setPwaSettings] = useState({
@@ -129,7 +137,31 @@ export default function SettingsPage() {
 
     useEffect(() => { if (activeTab === 'barcodes') fetchBarcodeLibrary(); }, [activeTab]);
     useEffect(() => {
-        if (showInviteModal) setOtpEnabled(editingMember ? editingMember.otp_enabled !== false : true);
+        if (showInviteModal) {
+            setOtpEnabled(editingMember ? editingMember.otp_enabled !== false : true);
+            if (editingMember) {
+                setNewUser({
+                    name: editingMember.name,
+                    phone: editingMember.phone,
+                    pin: editingMember.pin || '', // Assuming pin might not be visible/stored plainly, but for editing we might need to reset or leave blank? 
+                    // Ideally we don't show the PIN. If blank, we keep old PIN. But for simplicity let's assume we might overwrite it or it's needed.
+                    // If the backend doesn't return the PIN (security), we should probably leave it blank and only update if user types something.
+                    // My handleInviteMember logic requires PIN length 4. 
+                    // Let's assume for this mock/simple app we might receive it or we just require a new one for edits? 
+                    // Actually, let's just prefill what we have. If no pin came back, we might need a way to say "keep existing".
+                    // But looking at the state, `newUser` needs a pin. 
+                    // Let's just set it to '****' or handle it in the saving logic. 
+                    // For now, let's just set it to editingMember.pin if available, or empty string.
+                    role: editingMember.role
+                });
+                // If pin is secret, we might need to adjust validation. 
+                // Let's assume existing PIN is kept if input is empty? 
+                // My handler check: if (newUser.pin.length !== 4) ...
+                // I'll adjust the handler to allow empty PIN on edit.
+            } else {
+                setNewUser({ name: '', phone: '', pin: '', role: 'staff' });
+            }
+        }
     }, [showInviteModal, editingMember]);
 
     // Load PWA Settings from Database
@@ -282,6 +314,65 @@ export default function SettingsPage() {
         } finally { setIsSaving(false); }
     };
 
+    const handleInviteMember = async () => {
+        if (!newUser.name || !newUser.phone) {
+            showToast('error', 'Please fill in name and phone');
+            return;
+        }
+
+        // If creating new user, PIN is required. If editing, PIN is optional (keep existing).
+        if (!editingMember && (!newUser.pin || newUser.pin.length !== 4)) {
+            showToast('error', 'PIN must be 4 digits');
+            return;
+        }
+        if (newUser.pin && newUser.pin.length !== 4) {
+            showToast('error', 'PIN must be 4 digits');
+            return;
+        }
+
+        setInviteLoading(true);
+        try {
+            if (editingMember) {
+                // Update
+                const updateData: any = {
+                    name: newUser.name,
+                    phone: newUser.phone,
+                    username: newUser.phone, // Ensure username flows through
+                    role: newUser.role,
+                    otp_enabled: otpEnabled
+                };
+                if (newUser.pin) updateData.pin = newUser.pin;
+
+                await updateTeamMember(editingMember.id, updateData);
+
+                showToast('success', 'Member updated successfully');
+                setShowInviteModal(false);
+                setEditingMember(null);
+            } else {
+                // Create
+                await addTeamMember({
+                    name: newUser.name,
+                    phone: newUser.phone,
+                    username: newUser.phone, // Default username to phone
+                    pin: newUser.pin,
+                    role: newUser.role as any,
+                    otp_enabled: otpEnabled,
+                    avatar: '',
+                    is_locked: false,
+                    failed_attempts: 0
+                } as any);
+
+                showToast('success', 'Member added successfully');
+                setShowInviteModal(false);
+            }
+        } catch (error) {
+            console.error("Failed to save member:", error);
+            showToast('error', 'Failed to save member');
+        } finally {
+            setInviteLoading(false);
+        }
+    };
+
     const handleCreateOrUpdateStore = async () => {
         if (!newStoreData.name || !newStoreData.location) return;
         try {
@@ -313,11 +404,15 @@ export default function SettingsPage() {
         setShowCreateStoreModal(true);
     };
 
-    const handleArchiveStore = async (store: any) => {
-        if (confirm(`Are you sure you want to archive "${store.name}"? It will not be accessible until restored.`)) {
-            await updateStoreStatus(store.id, 'archived');
-            showToast('success', 'Store archived');
-        }
+    const handleArchiveStore = (store: any) => {
+        setArchiveStoreConfirm(store);
+    };
+
+    const confirmArchiveStore = async () => {
+        if (!archiveStoreConfirm) return;
+        await updateStoreStatus(archiveStoreConfirm.id, 'archived');
+        showToast('success', 'Store archived');
+        setArchiveStoreConfirm(null);
     };
 
     const handleRestoreStore = async (store: any) => {
@@ -421,11 +516,15 @@ export default function SettingsPage() {
     };
 
     const handleDeleteItem = (type: 'business' | 'category', value: string) => {
-        if (confirm(`Delete ${value}?`)) {
-            if (type === 'business') deleteBusinessType(value);
-            else removeCustomCategory(value);
-            showToast('success', 'Deleted successfully');
-        }
+        setDeleteItemConfirm({ type, value });
+    };
+
+    const confirmDeleteItem = () => {
+        if (!deleteItemConfirm) return;
+        if (deleteItemConfirm.type === 'business') deleteBusinessType(deleteItemConfirm.value);
+        else removeCustomCategory(deleteItemConfirm.value);
+        showToast('success', 'Deleted successfully');
+        setDeleteItemConfirm(null);
     };
 
     const drawBarcode = (doc: jsPDF, code: string, x: number, y: number, width: number, height: number) => {
@@ -466,10 +565,9 @@ export default function SettingsPage() {
         { id: 'profile', label: 'My Profile', description: 'Account & security', icon: Users },
         { id: 'products', label: 'Product Settings', description: 'Categories & types', icon: Package },
         { id: 'users', label: 'Team Members', description: 'Manage staff access', icon: Users },
-        { id: 'stores', label: 'Store Management', description: 'Multi-store config', icon: Store },
+
         { id: 'barcodes', label: 'Barcodes', description: 'Generate & export', icon: Barcode },
         { id: 'sms', label: 'SMS Config', description: 'Gateway settings', icon: MessageSquare },
-
         { id: 'pwa', label: 'PWA Settings', description: 'App installation', icon: Smartphone },
     ];
 
@@ -590,38 +688,7 @@ export default function SettingsPage() {
                             {/* Removed Branding Section from General Tab */}
                         </div>
                     )}
-                    {
-                        activeTab === 'global-branding' && (
-                            <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="p-2 bg-pink-50 dark:bg-pink-900/20 rounded-lg">
-                                        <Palette className="h-5 w-5 text-pink-600" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Global App Branding</h2>
-                                </div>
-                                <div className="grid md:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">App Name (Overrides Store Name)</label>
-                                        <input type="text" value={brandingName} onChange={(e) => setBrandingName(e.target.value)} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" placeholder="App Name" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Brand Logo URL</label>
-                                        <div className="flex gap-2">
-                                            <input type="text" value={brandingLogo} onChange={(e) => setBrandingLogo(e.target.value)} placeholder="https://..." className="flex-1 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" />
-                                            {brandingLogo && <img src={brandingLogo} alt="Logo" className="h-10 w-10 rounded object-cover border border-slate-200" />}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Primary Color</label>
-                                        <div className="flex gap-3">
-                                            <div className="w-10 h-10 rounded-lg shadow-sm border border-slate-200" style={{ backgroundColor: brandingColor }}></div>
-                                            <input type="text" value={brandingColor} onChange={(e) => setBrandingColor(e.target.value)} className="flex-1 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" placeholder="#HEX" />
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-                        )
-                    }
+
 
                     {/* PROFILE TAB */}
                     {
@@ -860,66 +927,7 @@ export default function SettingsPage() {
                         )
                     }
 
-                    {/* STORE MANAGEMENT */}
-                    {/* STORE MANAGEMENT */}
-                    {
-                        activeTab === 'stores' && (
-                            <div className="grid gap-4">
-                                <section className="flex justify-between items-center mb-2">
-                                    <div>
-                                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">All Stores</h2>
-                                        <p className="text-sm text-slate-500">Manage your multi-store configurations.</p>
-                                    </div>
-                                    <button onClick={() => { setEditingStore(null); setNewStoreData({ name: '', location: '' }); setShowCreateStoreModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20">
-                                        <Plus className="h-4 w-4" /> Create New Store
-                                    </button>
-                                </section>
-                                {stores.map((store) => (
-                                    <div key={store.id} className={`bg-white dark:bg-slate-900 rounded-xl border p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 transition-all ${store.status === 'archived' ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/30' : 'border-slate-200 dark:border-slate-800'}`}>
-                                        <div className="flex items-center gap-4 w-full md:w-auto">
-                                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${store.status === 'archived' ? 'bg-amber-100 text-amber-600' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600'}`}>
-                                                {store.status === 'archived' ? <ArchiveIcon className="h-6 w-6" /> : <Store className="h-6 w-6" />}
-                                            </div>
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <h3 className="font-semibold text-slate-900 dark:text-white">{store.name}</h3>
-                                                    {store.status === 'archived' && <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Archived</span>}
-                                                </div>
-                                                <p className="text-sm text-slate-500">{store.location} • <span className="capitalize">{store.status || 'Active'}</span></p>
-                                            </div>
-                                        </div>
 
-                                        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                                            <button onClick={() => handleEditStore(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 dark:text-slate-400 dark:hover:bg-indigo-900/20 rounded-lg transition-colors border border-slate-200 dark:border-slate-800">
-                                                <Edit2 className="h-4 w-4" /> Edit
-                                            </button>
-
-                                            {store.status === 'archived' ? (
-                                                <>
-                                                    <button onClick={() => handleRestoreStore(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-500 dark:hover:bg-emerald-900/20 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-900/30">
-                                                        <RotateCcw className="h-4 w-4" /> Restore
-                                                    </button>
-
-                                                    {stores.length > 1 && (
-                                                        <button
-                                                            onClick={() => handleRequestDeletion(store)}
-                                                            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-500 dark:hover:bg-rose-900/20 rounded-lg transition-colors border border-rose-200 dark:border-rose-900/30"
-                                                        >
-                                                            <Trash2 className="h-4 w-4" /> Delete
-                                                        </button>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <button onClick={() => handleArchiveStore(store)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-500 dark:hover:bg-amber-900/20 rounded-lg transition-colors border border-amber-200 dark:border-amber-900/30">
-                                                    <ArchiveIcon className="h-4 w-4" /> Archive
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )
-                    }
 
                     {/* BARCODES */}
                     {
@@ -1245,6 +1253,183 @@ export default function SettingsPage() {
                     }
                 </div >
             </div >
+
+            <ConfirmDialog
+                isOpen={!!archiveStoreConfirm}
+                onClose={() => setArchiveStoreConfirm(null)}
+                onConfirm={confirmArchiveStore}
+                title="Archive Store"
+                description={`Are you sure you want to archive "${archiveStoreConfirm?.name}"? It will not be accessible until restored.`}
+                confirmText="Archive Store"
+                variant="warning"
+            />
+
+            <ConfirmDialog
+                isOpen={!!deleteItemConfirm}
+                onClose={() => setDeleteItemConfirm(null)}
+                onConfirm={confirmDeleteItem}
+                title={`Delete ${deleteItemConfirm?.type === 'business' ? 'Business Type' : 'Category'}`}
+                description={`Are you sure you want to delete "${deleteItemConfirm?.value}"?`}
+                confirmText="Delete"
+                variant="danger"
+            />
+
+            {/* Store Deletion OTP Modal */}
+            {otcSent && storeToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800">
+                        <div className="flex flex-col items-center text-center mb-6">
+                            <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center mb-4">
+                                <ShieldAlert className="h-6 w-6 text-rose-600 dark:text-rose-500" />
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Confirm Store Deletion</h3>
+                            <p className="text-sm text-slate-500 mt-2">
+                                We've sent a verification code to your phone. Enter it below to permanently delete <strong>{storeToDelete.name}</strong>.
+                            </p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Verification Code</label>
+                                <input
+                                    type="text"
+                                    value={deletionOtcInput}
+                                    onChange={(e) => setDeletionOtcInput(e.target.value)}
+                                    placeholder="Enter 6-digit code"
+                                    className="w-full px-4 py-3 text-center text-lg tracking-widest rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none transition-all"
+                                    maxLength={6}
+                                />
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={() => { setOtcSent(false); setStoreToDelete(null); setDeletionOtcInput(''); }}
+                                    className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleVerifyAndDelete}
+                                    disabled={!deletionOtcInput || isDeleting}
+                                    className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {isDeleting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                    {isDeleting ? 'Deleting...' : 'Delete Store'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Invite/Edit Member Modal */}
+            {showInviteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                                {editingMember ? 'Edit Team Member' : 'Add Team Member'}
+                            </h3>
+                            <button
+                                onClick={() => setShowInviteModal(false)}
+                                className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Full Name</label>
+                                <input
+                                    type="text"
+                                    value={newUser.name}
+                                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="e.g. John Doe"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
+                                <input
+                                    type="tel"
+                                    value={newUser.phone}
+                                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    placeholder="e.g. 054xxxxxxx"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Role</label>
+                                    <select
+                                        value={newUser.role}
+                                        onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                    >
+                                        <option value="staff">Staff</option>
+                                        <option value="manager">Manager</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                        {editingMember ? 'New PIN (Optional)' : 'Access PIN'}
+                                    </label>
+                                    <input
+                                        type="tel"
+                                        maxLength={4}
+                                        value={newUser.pin}
+                                        onChange={(e) => setNewUser({ ...newUser, pin: e.target.value.replace(/\D/g, '') })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none text-center tracking-widest"
+                                        placeholder={editingMember ? 'Leave blank' : '0000'}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <div>
+                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Require OTP</p>
+                                    <p className="text-xs text-slate-500">Send SMS code for login verification</p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" checked={otpEnabled} onChange={(e) => setOtpEnabled(e.target.checked)} className="sr-only peer" />
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
+
+                            <button
+                                onClick={handleInviteMember}
+                                disabled={inviteLoading}
+                                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {inviteLoading && <RefreshCw className="h-4 w-4 animate-spin" />}
+                                {editingMember ? 'Update Member' : 'Add Member'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <ConfirmDialog
+                isOpen={!!deleteMemberConfirm}
+                onClose={() => setDeleteMemberConfirm(null)}
+                onConfirm={async () => {
+                    if (deleteMemberConfirm) {
+                        await removeTeamMember(deleteMemberConfirm.id);
+                        showToast('success', 'Member removed successfully');
+                        setDeleteMemberConfirm(null);
+                    }
+                }}
+                title="Delete Team Member"
+                description={`Are you sure you want to remove ${deleteMemberConfirm?.name}? This action cannot be undone.`}
+                confirmText="Delete Member"
+                variant="danger"
+            />
+
+
         </div >
     );
 };

@@ -37,6 +37,7 @@ export default function ReportsPage() {
     }, [activeStore, activeTab]);
 
     const fetchInventoryData = async () => {
+        if (!activeStore) return;
         setLoading(true);
         try {
             // 1. Get all products with stock > 0
@@ -68,6 +69,7 @@ export default function ReportsPage() {
     };
 
     const fetchFinancialData = async () => {
+        if (!activeStore) return;
         setLoading(true);
         try {
             // 1. Fetch Sales

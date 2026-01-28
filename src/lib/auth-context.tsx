@@ -162,11 +162,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Fetch Stores
                 if (accessIds.length > 0) {
-                    const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).order('created_at', { ascending: true });
+                    const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('created_at', { ascending: true });
                     if (userStores) validStores = userStores;
                 } else {
                     if (currentUser.id === 'owner-1' || currentUser.role === 'owner') {
-                        const { data: all } = await supabase.from('stores').select('*').order('created_at', { ascending: true });
+                        const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('created_at', { ascending: true });
                         if (all) validStores = all;
                     }
                 }
@@ -233,10 +233,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (accessIds.length > 0) {
-            const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).order('created_at', { ascending: true });
+            const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('created_at', { ascending: true });
             if (userStores) validStores = userStores;
         } else if (loggedUser.id === 'owner-1' || loggedUser.role === 'owner') {
-            const { data: all } = await supabase.from('stores').select('*').order('created_at', { ascending: true });
+            const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('created_at', { ascending: true });
             if (all) validStores = all;
         }
 
@@ -700,7 +700,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const now = new Date();
         const expiry = new Date(data.deletion_otc_expiry);
 
-        if (data.deletion_otc === otc && now < expiry) {
+        // Robust comparison
+        if (String(data.deletion_otc).trim() === String(otc).trim() && now < expiry) {
             return true;
         }
 

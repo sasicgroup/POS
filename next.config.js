@@ -1,7 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {}
 
-module.exports = nextConfig
-// PWA disabled due to build error
-// const withPWA = require("@ducanh2912/next-pwa").default({ ... });
-// module.exports = withPWA(nextConfig);
+
+// const withSerwist = require("@serwist/next").default({
+//   swSrc: "src/sw.ts",
+//   swDest: "public/sw.js",
+// });
+
+module.exports = nextConfig;

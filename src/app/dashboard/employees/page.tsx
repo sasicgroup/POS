@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { Plus, Search, MoreVertical, Shield, User as UserIcon, X, Edit2, Trash2, BarChart3, TrendingUp, Award, Calendar } from 'lucide-react';
+import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Date Helpers (Native implementation to avoid dependency issues)
 const startOfDay = (date: Date) => {
@@ -49,8 +51,11 @@ interface Employee {
 
 export default function EmployeesPage() {
     const { activeStore, unlockAccount } = useAuth();
+    const { showToast } = useToast();
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [deleteConfirmId, setDeleteConfirmId] = useState<any>(null);
+    const [unlockConfirmId, setUnlockConfirmId] = useState<any>(null);
 
     const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
     const [newEmployee, setNewEmployee] = useState<Partial<Employee>>({
@@ -168,7 +173,7 @@ export default function EmployeesPage() {
                 salary: newEmployee.salary,
                 work_days: newEmployee.work_days
             };
-            
+
             // Only include shift times if they are not empty
             if (newEmployee.shift_start && newEmployee.shift_start.trim() !== '') {
                 updateData.shift_start = newEmployee.shift_start;
@@ -185,7 +190,7 @@ export default function EmployeesPage() {
 
             if (error) {
                 console.error("Error updating employee:", error);
-                alert("Failed to update employee: " + error.message);
+                showToast('error', "Failed to update employee: " + error.message);
             } else {
                 setEmployees(prev => prev.map(e => e.id === editingId ? { ...e, ...newEmployee } : e) as any);
                 setIsAddEmployeeOpen(false);
@@ -210,7 +215,7 @@ export default function EmployeesPage() {
 
             if (error) {
                 console.error("Error adding employee:", error);
-                alert("Failed to add employee");
+                showToast('error', "Failed to add employee");
             } else if (data) {
                 setEmployees(prev => [data, ...prev]);
                 setIsAddEmployeeOpen(false);
@@ -220,28 +225,37 @@ export default function EmployeesPage() {
         setIsSubmitting(false);
     };
 
-    const handleDeleteEmployee = async (id: any) => {
-        if (!confirm('Are you sure you want to delete this employee?')) return;
-        const { error } = await supabase.from('employees').delete().eq('id', id);
-        if (error) {
-            console.error("Error deleting", error);
-            alert("Failed to delete");
-        } else {
-            setEmployees(prev => prev.filter(e => e.id !== id));
-        }
+    const handleDeleteEmployee = (id: any) => {
+        setDeleteConfirmId(id);
     };
 
-    const handleUnlock = async (id: any) => {
-        if (!unlockAccount) return;
-        if (confirm("Are you sure you want to unlock this account?")) {
-            const success = await unlockAccount(id);
-            if (success) {
-                alert("Account unlocked");
-                fetchEmployees(); // Refresh list
-            } else {
-                alert("Failed to unlock");
-            }
+    const confirmDelete = async () => {
+        if (!deleteConfirmId) return;
+        const { error } = await supabase.from('employees').delete().eq('id', deleteConfirmId);
+        if (error) {
+            console.error("Error deleting", error);
+            showToast('error', "Failed to delete");
+        } else {
+            setEmployees(prev => prev.filter(e => e.id !== deleteConfirmId));
+            showToast('success', "Employee removed");
         }
+        setDeleteConfirmId(null);
+    };
+
+    const handleUnlock = (id: any) => {
+        setUnlockConfirmId(id);
+    };
+
+    const confirmUnlock = async () => {
+        if (!unlockAccount || !unlockConfirmId) return;
+        const success = await unlockAccount(unlockConfirmId);
+        if (success) {
+            showToast('success', "Account unlocked");
+            fetchEmployees(); // Refresh list
+        } else {
+            showToast('error', "Failed to unlock");
+        }
+        setUnlockConfirmId(null);
     };
 
     const filteredEmployees = employees.filter(e =>
@@ -615,6 +629,26 @@ export default function EmployeesPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={!!deleteConfirmId}
+                onClose={() => setDeleteConfirmId(null)}
+                onConfirm={confirmDelete}
+                title="Remove Employee"
+                description="Are you sure you want to remove this employee? This action cannot be undone."
+                confirmText="Remove"
+                variant="danger"
+            />
+
+            <ConfirmDialog
+                isOpen={!!unlockConfirmId}
+                onClose={() => setUnlockConfirmId(null)}
+                onConfirm={confirmUnlock}
+                title="Unlock Account"
+                description="Are you sure you want to unlock this account?"
+                confirmText="Unlock"
+                variant="warning"
+            />
         </div>
-    );
+    )
 }

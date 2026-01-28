@@ -94,6 +94,9 @@ export default function SalesPage() {
     const [registerId, setRegisterId] = useState('Main-01');
     const [loyaltyConfig, setLoyaltyConfig] = useState<any>(null);
 
+    const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+    const [tempRegisterId, setTempRegisterId] = useState('');
+
     useEffect(() => {
         const storedRegister = localStorage.getItem('sms_register_id');
         if (storedRegister) setRegisterId(storedRegister);
@@ -113,10 +116,16 @@ export default function SalesPage() {
     }, [activeStore]);
 
     const handleEditRegister = () => {
-        const newId = prompt("Enter Register/Terminal Name:", registerId);
-        if (newId && newId.trim()) {
-            setRegisterId(newId.trim());
-            localStorage.setItem('sms_register_id', newId.trim());
+        setTempRegisterId(registerId);
+        setIsRegisterModalOpen(true);
+    };
+
+    const handleSaveRegister = () => {
+        if (tempRegisterId && tempRegisterId.trim()) {
+            setRegisterId(tempRegisterId.trim());
+            localStorage.setItem('sms_register_id', tempRegisterId.trim());
+            setIsRegisterModalOpen(false);
+            showToast('success', 'Register name updated');
         }
     };
 
@@ -1224,6 +1233,43 @@ export default function SalesPage() {
                             alt="Product Preview"
                             className="max-w-full max-h-[85vh] object-contain rounded-lg"
                         />
+                    </div>
+                </div>
+            )}
+
+            {/* Register Name Edit Modal */}
+            {isRegisterModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Register Name</h3>
+                        <p className="text-sm text-slate-500 mb-4">Enter a unique name for this terminal (e.g. Main-01).</p>
+
+                        <div className="mb-6">
+                            <label className="block text-xs font-medium text-slate-500 mb-1">Terminal ID</label>
+                            <input
+                                type="text"
+                                autoFocus
+                                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-medium outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                value={tempRegisterId}
+                                onChange={(e) => setTempRegisterId(e.target.value)}
+                                placeholder="e.g. POS-01"
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setIsRegisterModalOpen(false)}
+                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveRegister}
+                                className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
+                            >
+                                Save
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

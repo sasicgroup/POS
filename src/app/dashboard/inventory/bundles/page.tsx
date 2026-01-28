@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
 import { useToast } from '@/lib/toast-context';
 import { Html5Qrcode } from 'html5-qrcode';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function BundlesPage() {
     const { activeStore } = useAuth();
@@ -14,6 +15,7 @@ export default function BundlesPage() {
     const [bundles, setBundles] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [deleteBundleId, setDeleteBundleId] = useState<string | null>(null);
 
     // Create Bundle State
     const [newBundle, setNewBundle] = useState({ name: '', barcode: '', price: 0, description: '' });
@@ -199,12 +201,16 @@ export default function BundlesPage() {
         }
     };
 
-    const handleDeleteBundle = async (id: string) => {
-        if (!confirm('Are you sure? This deletes the bundle definition, not the component products.')) return;
+    const handleDeleteBundle = (id: string) => {
+        setDeleteBundleId(id);
+    };
 
-        await supabase.from('products').delete().eq('id', id);
+    const confirmDelete = async () => {
+        if (!deleteBundleId) return;
+        await supabase.from('products').delete().eq('id', deleteBundleId);
         fetchBundles();
         showToast('success', 'Bundle deleted.');
+        setDeleteBundleId(null);
     };
 
     if (isLoading) return <div className="p-8">Loading bundles...</div>;
@@ -423,6 +429,16 @@ export default function BundlesPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={!!deleteBundleId}
+                onClose={() => setDeleteBundleId(null)}
+                onConfirm={confirmDelete}
+                title="Delete Bundle"
+                description="Are you sure? This deletes the bundle definition, not the component products."
+                confirmText="Delete Bundle"
+                variant="danger"
+            />
         </div>
     );
 }

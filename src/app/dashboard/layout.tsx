@@ -15,13 +15,64 @@ import {
     Barcode, QrCode, RefreshCw, ShieldAlert, Key, Palette, Image,
     Type, DollarSign, Percent, Store, Check, Plus, Search, ChevronRight,
     CreditCard, Smartphone, Download, Globe,
-    Activity, ShieldCheck, MessageSquare, Menu, Bell, User, LogOut, Moon, Sun, X, ChevronDown
+    Activity, ShieldCheck, MessageSquare, Menu, Bell, User, LogOut, Moon, Sun, X, ChevronDown,
+    Cloud, CloudOff, RefreshCw as RefreshIcon
 } from 'lucide-react';
+import { useSyncStatus } from '@/lib/use-sync-status';
 
 
 import { ToastProvider } from '@/lib/toast-context';
 import { NotificationsProvider, useNotifications } from '@/lib/notifications-context';
 import { useActivityTracker } from '@/lib/activity-tracker';
+
+function StoreUrlHandler() {
+    const { activeStore, stores, switchStore } = useAuth();
+    const searchParams = useSearchParams();
+
+    useEffect(() => {
+        const queryStoreId = searchParams.get('storeId');
+        if (queryStoreId && stores.length > 0 && activeStore?.id !== queryStoreId) {
+            const target = stores.find(s => s.id === queryStoreId);
+            if (target) {
+                switchStore(queryStoreId);
+            }
+        }
+    }, [searchParams, stores, activeStore, switchStore]);
+
+    return null;
+}
+
+function SyncStatusBadge() {
+    const { isOnline, isSyncing, queueLength } = useSyncStatus();
+
+    if (queueLength === 0 && isOnline) return null;
+
+    return (
+        <div className={`
+            flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all
+            ${!isOnline ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' :
+                isSyncing ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                    'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}
+        `}>
+            {!isOnline ? (
+                <>
+                    <CloudOff className="h-3.5 w-3.5" />
+                    <span>Offline</span>
+                </>
+            ) : isSyncing ? (
+                <>
+                    <RefreshIcon className="h-3.5 w-3.5 animate-spin" />
+                    <span>Syncing ({queueLength})</span>
+                </>
+            ) : (
+                <>
+                    <Cloud className="h-3.5 w-3.5" />
+                    <span>Pending ({queueLength})</span>
+                </>
+            )}
+        </div>
+    );
+}
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, logout, activeStore, stores, switchStore, createStore, hasPermission, globalSettings } = useAuth();
@@ -32,19 +83,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     const router = useRouter();
     const pathname = usePathname();
-    const searchParams = useSearchParams();
 
     // Handle Store Switch via URL
-    useEffect(() => {
-        const queryStoreId = searchParams.get('storeId');
-        if (queryStoreId && stores.length > 0 && activeStore?.id !== queryStoreId) {
-            // Only switch if we have access to this store
-            const target = stores.find(s => s.id === queryStoreId);
-            if (target) {
-                switchStore(queryStoreId);
-            }
-        }
-    }, [searchParams, stores, activeStore, switchStore]);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -94,7 +134,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck, permission: 'view_roles' },
         { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare, permission: 'manage_customers' },
         { name: 'HQ Dashboard', href: '/dashboard/hq', icon: Globe, permission: 'owner_only' },
-        { name: 'Global Branding', href: '/dashboard/settings?tab=global-branding', icon: Palette, permission: 'access_settings' },
+        { name: 'Global Settings', href: '/dashboard/global-settings', icon: Globe, permission: 'owner_only' },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
     ];
 
@@ -105,6 +145,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
+            <Suspense fallback={null}>
+                <StoreUrlHandler />
+            </Suspense>
             {/* ... */}
             {isSidebarOpen && (
                 <div
@@ -246,6 +289,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <div className="flex items-center gap-4 relative">
+                        <SyncStatusBadge />
                         <button
                             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                             className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"

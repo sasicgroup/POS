@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { supabase } from './supabase';
+import { supabase } from '@/lib/supabase';
+import { syncManager } from './sync-manager';
 import { useAuth } from './auth-context';
 import { sendLowStockAlert } from './sms';
 
@@ -443,6 +444,36 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         if (saleError || !sale) {
             console.error("Sale insert failed", JSON.stringify(saleError, null, 2));
+
+            // OFFLINE HANDLING
+            // Check if it's a network error (no connection)
+            if (!navigator.onLine || (saleError && (saleError.message?.includes('fetch') || saleError.message?.includes('network')))) {
+                console.log('App appears offline, queuing sale for sync...');
+
+                // Optimistic Success
+                await syncManager.enqueueRequest({
+                    action: 'SALE_TRANSACTION',
+                    payload: {
+                        activeStoreId: activeStore.id,
+                        saleData: { ...saleData, customerId }, // Pass the resolved/new customer ID
+                        userId: safeEmployeeId,
+                        timestamp: Date.now()
+                    }
+                });
+
+                // Optimistic UI Update (Stock)
+                setProducts(prev => prev.map(p => {
+                    const item = saleData.items.find((i: any) => i.id === p.id);
+                    if (item) {
+                        return { ...p, stock: p.stock - item.quantity };
+                    }
+                    return p;
+                }));
+
+                // Return a fake ID so UI proceeds
+                return `OFFLINE-${Date.now()}`;
+            }
+
             return null;
         }
 

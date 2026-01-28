@@ -16,9 +16,12 @@ import {
     MoreHorizontal,
     TrendingUp
 } from 'lucide-react';
+import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function IncomeExpensesPage() {
     const { activeStore } = useAuth();
+    const { showToast } = useToast();
     const [expenses, setExpenses] = useState<any[]>([]);
     const [sales, setSales] = useState<any[]>([]);
     const [otherIncomeList, setOtherIncomeList] = useState<any[]>([]);
@@ -28,6 +31,7 @@ export default function IncomeExpensesPage() {
     const [modalType, setModalType] = useState<'expense' | 'income'>('expense');
     const [searchQuery, setSearchQuery] = useState('');
     const [view, setView] = useState<'expenses' | 'income' | 'other_income'>('expenses');
+    const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, type: 'expense' | 'income' } | null>(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -133,18 +137,27 @@ export default function IncomeExpensesPage() {
             });
             fetchData();
         } else {
-            alert(`Failed to add ${modalType}`);
+            showToast('error', `Failed to add ${modalType}`);
         }
     };
 
-    const handleDelete = async (id: string, type: 'expense' | 'income') => {
-        if (!confirm('Are you sure you want to delete this record?')) return;
+    const handleDelete = (id: string, type: 'expense' | 'income') => {
+        setDeleteConfirm({ id, type });
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteConfirm) return;
+        const { id, type } = deleteConfirm;
         const table = type === 'expense' ? 'expenses' : 'other_income';
         const { error } = await supabase.from(table).delete().eq('id', id);
         if (!error) {
             if (type === 'expense') setExpenses(prev => prev.filter(e => e.id !== id));
             else setOtherIncomeList(prev => prev.filter(i => i.id !== id));
+            showToast('success', `${type === 'expense' ? 'Expense' : 'Income'} record deleted`);
+        } else {
+            showToast('error', `Failed to delete ${type}`);
         }
+        setDeleteConfirm(null);
     };
 
     const filteredExpenses = expenses.filter(e =>
@@ -408,6 +421,16 @@ export default function IncomeExpensesPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={!!deleteConfirm}
+                onClose={() => setDeleteConfirm(null)}
+                onConfirm={confirmDelete}
+                title={`Delete ${deleteConfirm?.type === 'expense' ? 'Expense' : 'Income'} Record`}
+                description="Are you sure you want to delete this record? This action cannot be undone."
+                confirmText="Delete"
+                variant="danger"
+            />
         </div>
     );
 }

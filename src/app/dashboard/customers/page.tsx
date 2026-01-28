@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, User, Phone, ShoppingBag, Calendar, ArrowUpRight, MoreHorizontal, Mail, MapPin, Pencil, Check, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Define Customer Interface
 // Supabase naming convention usually snake_case, but I will map or assume TS matches if allowed 
@@ -23,9 +25,11 @@ import { useAuth } from '@/lib/auth-context';
 
 export default function CustomersPage() {
     const { activeStore, user } = useAuth();
+    const { showToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+    const [resetPointsConfirm, setResetPointsConfirm] = useState(false);
 
     // Add Customer State
     const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
@@ -104,7 +108,7 @@ export default function CustomersPage() {
 
         if (error) {
             console.error('Error updating customer', error);
-            alert('Failed to update name');
+            showToast('error', 'Failed to update name');
         } else {
             const updated = { ...selectedCustomer, name: editName };
             setSelectedCustomer(updated);
@@ -123,7 +127,7 @@ export default function CustomersPage() {
 
         if (error) {
             console.error('Error updating phone', error);
-            alert('Failed to update phone');
+            showToast('error', 'Failed to update phone');
         } else {
             const updated = { ...selectedCustomer, phone: editPhone };
             setSelectedCustomer(updated);
@@ -153,7 +157,7 @@ export default function CustomersPage() {
 
         if (error) {
             console.error('Error updating points', error);
-            alert('Failed to update points');
+            showToast('error', 'Failed to update points');
         } else {
             // Log to Loyalty History
             await supabase.from('loyalty_logs').insert({
@@ -176,12 +180,18 @@ export default function CustomersPage() {
         }
     };
 
-    const handleResetPoints = async () => {
+    const handleResetPointsClick = () => {
+        setResetPointsConfirm(true);
+    }
+
+    const confirmResetPoints = async () => {
         if (!selectedCustomer || !activeStore?.id) return;
-        if (!confirm('Are you sure you want to reset all points for this customer? This action cannot be undone.')) return;
 
         const oldPoints = selectedCustomer.points || 0;
-        if (oldPoints === 0) return;
+        if (oldPoints === 0) {
+            setResetPointsConfirm(false);
+            return;
+        }
 
         const { error } = await supabase
             .from('customers')
@@ -190,7 +200,7 @@ export default function CustomersPage() {
 
         if (error) {
             console.error('Error resetting points', error);
-            alert('Failed to reset points');
+            showToast('error', 'Failed to reset points');
         } else {
             // Log to Loyalty History
             await supabase.from('loyalty_logs').insert({
@@ -207,6 +217,8 @@ export default function CustomersPage() {
             setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
             setShowOptions(false);
             fetchHistory(selectedCustomer.id);
+            setResetPointsConfirm(false);
+            showToast('success', 'Points reset successfully');
         }
     };
 
@@ -243,7 +255,7 @@ export default function CustomersPage() {
 
         if (error) {
             console.error("Error adding customer:", error);
-            alert("Failed to add customer.");
+            showToast('error', "Failed to add customer.");
         } else if (data) {
             setCustomers(prev => [data, ...prev]);
             setIsAddCustomerOpen(false);
@@ -375,7 +387,7 @@ export default function CustomersPage() {
                                                         <Pencil className="h-3.5 w-3.5" /> Edit Points
                                                     </button>
                                                     <button
-                                                        onClick={handleResetPoints}
+                                                        onClick={handleResetPointsClick}
                                                         className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2 dark:text-rose-400 dark:hover:bg-rose-900/20"
                                                     >
                                                         <X className="h-3.5 w-3.5" /> Reset Points
@@ -563,7 +575,18 @@ export default function CustomersPage() {
                         </div>
                     )}
                 </div>
+
+                <ConfirmDialog
+                    isOpen={resetPointsConfirm}
+                    onClose={() => setResetPointsConfirm(false)}
+                    onConfirm={confirmResetPoints}
+                    title="Reset Customer Points"
+                    description="Are you sure you want to reset all points for this customer? This action cannot be undone."
+                    confirmText="Reset Points"
+                    variant="danger"
+                />
             </div>
         </div>
+
     );
 }

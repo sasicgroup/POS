@@ -11,7 +11,7 @@ import {
     Zap
 } from 'lucide-react';
 import { useToast } from '@/lib/toast-context';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
@@ -27,7 +27,9 @@ interface Insight {
     link?: string;
 }
 
-export default function AiInsightsPage() {
+export const dynamic = 'force-dynamic';
+
+function AiInsightsContent() {
     const { activeStore } = useAuth();
     const { showToast } = useToast();
     const router = useRouter();
@@ -316,5 +318,17 @@ export default function AiInsightsPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function AiInsightsPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex h-[50vh] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+            </div>
+        }>
+            <AiInsightsContent />
+        </Suspense>
     );
 }
