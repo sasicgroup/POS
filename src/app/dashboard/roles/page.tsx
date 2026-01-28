@@ -42,7 +42,7 @@ export default function RolesPage() {
         if (empData) setEmployees(empData);
 
         // Fetch All Stores
-        const { data: storeData } = await supabase.from('stores').select('*');
+        const { data: storeData } = await supabase.from('stores').select('*').neq('status', 'deleted').order('created_at', { ascending: true });
         if (storeData) setAllStores(storeData);
 
         // Fetch Access Junction

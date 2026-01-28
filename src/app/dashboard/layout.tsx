@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth-context';
 import { InventoryProvider } from '@/lib/inventory-context';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -84,11 +84,34 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
 
+    // Refs for click outside detection
+    const storeMenuRef = useRef<HTMLDivElement>(null);
+    const notificationRef = useRef<HTMLDivElement>(null);
+
     // Handle Store Switch via URL
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isStoreMenuOpen, setIsStoreMenuOpen] = useState(false);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
+
+    // Click Outside Handler
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            // Store Menu
+            if (storeMenuRef.current && !storeMenuRef.current.contains(event.target as Node)) {
+                setIsStoreMenuOpen(false);
+            }
+            // Notification Menu
+            if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+                setIsNotificationsOpen(false);
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
     // New Store Modal State
     const [newStoreName, setNewStoreName] = useState('');
@@ -229,7 +252,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     </button>
 
                     {/* Store Switcher */}
-                    <div className="relative">
+                    <div className="relative" ref={storeMenuRef}>
                         <button
                             onClick={() => setIsStoreMenuOpen(!isStoreMenuOpen)}
                             className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -249,7 +272,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
                         {isStoreMenuOpen && (
                             <>
-                                <div className="fixed inset-0 z-[48] cursor-default" onClick={() => setIsStoreMenuOpen(false)} />
                                 <div className="absolute left-0 mt-2 w-60 origin-top-left rounded-lg border border-slate-200 bg-white p-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 animate-in fade-in slide-in-from-top-2 z-[49]">
                                     <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Switch Business
@@ -290,69 +312,70 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
                     <div className="flex items-center gap-4 relative">
                         <SyncStatusBadge />
-                        <button
-                            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                            className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                        >
-                            <Bell className="h-5 w-5" />
-                            {unreadCount > 0 && (
-                                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-950"></span>
-                            )}
-                        </button>
+                        <div className="relative" ref={notificationRef}>
+                            <button
+                                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                                className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                            >
+                                <Bell className="h-5 w-5" />
+                                {unreadCount > 0 && (
+                                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-950"></span>
+                                )}
+                            </button>
 
-                        {isNotificationsOpen && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)} />
-                                <div className="absolute right-0 top-12 w-80 rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in slide-in-from-top-2 origin-top-right">
-                                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-                                        <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Notifications</h3>
-                                        {unreadCount > 0 && (
-                                            <button
-                                                onClick={markAllAsRead}
-                                                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-                                            >
-                                                Mark all read
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="max-h-80 overflow-y-auto">
-                                        {notifications.length === 0 ? (
-                                            <div className="px-4 py-12 text-center">
-                                                <Bell className="h-12 w-12 mx-auto mb-3 text-slate-300 dark:text-slate-700" />
-                                                <p className="text-sm text-slate-500 dark:text-slate-400">No notifications yet</p>
-                                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">We'll notify you when something happens</p>
-                                            </div>
-                                        ) : (
-                                            notifications.slice(0, 10).map((notif) => (
-                                                <div
-                                                    key={notif.id}
-                                                    onClick={() => !notif.is_read && markAsRead(notif.id)}
-                                                    className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${notif.is_read ? '' : 'bg-indigo-50/30 dark:bg-indigo-900/10'}`}
+                            {isNotificationsOpen && (
+                                <>
+                                    <div className="absolute right-0 top-12 w-80 rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in slide-in-from-top-2 origin-top-right">
+                                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                                            <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Notifications</h3>
+                                            {unreadCount > 0 && (
+                                                <button
+                                                    onClick={markAllAsRead}
+                                                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
                                                 >
-                                                    <div className="flex justify-between items-start">
-                                                        <p className={`text-sm ${notif.is_read ? 'text-slate-700 dark:text-slate-300' : 'font-semibold text-slate-900 dark:text-slate-100'}`}>
-                                                            {notif.title}
-                                                        </p>
-                                                        {!notif.is_read && <span className="h-2 w-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0 ml-2"></span>}
-                                                    </div>
-                                                    <p className="text-xs text-slate-500 mt-1">{notif.message}</p>
-                                                    <p className="text-[10px] text-slate-400 mt-1.5">{formatRelativeTime(notif.created_at)}</p>
+                                                    Mark all read
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="max-h-80 overflow-y-auto">
+                                            {notifications.length === 0 ? (
+                                                <div className="px-4 py-12 text-center">
+                                                    <Bell className="h-12 w-12 mx-auto mb-3 text-slate-300 dark:text-slate-700" />
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400">No notifications yet</p>
+                                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">We'll notify you when something happens</p>
                                                 </div>
-                                            ))
-                                        )}
+                                            ) : (
+                                                notifications.slice(0, 10).map((notif) => (
+                                                    <div
+                                                        key={notif.id}
+                                                        onClick={() => !notif.is_read && markAsRead(notif.id)}
+                                                        className={`px-4 py-3 border-b border-slate-50 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 cursor-pointer transition-colors ${notif.is_read ? '' : 'bg-indigo-50/30 dark:bg-indigo-900/10'}`}
+                                                    >
+                                                        <div className="flex justify-between items-start">
+                                                            <p className={`text-sm ${notif.is_read ? 'text-slate-700 dark:text-slate-300' : 'font-semibold text-slate-900 dark:text-slate-100'}`}>
+                                                                {notif.title}
+                                                            </p>
+                                                            {!notif.is_read && <span className="h-2 w-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0 ml-2"></span>}
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 mt-1">{notif.message}</p>
+                                                        <p className="text-[10px] text-slate-400 mt-1.5">{formatRelativeTime(notif.created_at)}</p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                        <div className="p-2 border-t border-slate-100 dark:border-slate-800 text-center">
+                                            <Link
+                                                href="/dashboard/communication"
+                                                className="text-xs font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-400 block py-1"
+                                                onClick={() => setIsNotificationsOpen(false)}
+                                            >
+                                                View All Notifications
+                                            </Link>
+                                        </div>
                                     </div>
-                                    <div className="p-2 border-t border-slate-100 dark:border-slate-800 text-center">
-                                        <Link
-                                            href="/dashboard/communication"
-                                            className="text-xs font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-400 block py-1"
-                                            onClick={() => setIsNotificationsOpen(false)}
-                                        >
-                                            View All Notifications
-                                        </Link>
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                                </>
+                            )}
+                        </div>
                     </div>
                 </header>
 
