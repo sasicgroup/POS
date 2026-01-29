@@ -554,17 +554,17 @@ export default function InventoryPage() {
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Inventory Management</h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Manage products for <span className="font-semibold text-indigo-600">{activeStore.name}</span></p>
                 </div>
-                <div className="flex gap-2">
-                    <Link href="/dashboard/inventory/bundles" className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div className="grid grid-cols-2 gap-2 w-full lg:w-auto lg:flex lg:items-center">
+                    <Link href="/dashboard/inventory/bundles" className="order-2 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         <Package className="h-4 w-4" /> Bundles
                     </Link>
-                    <Link href="/dashboard/inventory/stocktake" className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <Link href="/dashboard/inventory/stocktake" className="order-4 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         <ClipboardList className="h-4 w-4" /> Stocktake
                     </Link>
 
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                     >
                         <Upload className="h-4 w-4" /> Import
                     </button>
@@ -572,28 +572,28 @@ export default function InventoryPage() {
 
                     <button
                         onClick={handleExport}
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        className="hidden lg:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                     >
                         <Download className="h-4 w-4" /> Export
                     </button>
 
                     <button
                         onClick={generateAiInsights}
-                        className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
+                        className="hidden lg:flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
                     >
                         <Sparkles className="h-4 w-4" />
                         AI Optmize
                     </button>
                     <button
                         onClick={() => setIsScanning(true)}
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        className="order-1 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         <Camera className="h-4 w-4" />
                         Scan
                     </button>
                     <button
                         onClick={() => setIsAddProductOpen(true)}
-                        className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30"
+                        className="order-3 lg:order-none flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30"
                     >
                         <Plus className="h-4 w-4" />
                         Add Product
