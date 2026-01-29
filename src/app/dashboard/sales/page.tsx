@@ -294,17 +294,17 @@ export default function SalesPage() {
     const successAudio: HTMLAudioElement | null = null;
 
     const playBeep = () => {
-        if (beepAudio) {
-            beepAudio.currentTime = 0;
-            beepAudio.play().catch((e: any) => console.error("Audio play failed", e));
-        }
+        // if (beepAudio) {
+        //     beepAudio.currentTime = 0;
+        //     beepAudio.play().catch((e: any) => console.error("Audio play failed", e));
+        // }
     };
 
     const playSuccess = () => {
-        if (successAudio) {
-            successAudio.currentTime = 0;
-            successAudio.play().catch((e: any) => console.error("Audio play failed", e));
-        }
+        // if (successAudio) {
+        //     successAudio.currentTime = 0;
+        //     successAudio.play().catch((e: any) => console.error("Audio play failed", e));
+        // }
     }
 
 
@@ -322,10 +322,10 @@ export default function SalesPage() {
     };
 
     const playError = () => {
-        if (errorAudio) {
-            errorAudio.currentTime = 0;
-            errorAudio.play().catch((e: any) => console.error("Audio play failed", e));
-        }
+        // if (errorAudio) {
+        //     errorAudio.currentTime = 0;
+        //     errorAudio.play().catch((e: any) => console.error("Audio play failed", e));
+        // }
     }
 
     const handleScan = (query: string) => {
