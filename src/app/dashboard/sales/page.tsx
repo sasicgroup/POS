@@ -289,21 +289,21 @@ export default function SalesPage() {
     if (!activeStore) return null;
 
     // Audio Refs
-    const beepAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3') : null;
-    const errorAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3') : null;
-    const successAudio = typeof Audio !== "undefined" ? new Audio('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3') : null;
+    const beepAudio: HTMLAudioElement | null = null; // Audio disabled due to source 403
+    const errorAudio: HTMLAudioElement | null = null;
+    const successAudio: HTMLAudioElement | null = null;
 
     const playBeep = () => {
         if (beepAudio) {
             beepAudio.currentTime = 0;
-            beepAudio.play().catch(e => console.error("Audio play failed", e));
+            beepAudio.play().catch((e: any) => console.error("Audio play failed", e));
         }
     };
 
     const playSuccess = () => {
         if (successAudio) {
             successAudio.currentTime = 0;
-            successAudio.play().catch(e => console.error("Audio play failed", e));
+            successAudio.play().catch((e: any) => console.error("Audio play failed", e));
         }
     }
 
@@ -324,7 +324,7 @@ export default function SalesPage() {
     const playError = () => {
         if (errorAudio) {
             errorAudio.currentTime = 0;
-            errorAudio.play().catch(e => console.error("Audio play failed", e));
+            errorAudio.play().catch((e: any) => console.error("Audio play failed", e));
         }
     }
 
