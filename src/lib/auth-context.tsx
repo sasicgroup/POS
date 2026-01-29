@@ -21,6 +21,9 @@ export interface Store {
     receiptPrefix?: string; // e.g., "TRX", "INV", "RCP"
     receiptSuffix?: string; // e.g., "-A", "2024"
     lastTransactionNumber?: number; // Sequential counter
+    email?: string;
+    website?: string;
+    socialHandle?: string;
     rolePermissions?: Record<string, Record<string, boolean>>; // { manager: { view_dashboard: true }, staff: { ... } }
     branding?: {
         name?: string;

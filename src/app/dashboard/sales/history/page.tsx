@@ -16,6 +16,7 @@ interface Sale {
     payment_method: string;
     status: string;
     created_at: string;
+    customers?: { name: string } | null;
     employees?: { name: string } | null;
     receipt_number?: string;
     points_earned?: number;
@@ -731,10 +732,10 @@ export default function SalesHistoryPage() {
                         </div>
 
                         {/* Loyalty Summary Section */}
-                        {(selectedSale.points_earned > 0 || (selectedSale.points_redeemed || 0) > 0) && (
+                        {((selectedSale.points_earned || 0) > 0 || (selectedSale.points_redeemed || 0) > 0) && (
                             <div className="border-t border-dashed border-gray-400 pt-2 mb-4 text-xs">
                                 <div className="font-bold mb-1 uppercase">Loyalty Summary</div>
-                                {selectedSale.points_redeemed > 0 && (
+                                {(selectedSale.points_redeemed || 0) > 0 && (
                                     <div className="flex justify-between">
                                         <span>Points Used:</span>
                                         <span>{selectedSale.points_redeemed}</span>
