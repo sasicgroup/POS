@@ -281,6 +281,8 @@ export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
                 .replace(/{receipt}/g, (data.id || '').toString())
                 .replace(/{Receipt}/g, (data.id || '').toString())
                 .replace(/{PointsEarned}/g, (data.pointsEarned || '0').toString())
+                .replace(/{PointsUsed}/g, (data.pointsUsed || '0').toString())
+                .replace(/{PointsBalance}/g, (data.pointsBalance || '0').toString())
                 .replace(/{TotalPoints}/g, (data.totalPoints || '0').toString())
                 .replace(/{Name}/g, data.customerName || 'Customer')
                 .replace(/{name}/g, data.customerName || 'Customer')

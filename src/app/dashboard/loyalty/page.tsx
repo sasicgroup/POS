@@ -36,6 +36,12 @@ export default function LoyaltyPage() {
     const [successMsg, setSuccessMsg] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
 
+    // Product Redemption State
+    const [products, setProducts] = useState<any[]>([]);
+    const [selectedProduct, setSelectedProduct] = useState<any>(null);
+    const [productSearch, setProductSearch] = useState('');
+    const [showProductDropdown, setShowProductDropdown] = useState(false);
+
     const handleSearch = async () => {
         if (!activeStore?.id || !phone) return;
         setIsLoadingRedemption(true);
@@ -88,6 +94,23 @@ export default function LoyaltyPage() {
         try {
             const newPoints = (customer.points || 0) - points;
 
+            // If product is selected, deduct stock
+            if (selectedProduct) {
+                if (selectedProduct.stock <= 0) {
+                    setErrorMsg('Selected product is out of stock');
+                    setIsLoadingRedemption(false);
+                    return;
+                }
+
+                // Deduct stock
+                const { error: stockError } = await supabase
+                    .from('products')
+                    .update({ stock: selectedProduct.stock - 1 })
+                    .eq('id', selectedProduct.id);
+
+                if (stockError) throw stockError;
+            }
+
             // Update customer points
             const { error: updateError } = await supabase
                 .from('customers')
@@ -97,18 +120,29 @@ export default function LoyaltyPage() {
             if (updateError) throw updateError;
 
             // Log Transaction
+            const description = selectedProduct
+                ? `Redeemed for: ${selectedProduct.name}`
+                : (reason || 'Redemption');
+
             await supabase.from('loyalty_logs').insert({
                 store_id: activeStore.id,
                 customer_id: customer.id,
-                points: -points, // Negative for redemption
+                points: points, // Positive number for points used
                 type: 'redeemed',
-                description: reason || 'Redemption'
+                description: description
             });
 
             setSuccessMsg(`Successfully redeemed ${points} points for ${customer.name}. New Balance: ${newPoints}`);
             setCustomer({ ...customer, points: newPoints });
             setRedeemAmount('');
             setReason('');
+            setSelectedProduct(null);
+            setProductSearch('');
+
+            // Refresh products list if product was redeemed
+            if (selectedProduct) {
+                loadProducts();
+            }
         } catch (e) {
             console.error(e);
             setErrorMsg('Redemption failed');
@@ -116,6 +150,33 @@ export default function LoyaltyPage() {
             setIsLoadingRedemption(false);
         }
     };
+
+    // Load Products for Redemption
+    const loadProducts = async () => {
+        if (!activeStore?.id) return;
+        const { data } = await supabase
+            .from('products')
+            .select('*')
+            .eq('store_id', activeStore.id)
+            .gt('stock', 0) // Only show products in stock
+            .order('name');
+
+        if (data) setProducts(data);
+    };
+
+    // Load products when tab changes to redeem
+    useEffect(() => {
+        if (activeTab === 'redeem' && activeStore?.id) {
+            loadProducts();
+        }
+    }, [activeTab, activeStore]);
+
+    // Filtered products for dropdown
+    const filteredProducts = products.filter(p =>
+        p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(productSearch.toLowerCase())
+    );
+
 
     const [stats, setStats] = useState({
         totalMembers: 0,
@@ -153,7 +214,7 @@ export default function LoyaltyPage() {
                     pointsPerCurrency: settingsData.points_per_currency,
                     redemptionRate: settingsData.redemption_rate,
                     minRedemptionPoints: settingsData.min_points_to_redeem,
-                    expiryMonths: 12 // Default for now
+                    expiryMonths: settingsData.expiry_months || 12
                 });
             } else if (!settingsData && !settingsError) {
                 // Initialize if missing
@@ -267,6 +328,7 @@ export default function LoyaltyPage() {
                 points_per_currency: settings.pointsPerCurrency,
                 redemption_rate: settings.redemptionRate,
                 min_points_to_redeem: settings.minRedemptionPoints,
+                expiry_months: settings.expiryMonths,
                 enabled: settings.enabled
             }, { onConflict: 'store_id' });
 
@@ -287,7 +349,7 @@ export default function LoyaltyPage() {
 
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
-    
+
     // Load campaigns from DB
     useEffect(() => {
         const loadCampaigns = async () => {
@@ -609,12 +671,80 @@ export default function LoyaltyPage() {
                                         onChange={(e) => setRedeemAmount(e.target.value)}
                                     />
                                 </div>
+
+                                {/* Product Selector */}
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                        Select Product (Optional)
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                            placeholder="Search products..."
+                                            value={selectedProduct ? selectedProduct.name : productSearch}
+                                            onChange={(e) => {
+                                                setProductSearch(e.target.value);
+                                                setSelectedProduct(null);
+                                                setShowProductDropdown(true);
+                                            }}
+                                            onFocus={() => setShowProductDropdown(true)}
+                                        />
+                                        {selectedProduct && (
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedProduct(null);
+                                                    setProductSearch('');
+                                                }}
+                                                className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Dropdown */}
+                                    {showProductDropdown && !selectedProduct && productSearch && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            {filteredProducts.length > 0 ? (
+                                                filteredProducts.map((product) => (
+                                                    <button
+                                                        key={product.id}
+                                                        onClick={() => {
+                                                            setSelectedProduct(product);
+                                                            setShowProductDropdown(false);
+                                                        }}
+                                                        className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex justify-between items-center text-sm"
+                                                    >
+                                                        <div>
+                                                            <div className="font-medium text-slate-900 dark:text-white">{product.name}</div>
+                                                            <div className="text-xs text-slate-500">{product.sku}</div>
+                                                        </div>
+                                                        <div className="text-xs text-slate-500">
+                                                            Stock: {product.stock}
+                                                        </div>
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="px-3 py-2 text-sm text-slate-500">No products found</div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {selectedProduct && (
+                                        <div className="mt-2 p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-900/50 text-xs">
+                                            <div className="font-medium text-indigo-700 dark:text-indigo-300">{selectedProduct.name}</div>
+                                            <div className="text-indigo-600 dark:text-indigo-400">Stock: {selectedProduct.stock} | Price: GHS {selectedProduct.price}</div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Reason / Item Redeemed</label>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Reason (Optional)</label>
                                     <input
                                         type="text"
                                         className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                        placeholder="e.g. T-Shirt, 10% Discount"
+                                        placeholder="e.g. 10% Discount, Birthday Gift"
                                         value={reason}
                                         onChange={(e) => setReason(e.target.value)}
                                     />

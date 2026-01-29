@@ -156,11 +156,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         // Prevent duplicate fetches
         if (isFetching.current) {
-            console.log('[Inventory] Fetch already in progress, skipping duplicate call.');
+            // console.log('[Inventory] Fetch already in progress, skipping duplicate call.');
             return;
         }
 
-        console.log(`[Inventory] Fetching products for store: ${activeStore.id}, page: ${pageNum}, pageSize: ${pageSizeNum}, attempt: ${retryCount + 1}`);
+        // console.log(`[Inventory] Fetching products for store: ${activeStore.id}, page: ${pageNum}, pageSize: ${pageSizeNum}, attempt: ${retryCount + 1}`);
         isFetching.current = true;
         setIsLoading(true);
 
@@ -190,7 +190,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 console.error(`[Inventory] Supabase error (duration: ${duration}ms):`, error.message || error);
                 throw error;
             } else if (data) {
-                console.log(`[Inventory] Fetched products: ${data.length}, Total: ${count}, Duration: ${duration}ms`);
+                // console.log(`[Inventory] Fetched products: ${data.length}, Total: ${count}, Duration: ${duration}ms`);
                 const mappedProducts = data.map((p: any) => ({
                     ...p,
                     costPrice: p.cost_price || 0,
@@ -252,7 +252,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 Date.now() - productsCache.timestamp < CACHE_TTL;
 
             if (isCacheValid) {
-                console.log('[Inventory] Using cached products');
+                // console.log('[Inventory] Using cached products');
                 setProducts(productsCache.data);
                 setIsLoading(false);
             } else {
@@ -439,7 +439,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             payment_method: saleData.paymentMethod,
             employee_id: safeEmployeeId,
             customer_id: customerId,
-            status: 'completed'
+            status: 'completed',
+            points_earned: pointsEarned,
+            points_redeemed: saleData.pointsRedeemed || 0,
+            loyalty_discount_amount: saleData.loyaltyDiscount || 0,
+            tax_amount: saleData.taxAmount || 0, // Optional if passed
+            total_discount: saleData.totalDiscount || 0 // Optional if passed
         }).select().single();
 
         if (saleError || !sale) {
@@ -543,16 +548,18 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         // 5. Update Customer Loyalty & Total Spent
         if (customerId) {
-            // We need to fetch current customer stats first to be safe, or use RPC increment (safer)
-            // For now, simpler read-modify-write as we are in a flow
-            const { data: currentCust } = await supabase.from('customers').select('points, total_spent').eq('id', customerId).single();
+            // We need to fetch current customer stats first to be safe, or use RPC decrement (safer)
+            const { data: currentCust } = await supabase.from('customers').select('points, total_spent, total_visits').eq('id', customerId).single();
             if (currentCust) {
-                const newPoints = (currentCust.points || 0) + pointsEarned;
+                const redeemed = saleData.pointsRedeemed || 0;
+                const newPoints = Math.max(0, (currentCust.points || 0) + pointsEarned - redeemed);
                 const newTotalSpent = (currentCust.total_spent || 0) + saleData.totalAmount;
+                const newTotalVisits = (currentCust.total_visits || 0) + 1;
 
                 await supabase.from('customers').update({
                     points: newPoints,
                     total_spent: newTotalSpent,
+                    total_visits: newTotalVisits,
                     last_visit: new Date().toISOString()
                 }).eq('id', customerId);
 
@@ -564,6 +571,17 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                         points: pointsEarned,
                         type: 'earned',
                         description: `Earned from Sale #${sale.id.slice(0, 8)}`
+                    });
+                }
+
+                // Log Loyalty Redeemed
+                if (redeemed > 0) {
+                    await supabase.from('loyalty_logs').insert({
+                        store_id: activeStore.id,
+                        customer_id: customerId,
+                        points: redeemed, // Positive number as points used
+                        type: 'redeemed',
+                        description: `Redeemed on Sale #${sale.id.slice(0, 8)}`
                     });
                 }
             }

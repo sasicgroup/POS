@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
+import { useInventory } from '@/lib/inventory-context';
 import {
     Sparkles,
     ArrowUpRight,
@@ -77,6 +78,8 @@ interface RestockItem {
 
 function AiInsightsContent() {
     const { activeStore } = useAuth();
+    const { updateProduct } = useInventory();
+    const { showToast } = useToast();
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
 
@@ -99,7 +102,7 @@ function AiInsightsContent() {
     const [dailySummary, setDailySummary] = useState<string>(''); // 26. Daily Summary
 
     const [activeFeature, setActiveFeature] = useState<'overview' | 'inventory' | 'sales' | 'customers' | 'pricing'>('overview');
-    const { showToast } = useToast();
+
 
     const handleCreatePromotion = () => {
         showToast('success', "Draft promotion 'Dead Stock Clearance' has been saved.");
@@ -111,10 +114,20 @@ function AiInsightsContent() {
 
     const handleApplyPrice = async (item: PriceRecommendation) => {
         try {
-            const { error } = await supabase.from('products').update({ price: item.suggestedPrice }).eq('id', item.productId);
+            // Round to whole number
+            const roundedPrice = Math.round(item.suggestedPrice);
+
+            // Update in database
+            const { error } = await supabase.from('products').update({ price: roundedPrice }).eq('id', item.productId);
             if (error) throw error;
 
-            showToast('success', `Price for ${item.productName} updated to GHS ${item.suggestedPrice.toFixed(2)}`);
+            // Update through inventory context to sync state
+            const { data: updatedProduct } = await supabase.from('products').select('*').eq('id', item.productId).single();
+            if (updatedProduct) {
+                await updateProduct(updatedProduct);
+            }
+
+            showToast('success', `Price for ${item.productName} updated to GHS ${roundedPrice}`);
             // Update local state to reflect change
             setPricing(prev => prev.filter(p => p.productId !== item.productId));
         } catch (e) {
@@ -136,7 +149,7 @@ function AiInsightsContent() {
             // 1. Parallel Data Fetching
             const [productsRes, salesRes, customersRes] = await Promise.all([
                 supabase.from('products').select('*').eq('store_id', activeStore.id),
-                supabase.from('sales').select('*, sale_items(product_name, quantity, total)').eq('store_id', activeStore.id).order('created_at', { ascending: false }),
+                supabase.from('sales').select('*, sale_items(product_name, quantity, price_at_sale)').eq('store_id', activeStore.id).order('created_at', { ascending: false }),
                 supabase.from('customers').select('*').eq('store_id', activeStore.id)
             ]);
 
@@ -303,7 +316,7 @@ function AiInsightsContent() {
                         productId: p.id,
                         productName: p.name,
                         currentPrice: p.price,
-                        suggestedPrice: p.price * 1.05,
+                        suggestedPrice: Math.round(p.price * 1.05),
                         reason: 'High demand detected. 5% increase recommended.',
                         type: 'increase'
                     });
@@ -312,7 +325,7 @@ function AiInsightsContent() {
                         productId: p.id,
                         productName: p.name,
                         currentPrice: p.price,
-                        suggestedPrice: p.price * 0.90,
+                        suggestedPrice: Math.round(p.price * 0.90),
                         reason: 'Low sales velocity. 10% discount recommended to clear stock.',
                         type: 'decrease'
                     });
@@ -465,19 +478,26 @@ function AiInsightsContent() {
                         <p className="text-xs text-slate-500 mt-1">Dynamic price suggestions</p>
                     </div>
                 </button>
+
+                <button
+                    onClick={() => setActiveFeature('overview')}
+                    className={`group relative flex flex-col items-start gap-4 p-5 rounded-2xl border transition-all text-left ${activeFeature === 'overview' ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}
+                >
+                    <div className={`p-3 rounded-xl ${activeFeature === 'overview' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 group-hover:bg-indigo-50 group-hover:text-indigo-600'}`}>
+                        <Sparkles className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-slate-900">Store Potentials</h3>
+                        <p className="text-xs text-slate-500 mt-1">End-of-day summary & tips</p>
+                    </div>
+                </button>
             </div>
 
             {/* Content Area - Changes based on selection */}
             <div className="min-h-[400px] animate-in fade-in zoom-in-95 duration-300">
                 {activeFeature === 'overview' && (
                     <div className="space-y-6">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500">
-                            <div className="mx-auto h-20 w-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
-                                <Sparkles className="h-10 w-10 text-indigo-500" />
-                            </div>
-                            <h3 className="text-xl font-bold text-slate-900">Unlock your Store's Potential</h3>
-                            <p className="mt-2 max-w-lg mx-auto">Select a module from the cards above to see AI-powered insights, predictions, and optimization opportunities.</p>
-                        </div>
+
                         {dailySummary && (
                             <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-6 flex items-start gap-4">
                                 <Sparkles className="h-6 w-6 text-indigo-600 mt-1 flex-shrink-0" />
@@ -529,13 +549,7 @@ function AiInsightsContent() {
                                 )}
                             </div>
 
-                            <div className="mt-6">
-                                <button
-                                    onClick={handleCreatePromotion}
-                                    className="w-full py-2.5 rounded-xl bg-indigo-50 text-indigo-700 font-medium text-sm hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2">
-                                    Create Clearance Promotion <ArrowUpRight className="h-4 w-4" />
-                                </button>
-                            </div>
+
                         </div>
 
                         {/* Predictive Restocking */}
@@ -576,13 +590,7 @@ function AiInsightsContent() {
                                 )}
                             </div>
 
-                            <div className="mt-6">
-                                <button
-                                    onClick={handleGeneratePO}
-                                    className="w-full py-2.5 rounded-xl bg-indigo-50 text-indigo-700 font-medium text-sm hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2">
-                                    Generate Purchase Orders <ChevronRight className="h-4 w-4" />
-                                </button>
-                            </div>
+
                         </div>
 
                         {/* Return Rate Analysis (New) */}

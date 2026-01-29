@@ -362,15 +362,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     otp_expiry: expiry.toISOString()
                 }).eq('id', employee.id);
 
-                // Send OTP
-                // Need store context for SMS config? We can fetch it based on user's store
+                // Send OTP via Server API (Bypassing RLS)
                 const { data: empStore } = await supabase.from('employee_access').select('store_id').eq('employee_id', employee.id).limit(1).maybeSingle();
                 const storeId = empStore?.store_id || employee.store_id;
+
                 if (storeId) {
-                    // Try to load SMS config for this store, so we send using correct credentials
-                    const config = await loadSMSConfigFromDB(storeId);
-                    // Use the loaded config if available, or fall back to 'direct' which uses global
-                    await sendDirectMessage(employee.phone, `Your OTP is ${code}. Valid for 5 minutes.`, ['sms'], storeId);
+                    try {
+                        await fetch('/api/auth/send-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                phone: employee.phone,
+                                message: `Your OTP is ${code}. Valid for 5 minutes.`,
+                                storeId: storeId
+                            })
+                        });
+                    } catch (err) {
+                        console.error("Failed to send OTP via API", err);
+                    }
                 }
 
                 return { success: true, status: 'OTP_REQUIRED', tempUser: userObj };
@@ -396,7 +405,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return false;
         }
 
-        console.log('[OTP] Found user:', employees.username, '| Stored code:', employees.otp_code, '| Entered:', code);
+        // console.log('[OTP] Verifying code for:', employees.username);
 
         // 2. Validate Code & Expiry
         if (employees.otp_code === code) {
@@ -446,11 +455,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             otp_expiry: expiry.toISOString()
         }).eq('id', employee.id);
 
-        console.log('[OTP Resend] New code sent to', employee.phone, ':', code);
+        console.log('[OTP Resend] Requesting new code for', employee.phone);
+
         if (employee.store_id) {
-            await loadSMSConfigFromDB(employee.store_id);
+            try {
+                await fetch('/api/auth/send-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone: employee.phone,
+                        message: `Your new OTP is ${code}. Valid for 5 minutes.`,
+                        storeId: employee.store_id
+                    })
+                });
+            } catch (err) {
+                console.error("Failed to resend OTP via API", err);
+            }
         }
-        await sendDirectMessage(employee.phone, `Your new OTP is ${code}. Valid for 5 minutes.`, ['sms'], employee.store_id);
         return true;
     };
 

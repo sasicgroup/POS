@@ -16,8 +16,13 @@ interface Sale {
     payment_method: string;
     status: string;
     created_at: string;
-    customers?: { name: string } | null;
-    employees?: { name: string } | null; // Added
+    employees?: { name: string } | null;
+    receipt_number?: string;
+    points_earned?: number;
+    points_redeemed?: number;
+    loyalty_discount_amount?: number;
+    tax_amount?: number;
+    total_discount?: number;
 }
 
 export default function SalesHistoryPage() {
@@ -627,6 +632,155 @@ export default function SalesHistoryPage() {
                     </div>
                 </div>
             )}
+
+            {/* Hidden Printable Receipt */}
+            <div id="printable-receipt" className="hidden">
+                {selectedSale && (
+                    <div className="p-4 w-[80mm] mx-auto font-mono text-xs text-black bg-white">
+                        <div className="text-center mb-4">
+                            <h2 className="text-base font-bold uppercase mb-1">{activeStore?.name || 'Store Name'}</h2>
+                            <p className="text-gray-600 mb-0.5">{activeStore?.location}</p>
+                            <p className="text-gray-600">{activeStore?.phone}</p>
+                            {activeStore?.email && <p className="text-gray-600">{activeStore.email}</p>}
+                        </div>
+
+                        <div className="border-b border-dashed border-gray-400 pb-2 mb-2 space-y-0.5">
+                            <div className="flex justify-between">
+                                <span>Date:</span>
+                                <span>{new Date(selectedSale.created_at).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between font-bold">
+                                <span>Receipt #:</span>
+                                <span>{selectedSale.receipt_number || selectedSale.id.slice(0, 8).toUpperCase()}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-gray-500">
+                                <span>Ref ID:</span>
+                                <span>{selectedSale.id}</span>
+                            </div>
+                            <div className="flex justify-between mt-1">
+                                <span>Served By:</span>
+                                <span>{selectedSale.employees?.name || 'Staff'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>Customer:</span>
+                                <span>{selectedSale.customers?.name || 'Guest'}</span>
+                            </div>
+                        </div>
+
+                        <table className="w-full mb-3">
+                            <thead>
+                                <tr className="border-b border-black">
+                                    <th className="text-left py-1 font-bold">Item</th>
+                                    <th className="text-center py-1 font-bold">Qty</th>
+                                    <th className="text-right py-1 font-bold">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {saleItems.map((item, i) => (
+                                    <tr key={i}>
+                                        <td className="py-1 pr-1 w-[50%]">
+                                            <div className="break-words line-clamp-2">{item.products?.name || 'Item'}</div>
+                                        </td>
+                                        <td className="text-center py-1 align-top w-[20%]">{item.quantity}</td>
+                                        <td className="text-right py-1 align-top w-[30%]">{(item.price_at_sale * item.quantity).toFixed(2)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        <div className="border-t border-black pt-2 mb-4 space-y-1">
+                            {/* Subtotal - Calculate Sum of Items */}
+                            <div className="flex justify-between text-xs">
+                                <span>Subtotal</span>
+                                <span>GHS {saleItems.reduce((sum, item) => sum + (item.price_at_sale * item.quantity), 0).toFixed(2)}</span>
+                            </div>
+
+                            {/* Direct Discount */}
+                            {(selectedSale.total_discount || 0) > 0 && (
+                                <div className="flex justify-between text-xs text-gray-600">
+                                    <span>Discount</span>
+                                    <span>-GHS {selectedSale.total_discount?.toFixed(2)}</span>
+                                </div>
+                            )}
+
+                            {/* Tax */}
+                            {(selectedSale.tax_amount || 0) > 0 && (
+                                <div className="flex justify-between text-xs">
+                                    <span>Tax</span>
+                                    <span>GHS {selectedSale.tax_amount?.toFixed(2)}</span>
+                                </div>
+                            )}
+
+                            {/* Loyalty Redemption */}
+                            {(selectedSale.points_redeemed || 0) > 0 && (
+                                <div className="flex justify-between text-xs font-medium">
+                                    <span>Loyalty Redemption</span>
+                                    <span>-GHS {selectedSale.loyalty_discount_amount?.toFixed(2)}</span>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between font-bold text-sm border-t border-dashed border-gray-400 pt-1 mt-1">
+                                <span>TOTAL</span>
+                                <span>GHS {selectedSale.total_amount.toFixed(2)}</span>
+                            </div>
+
+                            <div className="flex justify-between text-xs mt-1">
+                                <span>Payment</span>
+                                <span className="uppercase">{selectedSale.payment_method}</span>
+                            </div>
+                        </div>
+
+                        {/* Loyalty Summary Section */}
+                        {(selectedSale.points_earned > 0 || (selectedSale.points_redeemed || 0) > 0) && (
+                            <div className="border-t border-dashed border-gray-400 pt-2 mb-4 text-xs">
+                                <div className="font-bold mb-1 uppercase">Loyalty Summary</div>
+                                {selectedSale.points_redeemed > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>Points Used:</span>
+                                        <span>{selectedSale.points_redeemed}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between">
+                                    <span>Points Earned:</span>
+                                    <span>+{selectedSale.points_earned || 0}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="text-center border-t border-dashed border-gray-400 pt-3">
+                            <p className="font-bold mb-1">Thank You!</p>
+                            <p className="text-[10px] text-gray-500 mb-2">Please keep this receipt for any returns.</p>
+
+                            {/* Footer Links */}
+                            <div className="flex flex-col gap-0.5 text-[10px] text-gray-400">
+                                <span>{activeStore?.website || 'www.sasicelectrical.com'}</span>
+                                <span>{activeStore?.socialHandle || '@sasic_home'}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <style jsx global>{`
+                @media print {
+                    @page { size: auto; margin: 0; }
+                    body { visibility: hidden; }
+                    #printable-receipt { 
+                        visibility: visible; 
+                        display: block !important; 
+                        position: absolute; 
+                        left: 0; 
+                        top: 0; 
+                        width: 100%; 
+                        min-height: 100vh;
+                        padding-top: 20px;
+                        background: white;
+                        color: black;
+                        z-index: 99999;
+                    }
+                    #printable-receipt * { visibility: visible; }
+                }
+            `}</style>
         </div>
     );
 }

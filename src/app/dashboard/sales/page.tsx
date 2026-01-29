@@ -4,10 +4,11 @@ import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { loadSMSConfigFromDB, sendNotification } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function SalesPage() {
     const { activeStore, user, updateStoreSettings } = useAuth();
@@ -46,6 +47,10 @@ export default function SalesPage() {
     const [existingCustomer, setExistingCustomer] = useState<any>(null);
     const [isLoadingCustomer, setIsLoadingCustomer] = useState(false);
 
+    // Confirm Dialog State
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [confirmDialogData, setConfirmDialogData] = useState<any>(null);
+
     // Fetch Customer on Phone Change
     useEffect(() => {
         const fetchCustomer = async () => {
@@ -58,12 +63,13 @@ export default function SalesPage() {
             }
 
             setIsLoadingCustomer(true);
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('customers')
                 .select('*')
                 .eq('store_id', activeStore.id)
                 .eq('phone', customerPhone)
                 .single();
+
 
             if (data) {
                 setExistingCustomer(data);
@@ -96,6 +102,7 @@ export default function SalesPage() {
 
     const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
     const [tempRegisterId, setTempRegisterId] = useState('');
+    const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
     useEffect(() => {
         const storedRegister = localStorage.getItem('sms_register_id');
@@ -104,13 +111,16 @@ export default function SalesPage() {
         // Fetch Loyalty Config
         const loadLoyalty = async () => {
             if (!activeStore?.id) return;
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('loyalty_programs')
                 .select('*')
                 .eq('store_id', activeStore.id)
                 .single();
 
-            if (data) setLoyaltyConfig(data);
+
+            if (data) {
+                setLoyaltyConfig(data);
+            }
         };
         loadLoyalty();
     }, [activeStore]);
@@ -165,9 +175,14 @@ export default function SalesPage() {
 
     const handleResumeOrder = async (order: any) => {
         if (cart.length > 0) {
-            if (!window.confirm("Current cart will be replaced. Continue?")) return;
+            setConfirmDialogData(order);
+            setShowConfirmDialog(true);
+            return;
         }
+        resumeOrderConfirmed(order);
+    };
 
+    const resumeOrderConfirmed = async (order: any) => {
         setCart(order.items);
         if (order.customer_info?.name) setCustomerName(order.customer_info.name);
         if (order.customer_info?.phone) setCustomerPhone(order.customer_info.phone);
@@ -175,7 +190,6 @@ export default function SalesPage() {
         // Delete from parked
         await supabase.from('parked_orders').delete().eq('id', order.id);
         fetchParkedOrders();
-        setIsParkedModalOpen(false);
         showToast('info', 'Order resumed');
     };
 
@@ -358,6 +372,13 @@ export default function SalesPage() {
 
     const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
+    const totalDiscount = cart.reduce((sum, item) => {
+        const originalProduct = products.find(p => p.id === item.id);
+        const originalPrice = originalProduct?.price || item.price;
+        const diff = originalPrice - item.price;
+        return sum + (diff > 0 ? diff * item.quantity : 0);
+    }, 0);
+
     // Dynamic Tax Calculation
     const taxSettings = activeStore.taxSettings || { enabled: true, type: 'percentage', value: 8 };
     const taxAmount = taxSettings.enabled
@@ -367,7 +388,7 @@ export default function SalesPage() {
         : 0;
 
     // Loyalty Redemption Calculation
-    const minRedeemPoints = loyaltyConfig?.min_points_to_redeem || 100;
+    const minRedeemPoints = loyaltyConfig?.min_points_to_redeem || 1; // Default to 1 to allow redemption
     const loyaltyRedeemValue = (redeemPoints ? pointsToRedeem : 0) * (loyaltyConfig?.redemption_rate || 0.05);
 
     const grandTotal = Math.max(0, cartTotal + taxAmount - loyaltyRedeemValue);
@@ -377,12 +398,8 @@ export default function SalesPage() {
         if (!receiptWindow) return;
 
         // Calculate totals for receipt
-        const totalDiscount = cart.reduce((sum, item) => {
-            const originalProduct = products.find(p => p.id === item.id);
-            const originalPrice = originalProduct?.price || item.price;
-            const diff = originalPrice - item.price;
-            return sum + (diff > 0 ? diff * item.quantity : 0);
-        }, 0);
+        // Calculate totals for receipt
+
 
         const pointsEarned = loyaltyConfig?.enabled
             ? Math.floor(cartTotal * (loyaltyConfig.points_per_currency || 0.01)) // Use cartTotal (before tax) for points
@@ -520,7 +537,7 @@ export default function SalesPage() {
             const prefix = activeStore.receiptPrefix || 'TRX';
             const suffix = activeStore.receiptSuffix || '';
             const paddedNumber = transactionNumber.toString().padStart(5, '0');
-            const trxId = `${prefix}-${paddedNumber}${suffix}`;
+            const trxId = `${prefix}${paddedNumber}${suffix}`;
 
             // Process Inventory Sync & DB Save
 
@@ -535,7 +552,11 @@ export default function SalesPage() {
                 customer: (customerName || customerPhone) ? {
                     name: customerName,
                     phone: customerPhone
-                } : undefined
+                } : undefined,
+                pointsRedeemed: redeemPoints ? pointsToRedeem : 0,
+                loyaltyDiscount: redeemPoints ? loyaltyRedeemValue : 0,
+                taxAmount: taxSettings.enabled ? taxAmount : 0,
+                totalDiscount: totalDiscount || 0
             });
 
             if (!saleId) {
@@ -588,18 +609,14 @@ export default function SalesPage() {
                     // If redeeming, we subtract 100, then add earned. 
                     // Note: grandTotal already has the discount applied if redeemPoints was true, 
                     // so we don't need to adjust pointsEarned, just the starting balance.
-                    // If redeeming, we subtract the redemption amount
-                    // Note: grandTotal already has the discount applied if redeemPoints was true
+                    // Calculate final points for UI update (DB update moved to processSale)
                     const finalPoints = redeemPoints
                         ? (currentDbPoints - pointsToRedeem) + pointsEarned
                         : currentDbPoints + pointsEarned;
 
-                    await supabase.from('customers').update({
-                        points: finalPoints,
-                        total_spent: (freshCust.total_spent || 0) + grandTotal,
-                        total_visits: (freshCust.total_visits || 0) + 1,
-                        last_visit: new Date().toISOString()
-                    }).eq('id', freshCust.id);
+                    // We rely on processSale to update the customer points in DB
+                    // Just update local state here
+
 
                     // Update Local State for UI
                     setLoyaltyPoints(finalPoints);
@@ -631,6 +648,8 @@ export default function SalesPage() {
                         ownerPhone: user?.phone, // Send to current user's phone as owner notification
                         items: cart.length,
                         pointsEarned: pointsEarned,
+                        pointsUsed: redeemPoints ? pointsToRedeem : 0,
+                        pointsBalance: finalPoints,
                         totalPoints: finalPoints,
                         staffName: user?.name,
                         storeId: activeStore.id
@@ -1105,7 +1124,7 @@ export default function SalesPage() {
                                         </div>
                                         <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{loyaltyPoints} Points</span>
                                     </div>
-                                    {loyaltyPoints >= (loyaltyConfig?.min_points_to_redeem || 100) && (
+                                    {loyaltyPoints >= (loyaltyConfig?.min_points_to_redeem || 1) && (
                                         <div className="mt-2 space-y-2">
                                             <label className="flex items-center gap-2 cursor-pointer">
                                                 <input
@@ -1115,7 +1134,7 @@ export default function SalesPage() {
                                                         const isChecked = e.target.checked;
                                                         setRedeemPoints(isChecked);
                                                         if (isChecked) {
-                                                            setPointsToRedeem(loyaltyConfig?.min_points_to_redeem || 100);
+                                                            setPointsToRedeem(Math.min(loyaltyPoints, loyaltyConfig?.min_points_to_redeem || 1));
                                                         }
                                                     }}
                                                     className="h-3 w-3 rounded text-indigo-600 focus:ring-indigo-500"
@@ -1126,29 +1145,50 @@ export default function SalesPage() {
                                             </label>
 
                                             {redeemPoints && (
-                                                <div className="flex items-center justify-between p-2 bg-indigo-50/50 rounded-lg border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-800">
-                                                    <div className="flex items-center gap-3">
-                                                        <button
-                                                            onClick={() => setPointsToRedeem(Math.max(loyaltyConfig?.min_points_to_redeem || 100, pointsToRedeem - 100))}
-                                                            disabled={pointsToRedeem <= (loyaltyConfig?.min_points_to_redeem || 100)}
-                                                            className="h-6 w-6 flex items-center justify-center rounded bg-white shadow text-indigo-600 disabled:opacity-50 dark:bg-slate-800"
-                                                        >
-                                                            <Minus className="h-3 w-3" />
-                                                        </button>
-                                                        <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400 w-12 text-center">
-                                                            {pointsToRedeem}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between p-2 bg-indigo-50/50 rounded-lg border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-800">
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => setPointsToRedeem(Math.max(loyaltyConfig?.min_points_to_redeem || 50, pointsToRedeem - 50))}
+                                                                disabled={pointsToRedeem <= (loyaltyConfig?.min_points_to_redeem || 50)}
+                                                                className="h-7 w-7 flex items-center justify-center rounded bg-white shadow text-indigo-600 disabled:opacity-50 dark:bg-slate-800 hover:bg-indigo-50"
+                                                            >
+                                                                <Minus className="h-3 w-3" />
+                                                            </button>
+                                                            <input
+                                                                type="number"
+                                                                value={pointsToRedeem}
+                                                                onChange={(e) => {
+                                                                    const val = parseInt(e.target.value) || 0;
+                                                                    const minPoints = loyaltyConfig?.min_points_to_redeem || 50;
+                                                                    setPointsToRedeem(Math.max(minPoints, Math.min(loyaltyPoints, val)));
+                                                                }}
+                                                                className="w-16 text-center text-sm font-bold text-indigo-700 dark:text-indigo-400 bg-transparent border-0 focus:outline-none focus:ring-0"
+                                                                min={loyaltyConfig?.min_points_to_redeem || 50}
+                                                                max={loyaltyPoints}
+                                                            />
+                                                            <button
+                                                                onClick={() => setPointsToRedeem(Math.min(loyaltyPoints, pointsToRedeem + 50))}
+                                                                disabled={pointsToRedeem + 50 > loyaltyPoints}
+                                                                className="h-7 w-7 flex items-center justify-center rounded bg-white shadow text-indigo-600 disabled:opacity-50 dark:bg-slate-800 hover:bg-indigo-50"
+                                                            >
+                                                                <Plus className="h-3 w-3" />
+                                                            </button>
+                                                        </div>
+                                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                                            -GHS {((pointsToRedeem) * (loyaltyConfig?.redemption_rate || 0.05)).toFixed(2)}
                                                         </span>
-                                                        <button
-                                                            onClick={() => setPointsToRedeem(Math.min(loyaltyPoints, pointsToRedeem + 100))}
-                                                            disabled={pointsToRedeem + 100 > loyaltyPoints}
-                                                            className="h-6 w-6 flex items-center justify-center rounded bg-white shadow text-indigo-600 disabled:opacity-50 dark:bg-slate-800"
-                                                        >
-                                                            <Plus className="h-3 w-3" />
-                                                        </button>
                                                     </div>
-                                                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                                        -GHS {((pointsToRedeem) * (loyaltyConfig?.redemption_rate || 0.05)).toFixed(2)}
-                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            // Use max points rounded down to nearest 50
+                                                            const maxUsable = Math.floor(loyaltyPoints / 50) * 50;
+                                                            setPointsToRedeem(Math.max(loyaltyConfig?.min_points_to_redeem || 50, maxUsable));
+                                                        }}
+                                                        className="w-full py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                                                    >
+                                                        Use Max ({Math.floor(loyaltyPoints / 50) * 50} pts)
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
@@ -1198,13 +1238,22 @@ export default function SalesPage() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mb-4">
-                            <button
-                                onClick={handleParkOrder}
-                                disabled={cart.length === 0 || isProcessing}
-                                className="col-span-2 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400 dark:hover:text-slate-200"
-                            >
-                                <PauseCircle className="h-4 w-4" /> Hold / Park Order
-                            </button>
+                            <div className="col-span-2 flex gap-2">
+                                <button
+                                    onClick={handleParkOrder}
+                                    disabled={cart.length === 0 || isProcessing}
+                                    className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400 dark:hover:text-slate-200"
+                                >
+                                    <PauseCircle className="h-4 w-4" /> Hold / Park Order
+                                </button>
+                                <button
+                                    onClick={() => setIsCalculatorOpen(!isCalculatorOpen)}
+                                    className={`flex items-center justify-center gap-2 rounded-lg border px-3 p-2 text-sm font-medium transition-all ${isCalculatorOpen ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-dashed border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400'}`}
+                                    title="Open Calculator"
+                                >
+                                    <Calculator className="h-4 w-4" />
+                                </button>
+                            </div>
                             <button
                                 onClick={() => setPaymentMethod('cash')}
                                 className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'cash' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
@@ -1298,48 +1347,46 @@ export default function SalesPage() {
                 </div>
             </div>
             {/* Price Edit Modal */}
-            {
-                priceEditItem && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
-                        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Edit Price</h3>
-                            <p className="text-sm text-slate-500 mb-4">Set new price for <span className="font-semibold">{priceEditItem.name}</span></p>
+            {priceEditItem && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200 p-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Edit Price</h3>
+                        <p className="text-sm text-slate-500 mb-4">Set new price for <span className="font-semibold">{priceEditItem.name}</span></p>
 
-                            <div className="relative mb-6">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">GHS</span>
-                                <input
-                                    type="number"
-                                    autoFocus
-                                    className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-12 pr-4 text-lg font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                    value={priceEditValue}
-                                    onChange={(e) => setPriceEditValue(e.target.value)}
-                                />
-                            </div>
+                        <div className="relative mb-6">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">GHS</span>
+                            <input
+                                type="number"
+                                autoFocus
+                                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 pl-12 pr-4 text-lg font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                value={priceEditValue}
+                                onChange={(e) => setPriceEditValue(e.target.value)}
+                            />
+                        </div>
 
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setPriceEditItem(null)}
-                                    className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        const val = parseFloat(priceEditValue);
-                                        if (!isNaN(val) && val >= 0) {
-                                            updateItemPrice(priceEditItem.id, val);
-                                            setPriceEditItem(null);
-                                        }
-                                    }}
-                                    className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
-                                >
-                                    Update
-                                </button>
-                            </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setPriceEditItem(null)}
+                                className="flex-1 rounded-xl bg-slate-100 py-3 font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const val = parseFloat(priceEditValue);
+                                    if (!isNaN(val) && val >= 0) {
+                                        updateItemPrice(priceEditItem.id, val);
+                                        setPriceEditItem(null);
+                                    }
+                                }}
+                                className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white hover:bg-indigo-700"
+                            >
+                                Update
+                            </button>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
             {/* Image Preview Modal */}
             {activeImageUrl && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setActiveImageUrl(null)}>
@@ -1395,6 +1442,143 @@ export default function SalesPage() {
                     </div>
                 </div>
             )}
-        </div >
+
+            {/* Confirm Dialog */}
+            <ConfirmDialog
+                isOpen={showConfirmDialog}
+                onClose={() => setShowConfirmDialog(false)}
+                onConfirm={() => resumeOrderConfirmed(confirmDialogData)}
+                title="Replace Current Cart?"
+                message="Current cart will be replaced. Continue?"
+                confirmText="OK"
+                cancelText="Cancel"
+                type="warning"
+            />
+            {/* Floating Calculator */}
+            {isCalculatorOpen && (
+                <PosCalculator onClose={() => setIsCalculatorOpen(false)} />
+            )}
+        </div>
+    );
+}
+
+// --- Calculator Component ---
+function PosCalculator({ onClose }: { onClose: () => void }) {
+    const [display, setDisplay] = useState('0');
+    const [history, setHistory] = useState('');
+    const [waitingForOperand, setWaitingForOperand] = useState(false);
+    const [operand, setOperand] = useState<number | null>(null);
+    const [operator, setOperator] = useState<string | null>(null);
+
+    const inputDigit = (digit: string) => {
+        if (waitingForOperand) {
+            setDisplay(String(digit));
+            setWaitingForOperand(false);
+        } else {
+            setDisplay(display === '0' ? String(digit) : display + digit);
+        }
+    };
+
+    const inputDot = () => {
+        if (waitingForOperand) {
+            setDisplay('0.');
+            setWaitingForOperand(false);
+            return;
+        }
+        if (!display.includes('.')) {
+            setDisplay(display + '.');
+        }
+    };
+
+    const clear = () => {
+        setDisplay('0');
+        setHistory('');
+        setOperand(null);
+        setOperator(null);
+        setWaitingForOperand(false);
+    };
+
+    const performOperation = (nextOperator: string) => {
+        const inputValue = parseFloat(display);
+
+        if (operand === null) {
+            setOperand(inputValue);
+        } else if (operator) {
+            const currentValue = operand || 0;
+            const newValue = calculate(currentValue, inputValue, operator);
+            setOperand(newValue);
+            setDisplay(String(newValue));
+        }
+
+        setWaitingForOperand(true);
+        setOperator(nextOperator);
+        setHistory(operand === null ? `${inputValue} ${nextOperator}` : `${history} ${inputValue} ${nextOperator}`);
+        if (nextOperator === '=') {
+            setHistory('');
+            setOperand(null);
+            setOperator(null);
+        }
+    };
+
+    const calculate = (left: number, right: number, op: string) => {
+        switch (op) {
+            case '+': return left + right;
+            case '-': return left - right;
+            case '*': return left * right;
+            case '/': return left / right;
+            default: return right;
+        }
+    }
+
+    const quickCash = (amount: number) => {
+        setDisplay(String(amount));
+        setWaitingForOperand(true);
+        // Actually usually simple quick cash sets the display to that amount to start calc
+        // But maybe they want to calculate Change? 
+        // Let's just set the display.
+    };
+
+    return (
+        <div className="fixed bottom-20 right-4 z-[100] w-80 bg-slate-900 rounded-3xl shadow-2xl border border-slate-700 overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300 ring-4 ring-black/20">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 bg-slate-800 border-b border-slate-700 cursor-move">
+                <span className="text-white font-bold flex items-center gap-2"><Calculator className="h-4 w-4 text-emerald-400" /> Cash Calc</span>
+                <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors bg-slate-700/50 hover:bg-slate-700 p-1.5 rounded-full"><X className="h-4 w-4" /></button>
+            </div>
+
+            {/* Display */}
+            <div className="p-6 bg-slate-950 text-right">
+                <div className="text-slate-500 text-xs font-mono h-4 mb-1">{history || '\u00A0'}</div>
+                <div className="text-4xl font-mono text-emerald-400 font-medium tracking-tight truncate">{display}</div>
+            </div>
+
+            {/* Quick Cash Buttons */}
+            <div className="grid grid-cols-4 gap-2 p-4 pb-0">
+                {[10, 20, 50, 100].map((amt) => (
+                    <button key={amt} onClick={() => quickCash(amt)} className="bg-emerald-900/30 text-emerald-400 text-xs font-bold py-2 rounded-lg hover:bg-emerald-900/50 transition-colors border border-emerald-900/50">
+                        {amt}
+                    </button>
+                ))}
+            </div>
+
+            {/* Keypad */}
+            <div className="grid grid-cols-4 gap-3 p-4">
+                <button onClick={clear} className="col-span-2 bg-slate-700 text-slate-200 font-bold py-3 rounded-xl hover:bg-slate-600 transition-colors">AC</button>
+                <button onClick={() => performOperation('/')} className="bg-slate-800 text-indigo-400 text-xl font-bold rounded-xl hover:bg-slate-700">÷</button>
+                <button onClick={() => performOperation('*')} className="bg-slate-800 text-indigo-400 text-xl font-bold rounded-xl hover:bg-slate-700">×</button>
+
+                {[7, 8, 9].map(n => <button key={n} onClick={() => inputDigit(String(n))} className="bg-slate-800 text-white text-xl font-bold py-3 rounded-xl hover:bg-slate-700 shadow-sm border-b-2 border-slate-950 active:border-b-0 active:translate-y-0.5 transition-all">{n}</button>)}
+                <button onClick={() => performOperation('-')} className="bg-slate-800 text-indigo-400 text-xl font-bold rounded-xl hover:bg-slate-700">−</button>
+
+                {[4, 5, 6].map(n => <button key={n} onClick={() => inputDigit(String(n))} className="bg-slate-800 text-white text-xl font-bold py-3 rounded-xl hover:bg-slate-700 shadow-sm border-b-2 border-slate-950 active:border-b-0 active:translate-y-0.5 transition-all">{n}</button>)}
+                <button onClick={() => performOperation('+')} className="bg-slate-800 text-indigo-400 text-xl font-bold rounded-xl hover:bg-slate-700">+</button>
+
+                {[1, 2, 3].map(n => <button key={n} onClick={() => inputDigit(String(n))} className="bg-slate-800 text-white text-xl font-bold py-3 rounded-xl hover:bg-slate-700 shadow-sm border-b-2 border-slate-950 active:border-b-0 active:translate-y-0.5 transition-all">{n}</button>)}
+                <button onClick={() => performOperation('=')} className="row-span-2 bg-indigo-600 text-white text-2xl font-bold rounded-xl hover:bg-indigo-500 shadow-lg shadow-indigo-900/50 border-b-4 border-indigo-800 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center">=</button>
+
+                <button onClick={() => inputDigit('0')} className="col-span-2 bg-slate-800 text-white text-xl font-bold py-3 rounded-xl hover:bg-slate-700 shadow-sm border-b-2 border-slate-950 active:border-b-0 active:translate-y-0.5 transition-all">0</button>
+                <button onClick={inputDot} className="bg-slate-800 text-white text-xl font-bold rounded-xl hover:bg-slate-700">.</button>
+            </div>
+        </div>
     );
 }
