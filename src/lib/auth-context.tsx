@@ -367,7 +367,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Send OTP via Server API (Bypassing RLS)
                 const { data: empStore } = await supabase.from('employee_access').select('store_id').eq('employee_id', employee.id).limit(1).maybeSingle();
-                const storeId = empStore?.store_id || employee.store_id;
+                const storeId = employee.store_id || empStore?.store_id;
 
                 if (storeId) {
                     try {
