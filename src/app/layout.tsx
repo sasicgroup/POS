@@ -6,6 +6,9 @@ import { PWARegister } from '@/components/PWARegister'
 export const metadata: Metadata = {
     title: 'Store Management System',
     description: 'Premium Store Management Solution',
+    icons: {
+        icon: '/icon.svg',
+    },
     manifest: "/manifest.json",
     appleWebApp: {
         capable: true,
