@@ -9,6 +9,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { playBeep as playBeepSound, playSuccess as playSuccessSound, playError as playErrorSound } from '@/lib/audio-utils';
 
 export default function SalesPage() {
     const { activeStore, user, updateStoreSettings } = useAuth();
@@ -288,23 +289,13 @@ export default function SalesPage() {
     // Early return AFTER all hooks
     if (!activeStore) return null;
 
-    // Audio Refs
-    const beepAudio: HTMLAudioElement | null = null; // Audio disabled due to source 403
-    const errorAudio: HTMLAudioElement | null = null;
-    const successAudio: HTMLAudioElement | null = null;
-
+    // Audio Logic replaced with Web Audio API Utility
     const playBeep = () => {
-        // if (beepAudio) {
-        //     beepAudio.currentTime = 0;
-        //     beepAudio.play().catch((e: any) => console.error("Audio play failed", e));
-        // }
+        playBeepSound();
     };
 
     const playSuccess = () => {
-        // if (successAudio) {
-        //     successAudio.currentTime = 0;
-        //     successAudio.play().catch((e: any) => console.error("Audio play failed", e));
-        // }
+        playSuccessSound();
     }
 
 
@@ -322,10 +313,7 @@ export default function SalesPage() {
     };
 
     const playError = () => {
-        // if (errorAudio) {
-        //     errorAudio.currentTime = 0;
-        //     errorAudio.play().catch((e: any) => console.error("Audio play failed", e));
-        // }
+        playErrorSound();
     }
 
     const handleScan = (query: string) => {
