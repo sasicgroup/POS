@@ -35,6 +35,7 @@ export interface Store {
     deletion_otc_expiry?: string;
     businessTypes?: string[];
     categories?: string[];
+    sort_order?: number;
 }
 
 
@@ -102,6 +103,7 @@ interface AuthContextType {
     deleteStore: (storeId: any) => Promise<void>;
     globalSettings: GlobalSettings;
     updateGlobalSettings: (settings: Partial<GlobalSettings>) => Promise<void>;
+    updateStoreOrder: (updates: { id: any; sort_order: number }[]) => Promise<void>;
 }
 
 export interface GlobalSettings {
@@ -165,11 +167,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Fetch Stores
                 if (accessIds.length > 0) {
-                    const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('created_at', { ascending: true });
+                    const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
                     if (userStores) validStores = userStores;
                 } else {
                     if (currentUser.id === 'owner-1' || currentUser.role === 'owner') {
-                        const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('created_at', { ascending: true });
+                        const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
                         if (all) validStores = all;
                     }
                 }
@@ -185,7 +187,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         branding: s.branding,
                         lastTransactionNumber: s.last_transaction_number || 0,
                         businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
-                        categories: s.categories || []
+                        categories: s.categories || [],
+                        sort_order: s.sort_order || 0
                     }));
                     setStores(mappedStores);
 
@@ -236,10 +239,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (accessIds.length > 0) {
-            const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('created_at', { ascending: true });
+            const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
             if (userStores) validStores = userStores;
         } else if (loggedUser.id === 'owner-1' || loggedUser.role === 'owner') {
-            const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('created_at', { ascending: true });
+            const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
             if (all) validStores = all;
         }
 
@@ -252,7 +255,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 phone: s.phone,
                 lastTransactionNumber: s.last_transaction_number || 0,
                 businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
-                categories: s.categories || []
+                categories: s.categories || [],
+                sort_order: s.sort_order || 0
             }));
             setStores(mappedStores);
             setActiveStore(mappedStores[0]);
@@ -781,6 +785,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setGlobalSettings(prev => ({ ...prev, ...settings }));
     };
 
+    const updateStoreOrder = async (updates: { id: any; sort_order: number }[]) => {
+        // Optimistic Update
+        setStores(prev => {
+            const newStores = [...prev];
+            updates.forEach(u => {
+                const idx = newStores.findIndex(s => s.id === u.id);
+                if (idx !== -1) newStores[idx] = { ...newStores[idx], sort_order: u.sort_order };
+            });
+            return newStores.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+        });
+
+        // Batch update in Supabase
+        for (const update of updates) {
+            await supabase.from('stores').update({ sort_order: update.sort_order }).eq('id', update.id);
+        }
+    };
+
     const updateStoreSettings = async (settings: Partial<Store>): Promise<{ success: boolean; error?: any }> => {
         if (activeStore?.id) {
             // Map camelCase to snake_case for DB
@@ -962,7 +983,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             verifyStoreDeletionOTC,
             deleteStore,
             globalSettings,
-            updateGlobalSettings
+            updateGlobalSettings,
+            updateStoreOrder
         }}>
             {children}
         </AuthContext.Provider>

@@ -171,6 +171,46 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             <Suspense fallback={null}>
                 <StoreUrlHandler />
             </Suspense>
+
+            {/* Archived Store Warning Overlay */}
+            {activeStore?.status === 'archived' && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4">
+                    <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-8 border border-white/10 text-center animate-in zoom-in-95 duration-300">
+                        <div className="mx-auto w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-6">
+                            <Archive className="h-8 w-8 text-amber-600 dark:text-amber-500" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Store Archived</h2>
+                        <p className="text-slate-500 dark:text-slate-400 mb-8">
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{activeStore.name}</span> is currently archived and cannot be accessed.
+                            Please restore it from settings or switch to another store.
+                        </p>
+
+                        <div className="flex flex-col gap-3">
+                            {user.role === 'owner' && (
+                                <Link
+                                    href="/dashboard/global-settings"
+                                    className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2"
+                                >
+                                    <Settings className="h-5 w-5" />
+                                    Go to Global Settings
+                                </Link>
+                            )}
+
+                            <button
+                                onClick={() => {
+                                    // Find first non-archived store
+                                    const nextStore = stores.find(s => s.status !== 'archived');
+                                    if (nextStore) switchStore(nextStore.id);
+                                }}
+                                className="w-full py-3 px-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                            >
+                                <Store className="h-5 w-5" />
+                                {stores.filter(s => s.status !== 'archived').length > 0 ? 'Switch to Active Store' : 'No Active Stores'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* ... */}
             {isSidebarOpen && (
                 <div
@@ -276,7 +316,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                     <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Switch Business
                                     </div>
-                                    {stores.map((store) => (
+                                    {stores.filter(s => s.status !== 'archived').map((store) => (
                                         <button
                                             key={store.id}
                                             onClick={() => {
