@@ -298,6 +298,21 @@ export default function SalesPage() {
         playSuccessSound();
     }
 
+    const closeScanner = async () => {
+        if (scannerRef.current) {
+            try {
+                if (scannerRef.current.isScanning) {
+                    await scannerRef.current.stop();
+                }
+                scannerRef.current.clear();
+            } catch (e) {
+                console.error("Error stopping scanner", e);
+            }
+            scannerRef.current = null;
+        }
+        setIsScanning(false);
+    };
+
 
 
     const addToCart = (product: any) => {
@@ -693,7 +708,7 @@ export default function SalesPage() {
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                 <Camera className="h-6 w-6 text-indigo-600" /> Scanner Active
                             </h2>
-                            <button onClick={() => setIsScanning(false)} className="rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <button onClick={closeScanner} className="rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 <X className="h-6 w-6 text-slate-500" />
                             </button>
                         </div>
