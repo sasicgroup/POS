@@ -39,9 +39,20 @@ export async function POST(request: Request) {
         // Or assume the config object might be passed in body? (No, that's insecure)
 
         if (!config) {
-            // Fallback: Check if there's a global config or default
-            // For now, we return error if specific store config is missing
-            return NextResponse.json({ success: false, error: 'SMS Configuration not found for this store' }, { status: 500 });
+            console.log('[API] SMS Config not found for store. Attempting global fallback...');
+            const { data: fallbackData } = await supabase
+                .from('app_settings')
+                .select('sms_config')
+                .not('sms_config', 'is', null)
+                .limit(1)
+                .maybeSingle();
+
+            if (fallbackData?.sms_config) {
+                config = fallbackData.sms_config;
+                console.log('[API] Using fallback SMS config.');
+            } else {
+                return NextResponse.json({ success: false, error: 'SMS Configuration not found for this store or globally.' }, { status: 500 });
+            }
         }
 
         // 2. Send SMS

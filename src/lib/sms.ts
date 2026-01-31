@@ -48,7 +48,7 @@ import { supabase } from '@/lib/supabase';
 
 // Local cache
 let smsConfig: SMSConfig = {
-    provider: 'hubtel',
+    provider: 'mnotify',
     whatsappProvider: 'meta',
     hubtel: { clientId: '', clientSecret: '', senderId: '' },
     mnotify: { apiKey: '', senderId: '' },

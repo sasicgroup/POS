@@ -23,11 +23,13 @@ export default function SalesPage() {
         removeFromCart,
         updateCartQuantity,
         setCartQuantity: contextSetCartQuantity,
-        clearCart
+        clearCart,
+        searchQuery,
+        setSearchQuery
     } = useInventory();
     const { showToast } = useToast();
 
-    const [searchQuery, setSearchQuery] = useState('');
+
     const [isScanning, setIsScanning] = useState(false);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
     const [scannedProduct, setScannedProduct] = useState<any | null>(null);
@@ -331,23 +333,42 @@ export default function SalesPage() {
         playErrorSound();
     }
 
-    const handleScan = (query: string) => {
+    const handleScan = async (query: string) => {
         if (!query) return;
 
-        // Safely find product
-        const product = products.find(p => {
+        // 1. Try Local Search first (fastest)
+        let product = products.find(p => {
             const sku = p.sku ? String(p.sku).toLowerCase().trim() : '';
             const name = p.name ? String(p.name).toLowerCase() : '';
             const q = String(query).toLowerCase().trim();
-
-            // Prioritize SKU exact match, then loose match on name
             return sku === q || (name && name.includes(q)) || (sku && sku.includes(q));
         });
+
+        // 2. If not found locally, fetch from DB (Lazy Load Support)
+        if (!product) {
+            const { data } = await supabase.from('products')
+                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id')
+                .or(`sku.eq.${query},name.ilike.%${query}%`)
+                .eq('store_id', activeStore.id)
+                .limit(1)
+                .single();
+
+            if (data) {
+                product = {
+                    ...data,
+                    costPrice: data.cost_price || 0,
+                    status: data.status || 'In Stock',
+                    video: data.video || '',
+                    image: data.image || ''
+                };
+            }
+        }
 
         if (product) {
             // Always add to cart in POS
             addToCart(product);
             setSearchQuery('');
+            showToast('success', `Added ${product.name}`);
         } else {
             playError();
             showToast('error', 'Product not found');

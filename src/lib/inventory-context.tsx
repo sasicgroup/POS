@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { syncManager } from './sync-manager';
 import { useAuth } from './auth-context';
 import { sendLowStockAlert } from './sms';
+import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 
 interface Product {
     id: any;
@@ -54,6 +55,7 @@ interface InventoryContextType {
     pageSize: number;
     setPageSize: (size: number) => void;
     totalCount: number;
+    migrateImages: () => Promise<number | undefined>;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -69,20 +71,40 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [pageSize, setPageSize] = useState(20);
     const [totalCount, setTotalCount] = useState(0);
 
+    // Initial Count Check
+    useEffect(() => {
+        if (activeStore?.id) {
+            fetchTotalCount();
+        }
+    }, [activeStore?.id]);
+
     // Cart State
     const [cart, setCart] = useState<any[]>([]);
 
-    // Cache state
-    const [productsCache, setProductsCache] = useState<{
-        data: Product[];
-        timestamp: number | null;
-        storeId: string | null;
-    }>({
-        data: [],
-        timestamp: null,
-        storeId: null
-    });
-    const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+    // Cache state - Page based + IDB
+    const [pageCache, setPageCache] = useState<Record<number, { data: Product[], timestamp: number }>>({});
+    const [isCacheLoaded, setIsCacheLoaded] = useState(false);
+    const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+    // Load Cache from IDB
+    useEffect(() => {
+        if (activeStore?.id) {
+            setIsCacheLoaded(false);
+            const key = `sms_inventory_cache_${activeStore.id}`;
+            idbGet(key).then((val) => {
+                if (val && typeof val === 'object') setPageCache(val);
+                else setPageCache({});
+                setIsCacheLoaded(true);
+            }).catch(err => {
+                console.error("IDB Cache Load Error", err);
+                setPageCache({});
+                setIsCacheLoaded(true);
+            });
+        } else {
+            setPageCache({});
+            setIsCacheLoaded(true);
+        }
+    }, [activeStore?.id]);
 
     // UI states
     const [businessTypes, setBusinessTypes] = useState<string[]>([]);
@@ -154,46 +176,45 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        // Prevent duplicate fetches
-        if (isFetching.current) {
-            // console.log('[Inventory] Fetch already in progress, skipping duplicate call.');
+        // Cache Hit Check (Page Based)
+        if (pageCache[pageNum] && pageCache[pageNum].timestamp && (Date.now() - pageCache[pageNum].timestamp < CACHE_TTL)) {
+            // console.log(`[Inventory] Cache Hit Page ${pageNum}`);
+            setProducts(pageCache[pageNum].data);
+            setIsLoading(false);
             return;
         }
 
-        // console.log(`[Inventory] Fetching products for store: ${activeStore.id}, page: ${pageNum}, pageSize: ${pageSizeNum}, attempt: ${retryCount + 1}`);
+        // Prevent duplicate fetches
+        if (isFetching.current) return;
+
         isFetching.current = true;
         setIsLoading(true);
 
         const startTime = Date.now();
-        const TIMEOUT_MS = 60000; // 60 second timeout
-
-        // Create abort controller for timeout
+        const TIMEOUT_MS = 60000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
         try {
-            // Use range for pagination
             const from = (pageNum - 1) * pageSizeNum;
             const to = from + pageSizeNum - 1;
 
             const { data, error, count } = await supabase
                 .from('products')
-                .select('*', { count: 'estimated' })
+                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id', { count: 'estimated' })
                 .eq('store_id', activeStore.id)
                 .range(from, to)
                 .abortSignal(controller.signal);
 
             clearTimeout(timeoutId);
-            const duration = Date.now() - startTime;
 
             if (error) {
-                console.error(`[Inventory] Supabase error (duration: ${duration}ms):`, error.message || error);
+                console.error(`[Inventory] Supabase error:`, error.message);
                 throw error;
             } else if (data) {
-                // console.log(`[Inventory] Fetched products: ${data.length}, Total: ${count}, Duration: ${duration}ms`);
                 const mappedProducts = data.map((p: any) => ({
                     ...p,
-                    costPrice: p.cost_price || 0,
+                    costPrice: p.cost_price || 0, // Ensure mapping
                     status: p.status || 'In Stock',
                     video: p.video || '',
                     image: p.image || ''
@@ -201,68 +222,59 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setProducts(mappedProducts);
                 setTotalCount(count || 0);
 
-                // Update cache
-                setProductsCache({
-                    data: mappedProducts,
-                    timestamp: Date.now(),
-                    storeId: activeStore.id
+                // Update Cache & Persist
+                setPageCache(prev => {
+                    const next = {
+                        ...prev,
+                        [pageNum]: {
+                            data: mappedProducts,
+                            timestamp: Date.now()
+                        }
+                    };
+                    idbSet(`sms_inventory_cache_${activeStore.id}`, next);
+                    return next;
                 });
 
                 setIsLoading(false);
             }
         } catch (err: any) {
             clearTimeout(timeoutId);
-            const duration = Date.now() - startTime;
+            console.error(`[Inventory] Fetch error:`, err);
 
-            // Check for specific error types
-            const isNetworkError = err.name === 'AbortError' ||
-                err.message === 'Failed to fetch' ||
-                err.message.includes('network') ||
-                err.name === 'TypeError';
-
-            console.error(`[Inventory] Error fetching products (duration: ${duration}ms, attempt: ${retryCount + 1}):`, err.message || err);
-
-            // Retry with exponential backoff (max 3 attempts)
-            const maxRetries = 3;
-            if (retryCount < maxRetries && isNetworkError) {
-                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // 1s, 2s, 4s max
-                console.log(`[Inventory] Retrying fetch in ${delay}ms...`);
-                isFetching.current = false; // Release lock for retry
-                setTimeout(() => fetchProducts(pageNum, pageSizeNum, retryCount + 1), delay);
+            // Retry logic
+            const isNetworkError = err.message === 'Failed to fetch' || err.message?.includes('network');
+            if (retryCount < 3 && isNetworkError) {
+                setTimeout(() => fetchProducts(pageNum, pageSizeNum, retryCount + 1), 1000 * Math.pow(2, retryCount));
                 return;
-            } else {
-                // Final failure - keep existing data if any, just stop loading
-                console.log('[Inventory] Max retries reached or non-retryable error, keeping existing data');
-                setIsLoading(false);
-
-                // Invalidate cache so we try again on next mount
-                setProductsCache(prev => ({ ...prev, timestamp: null }));
             }
+            setIsLoading(false);
         } finally {
             isFetching.current = false;
         }
-    }, [activeStore?.id]);
+    }, [activeStore?.id, pageCache]);
 
     useEffect(() => {
         if (activeStore?.id) {
-            // Check if we have valid cache for this store and page
-            const isCacheValid =
-                productsCache.storeId === activeStore.id &&
-                productsCache.timestamp &&
-                Date.now() - productsCache.timestamp < CACHE_TTL;
+            // Lazy Load Logic: Only fetch if searching
+            // We strip leading/trailing whitespace
+            const hasSearch = searchQuery && searchQuery.trim().length > 0;
 
-            if (isCacheValid) {
-                // console.log('[Inventory] Using cached products');
-                setProducts(productsCache.data);
-                setIsLoading(false);
-            } else {
+            if (hasSearch) {
+                // If searching, ignore cache (or use separate search cache?)
+                // For now, always fetch on search to ensure accuracy
                 fetchProducts(page, pageSize);
+            } else {
+                setProducts([]);
+                // But ensure count is accurate
+                fetchTotalCount();
+                setIsLoading(false);
             }
         } else {
             setProducts([]);
-            setIsLoading(false); // Ensure loading stops when no store
+            setIsLoading(false);
         }
-    }, [activeStore?.id, page, pageSize, fetchProducts]);
+    }, [activeStore?.id, page, pageSize, fetchProducts, searchQuery]);
+
 
     // Load Cart from LocalStorage on mount
     useEffect(() => {
@@ -305,8 +317,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         // Optimistic update (with temporary ID)
         const tempId = Date.now();
-        const newProduct = { ...product, id: tempId, store_id: activeStore.id };
-        setProducts(prev => [...prev, newProduct]);
+        const optimizedImage = await uploadImage(product.image, activeStore.id);
+        const newProduct = { ...product, id: tempId, store_id: activeStore.id, image: optimizedImage };
+        // Don't add to list if we are in lazy mode? 
+        // Actually, if user just added it, they probably want to see it.
+        // We can append it to the current "view" even if it's search results or empty.
+        setProducts(prev => [newProduct, ...prev]);
 
         const { data, error } = await supabase.from('products').insert({
             store_id: activeStore.id,
@@ -315,7 +331,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             price: product.price,
             stock: product.stock,
             sku: product.sku,
-            image: product.image,
+            image: optimizedImage, // Use URL
             video: product.video,
             status: product.status,
             cost_price: product.costPrice
@@ -337,15 +353,19 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             setProducts(prev => prev.map(p => p.id === tempId ? mappedProduct : p));
 
             // Invalidate cache to force fresh fetch next time
-            setProductsCache(prev => ({ ...prev, timestamp: null }));
+            setPageCache({});
+            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
         }
     }, [activeStore?.id]);
 
     const updateProduct = React.useCallback(async (product: any) => {
         if (!activeStore?.id) return;
 
+        const optimizedImage = await uploadImage(product.image, activeStore.id);
+
         // Optimistic update
-        setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+        const updatedProduct = { ...product, image: optimizedImage };
+        setProducts(prev => prev.map(p => p.id === product.id ? updatedProduct : p));
 
         const { error } = await supabase.from('products').update({
             name: product.name,
@@ -353,7 +373,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             price: product.price,
             stock: product.stock,
             sku: product.sku,
-            image: product.image,
+            image: optimizedImage,
             video: product.video,
             status: product.status,
             cost_price: product.costPrice
@@ -364,7 +384,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             fetchProducts();
         } else {
             // Invalidate cache
-            setProductsCache(prev => ({ ...prev, timestamp: null }));
+            setPageCache({});
+            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
         }
     }, [activeStore?.id, fetchProducts]);
 
@@ -379,7 +400,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             fetchProducts();
         } else {
             // Invalidate cache
-            setProductsCache(prev => ({ ...prev, timestamp: null }));
+            setPageCache({});
+            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
         }
     }, [fetchProducts]);
 
@@ -513,6 +535,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 }
                 return p;
             }));
+
+            // Invalidate Cache (Stock changed)
+            setPageCache({});
+            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
 
             // DB Update loop (Sequential to be safe)
             for (const item of saleData.items) {
@@ -684,6 +710,79 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         setCustomCategories(customCategories.filter(c => c !== category));
     };
 
+    // --- Image Storage Helper ---
+    const uploadImage = async (base64Data: string, storeId: string) => {
+        try {
+            if (!base64Data || !base64Data.startsWith('data:image')) return base64Data;
+
+            // Convert Base64 to Blob
+            const res = await fetch(base64Data);
+            const blob = await res.blob();
+
+            // Generate filename: store_id/timestamp-random.webp
+            const fileName = `${storeId}/${Date.now()}-${Math.random().toString(36).substring(7)}.webp`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('product-images')
+                .upload(fileName, blob, {
+                    contentType: 'image/webp',
+                    upsert: true
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('product-images')
+                .getPublicUrl(fileName);
+
+            return publicUrl;
+        } catch (error) {
+            console.error('Image upload failed:', error);
+            return base64Data; // Fallback to base64 if upload fails
+        }
+    };
+
+    const migrateImages = async () => {
+        if (!activeStore?.id) return;
+        setIsLoading(true);
+        try {
+            // Fetch ALL products for this store (dangerous if many, but user said < 15)
+            const { data: allProducts } = await supabase
+                .from('products')
+                .select('*')
+                .eq('store_id', activeStore.id);
+
+            if (!allProducts) return;
+
+            let count = 0;
+            for (const p of allProducts) {
+                if (p.image && p.image.startsWith('data:image')) {
+                    const newUrl = await uploadImage(p.image, activeStore.id);
+                    if (newUrl !== p.image) {
+                        await supabase.from('products').update({ image: newUrl }).eq('id', p.id);
+                        count++;
+                    }
+                }
+            }
+            // Refresh
+            fetchTotalCount();
+            return count;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchTotalCount = async () => {
+        if (!activeStore?.id) return;
+        // Cheap count query
+        const { count } = await supabase
+            .from('products')
+            .select('*', { count: 'exact', head: true })
+            .eq('store_id', activeStore.id);
+
+        if (count !== null) setTotalCount(count);
+    };
+
     return (
         <InventoryContext.Provider value={{
             products,
@@ -720,7 +819,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             setPage,
             pageSize,
             setPageSize,
-            totalCount
+            totalCount,
+            migrateImages // New
         }}>
             {children}
         </InventoryContext.Provider>

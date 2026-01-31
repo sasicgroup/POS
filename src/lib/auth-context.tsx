@@ -361,6 +361,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // 4. Check OTP
             if (employee.otp_enabled && employee.phone) {
                 const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+                if (typeof window !== 'undefined') alert(`[DEV] Your OTP code is: ${code}`); // Dev Helper
+                console.log('[DEV] Generated OTP:', code);
                 const expiry = new Date(Date.now() + 5 * 60000); // 5 mins
 
                 // Save OTP to DB
@@ -371,7 +373,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Send OTP via Server API (Bypassing RLS)
                 const { data: empStore } = await supabase.from('employee_access').select('store_id').eq('employee_id', employee.id).limit(1).maybeSingle();
-                const storeId = employee.store_id || empStore?.store_id;
+                let storeId = employee.store_id || empStore?.store_id;
+
+                if (!storeId) {
+                    const { data: s } = await supabase.from('stores').select('id').neq('status', 'deleted').limit(1).maybeSingle();
+                    if (s) storeId = s.id;
+                }
 
                 if (storeId) {
                     try {
@@ -455,6 +462,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
+        if (typeof window !== 'undefined') alert(`[DEV] Your new OTP code is: ${code}`); // Dev Helper
+        console.log('[DEV] Resend OTP:', code);
         const expiry = new Date(Date.now() + 5 * 60000);
 
         await supabase.from('employees').update({

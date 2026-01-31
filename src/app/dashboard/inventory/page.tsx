@@ -25,7 +25,10 @@ export default function InventoryPage() {
         totalCount,
         addToCart,
         cart,
-        setCart
+        setCart,
+        migrateImages,
+        searchQuery,
+        setSearchQuery
     } = useInventory();
     const { showToast } = useToast();
 
@@ -50,12 +53,14 @@ export default function InventoryPage() {
     const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState<any | null>(null);
     const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
     const [showMoreActions, setShowMoreActions] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
+    // isScanning declared once below in restored block
+
+
+    // Restored Filters
     const [filterCategory, setFilterCategory] = useState('All');
     const [statusFilter, setStatusFilter] = useState('All');
     const [sortBy, setSortBy] = useState('Recently Added');
-
-    const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     const [isScanning, setIsScanning] = useState(false);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
@@ -585,6 +590,18 @@ export default function InventoryPage() {
                         AI Optmize
                     </button>
                     <button
+                        onClick={async () => {
+                            if (confirm("This will optimize all product images to reduce bandwidth. Continue?")) {
+                                const count = await migrateImages();
+                                showToast('success', `Optimized ${count} images!`);
+                            }
+                        }}
+                        className="hidden lg:flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400"
+                    >
+                        <Sparkles className="h-4 w-4" />
+                        Optimize Images
+                    </button>
+                    <button
                         onClick={() => setIsScanning(true)}
                         className="order-1 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
@@ -852,221 +869,245 @@ export default function InventoryPage() {
                 </div>
             </div>
 
-            {/* Product List - List View */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto dark:bg-slate-800 dark:border-slate-700 pb-20 lg:pb-0">
-                <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50">
-                        <tr>
-                            <th scope="col" className="px-6 py-3 text-left">
-                                <button onClick={handleSelectAll} className="flex items-center">
-                                    <CheckSquare className={`h-5 w-5 ${selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'text-indigo-600' : 'text-slate-300'}`} />
-                                </button>
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Product</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Image</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Video</th>
-                            <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">SKU / Category</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Stock</th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Price</th>
-                            <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-800 dark:divide-slate-700">
-                        {isLoading ? (
-                            // Loading skeleton
-                            Array.from({ length: 5 }).map((_, i) => (
-                                <tr key={`skeleton-${i}`} className="animate-pulse">
-                                    <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center">
-                                            <div className="h-10 w-10 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                            <div className="ml-4 space-y-2">
-                                                <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                                <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
-                                    <td className="hidden sm:table-cell px-6 py-4">
-                                        <div className="space-y-2">
-                                            <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                            <div className="h-3 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full"></div></td>
-                                    <td className="px-6 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex justify-end gap-2">
-                                            <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                            <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                            <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))
-                        ) : filteredProducts.length === 0 ? (
+            {/* Product List */}
+            {products.length === 0 && !isLoading ? (
+                <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-slate-200 bg-white/50 border-dashed dark:border-slate-800 dark:bg-slate-900/50">
+                    <div className="h-16 w-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                        <Search className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                        {searchQuery ? "No products found" : "Ready to Search"}
+                    </h3>
+                    <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6">
+                        {searchQuery ? `We couldn't find anything matching "${searchQuery}". Try a different term or scan a barcode.` : "Enter a product name, SKU, or scan a barcode to view inventory."}
+                    </p>
+                    {!searchQuery && (
+                        <button
+                            onClick={() => setIsScanning(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                        >
+                            <Scan className="h-4 w-4" />
+                            Scan Barcode
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto dark:bg-slate-800 dark:border-slate-700 pb-20 lg:pb-0">
+                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                        <thead className="bg-slate-50 dark:bg-slate-800/50">
                             <tr>
-                                <td colSpan={7} className="px-6 py-12 text-center">
-                                    <div className="text-slate-400 dark:text-slate-500">
-                                        <p className="text-lg font-medium mb-2">No products found</p>
-                                        <p className="text-sm">Add your first product to get started</p>
-                                    </div>
-                                </td>
+                                <th scope="col" className="px-6 py-3 text-left">
+                                    <button onClick={handleSelectAll} className="flex items-center">
+                                        <CheckSquare className={`h-5 w-5 ${selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'text-indigo-600' : 'text-slate-300'}`} />
+                                    </button>
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Product</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Image</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Video</th>
+                                <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">SKU / Category</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Stock</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Price</th>
+                                <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                             </tr>
-                        ) : (
-                            filteredProducts.map((product) => (
-                                <tr
-                                    key={product.id}
-                                    id={`product-${product.id}`}
-                                    className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
-                                    onClick={(e) => {
-                                        if (!(e.target as HTMLElement).closest('button')) {
-                                            handleSelectProduct(product.id);
-                                        }
-                                    }}
-                                >
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleSelectProduct(product.id);
-                                            }}
-                                            className="text-slate-400 hover:text-indigo-600"
-                                        >
-                                            {selectedProducts.includes(product.id) ?
-                                                <CheckSquare className="h-5 w-5 text-indigo-600" /> :
-                                                <Square className="h-5 w-5" />
-                                            }
-                                        </button>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="flex items-center">
-                                            <div className="ml-0">
-                                                <div className="text-sm font-medium text-slate-900 dark:text-white">{product.name}</div>
-                                                <div className="text-xs text-slate-500 sm:hidden">{product.sku}</div>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-800 dark:divide-slate-700">
+                            {isLoading ? (
+                                // Loading skeleton
+                                Array.from({ length: 5 }).map((_, i) => (
+                                    <tr key={`skeleton-${i}`} className="animate-pulse">
+                                        <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center">
+                                                <div className="h-10 w-10 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                                <div className="ml-4 space-y-2">
+                                                    <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                                    <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        {product.image ? (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setActiveImageUrl(product.image || null);
-                                                }}
-                                                className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30 transition-colors"
-                                                title="View Image"
-                                            >
-                                                <Camera className="h-5 w-5" />
-                                            </button>
-                                        ) : (
-                                            <div className="flex justify-center w-9">
-                                                <Camera className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                        </td>
+                                        <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
+                                        <td className="hidden sm:table-cell px-6 py-4">
+                                            <div className="space-y-2">
+                                                <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                                <div className="h-3 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
                                             </div>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        {product.video ? (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setActiveVideoUrl(product.video || null);
-                                                }}
-                                                className="text-pink-600 hover:text-pink-900 dark:text-pink-400 dark:hover:text-pink-300 p-2 hover:bg-pink-50 rounded-lg dark:hover:bg-pink-900/30 transition-colors"
-                                                title="Watch Video"
-                                            >
-                                                <Video className="h-5 w-5" />
-                                            </button>
-                                        ) : (
-                                            <div className="flex justify-center w-9">
-                                                <Video className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                        </td>
+                                        <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full"></div></td>
+                                        <td className="px-6 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex justify-end gap-2">
+                                                <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                                <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                                <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
                                             </div>
-                                        )}
-                                    </td>
-                                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-slate-900 dark:text-white">{product.sku}</div>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">{product.category}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${product.status === 'In Stock' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                                            product.status === 'Low Stock' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
-                                                'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400'
-                                            }`}>
-                                            {product.stock} Units
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">
-                                        GHS {product.price.toFixed(2)}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handlePrintBarcode(product);
-                                                }}
-                                                className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30"
-                                                title="Print Barcode"
-                                            >
-                                                <Barcode className="h-4 w-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleAddToCart(product);
-                                                }}
-                                                className="text-emerald-600 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 p-2 hover:bg-emerald-50 rounded-lg dark:hover:bg-emerald-900/30"
-                                                title="Add to Cart"
-                                            >
-                                                <ShoppingCart className="h-4 w-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setNewProduct({
-                                                        name: product.name,
-                                                        sku: product.sku,
-                                                        category: product.category,
-                                                        stock: product.stock,
-                                                        price: product.price,
-                                                        costPrice: product.costPrice || 0,
-                                                        status: product.status || 'In Stock',
-                                                        image: product.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
-                                                        video: product.video || ''
-                                                    });
-                                                    setEditingId(product.id);
-                                                    setIsAddProductOpen(true);
-                                                }}
-                                                className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 rounded-lg dark:hover:bg-blue-900/30"
-                                                title="Edit Product"
-                                            >
-                                                <Edit className="h-4 w-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    if (selectedProducts.length > 0 && selectedProducts.includes(product.id)) {
-                                                        // Allow single delete even if bulk selected? simpler to just use confirmation
-                                                    }
-                                                    setDeleteConfirmation({ id: product.id, name: product.name });
-                                                }}
-                                                className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 rounded-lg dark:hover:bg-red-900/30"
-                                                title="Delete Product"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : filteredProducts.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="px-6 py-12 text-center">
+                                        <div className="text-slate-400 dark:text-slate-500">
+                                            <p className="text-lg font-medium mb-2">No products found</p>
+                                            <p className="text-sm">Add your first product to get started</p>
                                         </div>
                                     </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                            ) : (
+                                filteredProducts.map((product) => (
+                                    <tr
+                                        key={product.id}
+                                        id={`product-${product.id}`}
+                                        className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
+                                        onClick={(e) => {
+                                            if (!(e.target as HTMLElement).closest('button')) {
+                                                handleSelectProduct(product.id);
+                                            }
+                                        }}
+                                    >
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleSelectProduct(product.id);
+                                                }}
+                                                className="text-slate-400 hover:text-indigo-600"
+                                            >
+                                                {selectedProducts.includes(product.id) ?
+                                                    <CheckSquare className="h-5 w-5 text-indigo-600" /> :
+                                                    <Square className="h-5 w-5" />
+                                                }
+                                            </button>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex items-center">
+                                                <div className="ml-0">
+                                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{product.name}</div>
+                                                    <div className="text-xs text-slate-500 sm:hidden">{product.sku}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            {product.image ? (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        setActiveImageUrl(product.image || null);
+                                                    }}
+                                                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30 transition-colors"
+                                                    title="View Image"
+                                                >
+                                                    <Camera className="h-5 w-5" />
+                                                </button>
+                                            ) : (
+                                                <div className="flex justify-center w-9">
+                                                    <Camera className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            {product.video ? (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        setActiveVideoUrl(product.video || null);
+                                                    }}
+                                                    className="text-pink-600 hover:text-pink-900 dark:text-pink-400 dark:hover:text-pink-300 p-2 hover:bg-pink-50 rounded-lg dark:hover:bg-pink-900/30 transition-colors"
+                                                    title="Watch Video"
+                                                >
+                                                    <Video className="h-5 w-5" />
+                                                </button>
+                                            ) : (
+                                                <div className="flex justify-center w-9">
+                                                    <Video className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-slate-900 dark:text-white">{product.sku}</div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">{product.category}</div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${product.status === 'In Stock' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                                product.status === 'Low Stock' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                    'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400'
+                                                }`}>
+                                                {product.stock} Units
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">
+                                            GHS {product.price.toFixed(2)}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handlePrintBarcode(product);
+                                                    }}
+                                                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30"
+                                                    title="Print Barcode"
+                                                >
+                                                    <Barcode className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAddToCart(product);
+                                                    }}
+                                                    className="text-emerald-600 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 p-2 hover:bg-emerald-50 rounded-lg dark:hover:bg-emerald-900/30"
+                                                    title="Add to Cart"
+                                                >
+                                                    <ShoppingCart className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        setNewProduct({
+                                                            name: product.name,
+                                                            sku: product.sku,
+                                                            category: product.category,
+                                                            stock: product.stock,
+                                                            price: product.price,
+                                                            costPrice: product.costPrice || 0,
+                                                            status: product.status || 'In Stock',
+                                                            image: product.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
+                                                            video: product.video || ''
+                                                        });
+                                                        setEditingId(product.id);
+                                                        setIsAddProductOpen(true);
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 rounded-lg dark:hover:bg-blue-900/30"
+                                                    title="Edit Product"
+                                                >
+                                                    <Edit className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        if (selectedProducts.length > 0 && selectedProducts.includes(product.id)) {
+                                                            // Allow single delete even if bulk selected? simpler to just use confirmation
+                                                        }
+                                                        setDeleteConfirmation({ id: product.id, name: product.name });
+                                                    }}
+                                                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 rounded-lg dark:hover:bg-red-900/30"
+                                                    title="Delete Product"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            {/* End of Conditional Product List View */}
 
             {/* Bulk Action Sticky Bar */}
             {/* Bulk Action Sticky Bar */}
@@ -1138,38 +1179,40 @@ export default function InventoryPage() {
             </div>
 
             {/* Scanner Modal */}
-            {isScanning && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/95 p-4 animate-in fade-in duration-200">
-                    <div className="relative w-full max-w-md rounded-2xl bg-slate-900 overflow-hidden shadow-2xl border border-slate-800">
-                        <div className="absolute top-4 right-4 z-20">
-                            <button onClick={closeScanner} className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70 backdrop-blur-sm transition-colors">
-                                <span className="sr-only">Close</span>
-                                <X className="h-6 w-6" />
-                            </button>
-                        </div>
-                        <div className="relative aspect-[4/3] bg-black overflow-hidden rounded-lg">
-                            <div id="scanner-reader" className="w-full h-full"></div>
-                        </div>
-                        {/* Status Text */}
-                        <div className="absolute bottom-4 left-0 right-0 text-center">
-                            <p className="text-sm font-medium text-white shadow-sm bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur-sm">
-                                {cameraError ? cameraError : 'Align barcode within frame'}
-                            </p>
-                        </div>
+            {
+                isScanning && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/95 p-4 animate-in fade-in duration-200">
+                        <div className="relative w-full max-w-md rounded-2xl bg-slate-900 overflow-hidden shadow-2xl border border-slate-800">
+                            <div className="absolute top-4 right-4 z-20">
+                                <button onClick={closeScanner} className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70 backdrop-blur-sm transition-colors">
+                                    <span className="sr-only">Close</span>
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                            <div className="relative aspect-[4/3] bg-black overflow-hidden rounded-lg">
+                                <div id="scanner-reader" className="w-full h-full"></div>
+                            </div>
+                            {/* Status Text */}
+                            <div className="absolute bottom-4 left-0 right-0 text-center">
+                                <p className="text-sm font-medium text-white shadow-sm bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur-sm">
+                                    {cameraError ? cameraError : 'Align barcode within frame'}
+                                </p>
+                            </div>
 
-                        {/* Manual entry / fallback */}
-                        <div className="p-6 bg-slate-900 border-t border-slate-800">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-white font-medium">Scanner Active</h3>
-                                <div className="flex gap-2">
-                                    <span className="animate-ping h-2 w-2 rounded-full bg-indigo-500"></span>
-                                    <span className="text-xs text-indigo-400">Detecting...</span>
+                            {/* Manual entry / fallback */}
+                            <div className="p-6 bg-slate-900 border-t border-slate-800">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-white font-medium">Scanner Active</h3>
+                                    <div className="flex gap-2">
+                                        <span className="animate-ping h-2 w-2 rounded-full bg-indigo-500"></span>
+                                        <span className="text-xs text-indigo-400">Detecting...</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* AI Optimization Modal */}
             {
@@ -1235,45 +1278,50 @@ export default function InventoryPage() {
                             </div>
                         </div>
                     </div>
-                )}
+                )
+            }
             {/* Video Player Modal */}
-            {activeVideoUrl && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-                    <div className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
-                        <button
-                            onClick={() => setActiveVideoUrl(null)}
-                            className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
-                        >
-                            <X className="h-6 w-6" />
-                        </button>
-                        <iframe
-                            src={getEmbedUrl(activeVideoUrl)}
-                            className="w-full h-full"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                        ></iframe>
+            {
+                activeVideoUrl && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+                        <div className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                            <button
+                                onClick={() => setActiveVideoUrl(null)}
+                                className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
+                            >
+                                <X className="h-6 w-6" />
+                            </button>
+                            <iframe
+                                src={getEmbedUrl(activeVideoUrl)}
+                                className="w-full h-full"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            ></iframe>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Image Preview Modal */}
-            {activeImageUrl && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setActiveImageUrl(null)}>
-                    <div className="relative max-w-4xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-white/10 p-2" onClick={e => e.stopPropagation()}>
-                        <button
-                            onClick={() => setActiveImageUrl(null)}
-                            className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
-                        >
-                            <X className="h-6 w-6" />
-                        </button>
-                        <img
-                            src={activeImageUrl}
-                            alt="Product Preview"
-                            className="max-w-full max-h-[85vh] object-contain rounded-lg"
-                        />
+            {
+                activeImageUrl && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 p-4" onClick={() => setActiveImageUrl(null)}>
+                        <div className="relative max-w-4xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-white/10 p-2" onClick={e => e.stopPropagation()}>
+                            <button
+                                onClick={() => setActiveImageUrl(null)}
+                                className="absolute top-4 right-4 z-20 p-2 bg-black/50 text-white/80 hover:text-white rounded-full hover:bg-black/80 backdrop-blur-sm transition-all"
+                            >
+                                <X className="h-6 w-6" />
+                            </button>
+                            <img
+                                src={activeImageUrl}
+                                alt="Product Preview"
+                                className="max-w-full max-h-[85vh] object-contain rounded-lg"
+                            />
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Delete Confirmation Modal (Single) */}
             <ConfirmDialog
@@ -1302,6 +1350,6 @@ export default function InventoryPage() {
                 confirmText={`Delete ${selectedProducts.length} Items`}
                 variant="danger"
             />
-        </div>
+        </div >
     );
 }
