@@ -22,6 +22,7 @@ export async function POST(request: Request) {
         // 1. Fetch SMS Config (Bypassing RLS)
         let config = null;
         if (storeId) {
+            console.log(`[API] Fetching SMS config for store: ${storeId}`);
             const { data, error } = await supabase
                 .from('app_settings')
                 .select('sms_config')
@@ -30,8 +31,11 @@ export async function POST(request: Request) {
 
             if (data?.sms_config) {
                 config = data.sms_config;
+                console.log(`[API] ✅ SMS config found for store ${storeId}:`, { provider: config.provider });
             } else if (error) {
-                console.warn('[API] Failed to fetch SMS config:', error.message);
+                console.warn('[API] ⚠️ Failed to fetch SMS config:', error.message);
+            } else {
+                console.warn('[API] ⚠️ No SMS config found for store:', storeId);
             }
         }
 
@@ -49,8 +53,9 @@ export async function POST(request: Request) {
 
             if (fallbackData?.sms_config) {
                 config = fallbackData.sms_config;
-                console.log('[API] Using fallback SMS config.');
+                console.log('[API] ✅ Using fallback SMS config:', { provider: config.provider });
             } else {
+                console.error('[API] ❌ No SMS configuration found in database');
                 return NextResponse.json({ success: false, error: 'SMS Configuration not found for this store or globally.' }, { status: 500 });
             }
         }
@@ -60,31 +65,64 @@ export async function POST(request: Request) {
         let providerResponse = null;
 
         if (config.provider === 'hubtel' && config.hubtel?.clientId && config.hubtel?.clientSecret) {
-            const simplePhone = phone.replace(/\D/g, '');
+            // Format phone number (remove non-digits)
+            let simplePhone = phone.replace(/\D/g, '');
+
+            // Convert local Ghana format (0XXXXXXXXX) to international (233XXXXXXXXX)
+            if (simplePhone.startsWith('0') && simplePhone.length === 10) {
+                simplePhone = '233' + simplePhone.substring(1);
+                console.log(`[API] Converted phone from ${phone} to ${simplePhone}`);
+            }
+
             const senderId = config.hubtel.senderId || 'SASIC';
             const url = `https://smsc.hubtel.com/v1/messages/send?clientsecret=${config.hubtel.clientSecret}&clientid=${config.hubtel.clientId}&from=${encodeURIComponent(senderId)}&to=${simplePhone}&content=${encodeURIComponent(message)}`;
+
+            console.log('[API] Hubtel request:', { to: simplePhone, from: senderId, messageLength: message.length });
 
             try {
                 const res = await fetch(url);
                 providerResponse = await res.json();
-                console.log('[API] Hubtel key response:', providerResponse);
-                // Hubtel usually returns status
-                success = true;
+                console.log('[API] Hubtel response:', providerResponse);
+
+                // Hubtel returns status code 200 and ResponseCode "0000" on success
+                if (res.ok && (providerResponse.ResponseCode === '0000' || providerResponse.Status === 0)) {
+                    success = true;
+                    console.log('[API] ✅ Hubtel SMS sent successfully');
+                } else {
+                    success = false;
+                    console.error('[API] ❌ Hubtel returned error:', providerResponse);
+                    return NextResponse.json({
+                        success: false,
+                        error: `Hubtel error: ${providerResponse.Message || 'Unknown error'}`
+                    }, { status: 500 });
+                }
             } catch (e: any) {
-                console.error('[API] Hubtel failed:', e);
+                console.error('[API] ❌ Hubtel failed:', e);
                 return NextResponse.json({ success: false, error: e.message }, { status: 500 });
             }
         }
         else if (config.provider === 'mnotify' && config.mnotify?.apiKey) {
             const url = `https://api.mnotify.com/api/sms/quick?key=${config.mnotify.apiKey}`;
             const sender = config.mnotify.senderId || 'SASIC';
+
+            // Format phone number for mNotify (requires international format)
+            let formattedPhone = phone.replace(/\D/g, ''); // Remove non-digits
+
+            // Convert local Ghana format (0XXXXXXXXX) to international (233XXXXXXXXX)
+            if (formattedPhone.startsWith('0') && formattedPhone.length === 10) {
+                formattedPhone = '233' + formattedPhone.substring(1);
+                console.log(`[API] Converted phone from ${phone} to ${formattedPhone}`);
+            }
+
             const payload = {
-                recipient: [phone],
+                recipient: [formattedPhone],
                 sender: sender,
                 message: message,
                 is_schedule: false,
                 schedule_date: null
             };
+
+            console.log('[API] mNotify payload:', { recipient: formattedPhone, sender, messageLength: message.length });
 
             try {
                 const res = await fetch(url, {
@@ -94,9 +132,22 @@ export async function POST(request: Request) {
                 });
                 providerResponse = await res.json();
                 console.log('[API] mNotify response:', providerResponse);
-                success = true;
+
+                // mNotify returns { code: "2000", message: "SMS sent successfully" } on success
+                // or { code: "4000", message: "Error message" } on failure
+                if (providerResponse.code === '2000' || providerResponse.code === 2000) {
+                    success = true;
+                    console.log('[API] ✅ mNotify SMS sent successfully');
+                } else {
+                    success = false;
+                    console.error('[API] ❌ mNotify returned error:', providerResponse);
+                    return NextResponse.json({
+                        success: false,
+                        error: `mNotify error: ${providerResponse.message || 'Unknown error'}`
+                    }, { status: 500 });
+                }
             } catch (e: any) {
-                console.error('[API] mNotify failed:', e);
+                console.error('[API] ❌ mNotify failed:', e);
                 return NextResponse.json({ success: false, error: e.message }, { status: 500 });
             }
         } else {

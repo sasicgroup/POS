@@ -44,8 +44,6 @@ export interface SMSConfig {
 
 import { supabase } from '@/lib/supabase';
 
-// ... interface ...
-
 // Local cache
 let smsConfig: SMSConfig = {
     provider: 'mnotify',
@@ -71,6 +69,20 @@ let smsConfig: SMSConfig = {
         ownerSale: "New Sale Alert: GHS {Amount} by {Name}. Total Today: {TotalOrders} orders.",
         lowStockAlert: "Low Stock Alert: {Product} has only {Stock} left! Please restock."
     }
+};
+
+// --- Helper for Phone Number Normalization ---
+const normalizePhone = (phone: string): string => {
+    if (!phone) return '';
+    let p = phone.replace(/\D/g, ''); // Remove non-digits
+
+    // Convert local Ghana format (0XXXXXXXXX) to international (233XXXXXXXXX)
+    if (p.startsWith('0') && p.length === 10) {
+        return '233' + p.substring(1);
+    }
+    // If it's already 233XXXXXXXXX (12 digits), leave it
+    // If it's something else, just return it (best effort)
+    return p;
 };
 
 export const loadSMSConfigFromDB = async (storeId: string) => {
@@ -124,39 +136,57 @@ export const updateSMSConfig = async (config: SMSConfig, storeId?: string) => {
 };
 
 const sendHubtelSMS = async (config: SMSConfig, phone: string, message: string) => {
-    if (!config.hubtel?.clientId || !config.hubtel?.clientSecret || !config.hubtel?.senderId) {
+    if (!config.hubtel?.clientId || !config.hubtel?.clientSecret) {
         console.warn('Hubtel credentials missing');
-        return;
+        return false;
     }
 
-    const simplePhone = phone.replace(/\D/g, ''); // Remove non-digits
+    const simplePhone = normalizePhone(phone);
+    const senderId = config.hubtel.senderId || 'SASIC';
 
     // Hubtel V1 Endpoint
-    const url = `https://smsc.hubtel.com/v1/messages/send?clientsecret=${config.hubtel.clientSecret}&clientid=${config.hubtel.clientId}&from=${encodeURIComponent(config.hubtel.senderId)}&to=${simplePhone}&content=${encodeURIComponent(message)}`;
+    const url = `https://smsc.hubtel.com/v1/messages/send?clientsecret=${config.hubtel.clientSecret}&clientid=${config.hubtel.clientId}&from=${encodeURIComponent(senderId)}&to=${simplePhone}&content=${encodeURIComponent(message)}`;
 
     try {
         const response = await fetch(url, { method: 'GET' });
         const data = await response.json();
         console.log('[Hubtel Response]', data);
+
+        // Check success code (0000 or Status 0)
+        // Hubtel response structure varies slightly by version but typically contains Status or ResponseCode
+        if (response.ok && (data.ResponseCode === '0000' || data.Status === 0 || data.Status === '0')) {
+            return true;
+        }
+        return false;
     } catch (e) {
         console.error('[Hubtel Error]', e);
+        return false;
     }
 };
 
 const sendMNotifySMS = async (config: SMSConfig, phone: string, message: string) => {
-    if (!config.mnotify?.apiKey || !config.mnotify?.senderId) {
+    if (!config.mnotify?.apiKey) {
         console.warn('mNotify credentials missing');
-        return;
+        return false;
     }
 
+    const formattedPhone = normalizePhone(phone);
+    // Sanitize sender ID (mNotify has strict rules, max 11 chars)
+    let sender = config.mnotify.senderId || 'SASIC';
+    if (sender.length > 11) sender = sender.substring(0, 11);
+
+    // Quick API url
     const url = `https://api.mnotify.com/api/sms/quick?key=${config.mnotify.apiKey}`;
+
     const body = {
-        recipient: [phone],
-        sender: config.mnotify.senderId,
+        recipient: [formattedPhone],
+        sender: sender,
         message: message,
         is_schedule: false,
         schedule_date: null
     };
+
+    console.log('[SMS] Sending via mNotify:', { to: formattedPhone, sender });
 
     try {
         const response = await fetch(url, {
@@ -170,18 +200,25 @@ const sendMNotifySMS = async (config: SMSConfig, phone: string, message: string)
 
         const data = await response.json();
         console.log('[mNotify Response]', data);
+
+        // Success check: code '2000'
+        if ((data.code === '2000' || data.code === 2000)) {
+            return true;
+        }
+        return false;
     } catch (e) {
         console.error('[mNotify Error]', e);
+        return false;
     }
 };
 
 const sendMetaWhatsApp = async (config: SMSConfig, phone: string, message: string) => {
     if (!config.meta?.accessToken || !config.meta?.phoneNumberId) {
         console.warn('Meta WhatsApp credentials missing');
-        return;
+        return false;
     }
 
-    const simplePhone = phone.replace(/\D/g, '');
+    const simplePhone = normalizePhone(phone);
     const url = `https://graph.facebook.com/v17.0/${config.meta.phoneNumberId}/messages`;
 
     // Note: Meta Cloud API usually requires a Template Message for initiation or 24h window.
@@ -211,9 +248,12 @@ const sendMetaWhatsApp = async (config: SMSConfig, phone: string, message: strin
         console.log('[Meta WhatsApp Response]', data);
         if (data.error) {
             console.error('[Meta WhatsApp Error Detail]', data.error);
+            return false;
         }
+        return true;
     } catch (e) {
         console.error('[Meta WhatsApp Error]', e);
+        return false;
     }
 };
 
@@ -328,19 +368,17 @@ export const sendDirectMessage = async (phone: string, message: string, channels
     if (channels.includes('sms')) {
         let success = false;
         if (config.provider === 'hubtel') {
-            await sendHubtelSMS(config, phone, message);
-            success = true;
+            success = await sendHubtelSMS(config, phone, message);
         } else if (config.provider === 'mnotify') {
-            await sendMNotifySMS(config, phone, message);
-            success = true;
+            success = await sendMNotifySMS(config, phone, message);
         }
         await logSMS(phone, message, 'sms', success ? 'sent' : 'failed', storeId);
     }
 
     // Send WhatsApp
     if (channels.includes('whatsapp') && config.meta?.accessToken) {
-        await sendMetaWhatsApp(config, phone, message);
-        await logSMS(phone, message, 'whatsapp', 'sent', storeId);
+        const success = await sendMetaWhatsApp(config, phone, message);
+        await logSMS(phone, message, 'whatsapp', success ? 'sent' : 'failed', storeId);
     }
 };
 

@@ -361,8 +361,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // 4. Check OTP
             if (employee.otp_enabled && employee.phone) {
                 const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
-                if (typeof window !== 'undefined') alert(`[DEV] Your OTP code is: ${code}`); // Dev Helper
-                console.log('[DEV] Generated OTP:', code);
+                // if (typeof window !== 'undefined') alert(`[DEV] Your OTP code is: ${code}`); // Dev Helper - REMOVED for Production Check
+                // console.log('[DEV] Generated OTP:', code); // REMOVED for Security
                 const expiry = new Date(Date.now() + 5 * 60000); // 5 mins
 
                 // Save OTP to DB
@@ -380,9 +380,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     if (s) storeId = s.id;
                 }
 
+                console.log('[OTP] Attempting to send SMS:', { phone: employee.phone, storeId });
+
                 if (storeId) {
                     try {
-                        await fetch('/api/auth/send-otp', {
+                        const response = await fetch('/api/auth/send-otp', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -391,9 +393,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 storeId: storeId
                             })
                         });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            console.log('[OTP] ✅ SMS sent successfully');
+                        } else {
+                            console.error('[OTP] ❌ SMS send failed:', result.error);
+                            // Still allow login to proceed - user has alert fallback
+                        }
                     } catch (err) {
-                        console.error("Failed to send OTP via API", err);
+                        console.error('[OTP] ❌ Failed to send OTP via API:', err);
                     }
+                } else {
+                    console.error('[OTP] ❌ No valid storeId found, cannot send SMS');
                 }
 
                 return { success: true, status: 'OTP_REQUIRED', tempUser: userObj };
@@ -462,8 +475,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        if (typeof window !== 'undefined') alert(`[DEV] Your new OTP code is: ${code}`); // Dev Helper
-        console.log('[DEV] Resend OTP:', code);
+        // if (typeof window !== 'undefined') alert(`[DEV] Your new OTP code is: ${code}`); // Dev Helper - REMOVED
+        // console.log('[DEV] Resend OTP:', code); // REMOVED
         const expiry = new Date(Date.now() + 5 * 60000);
 
         await supabase.from('employees').update({
@@ -471,11 +484,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             otp_expiry: expiry.toISOString()
         }).eq('id', employee.id);
 
-        console.log('[OTP Resend] Requesting new code for', employee.phone);
+        console.log('[OTP Resend] Requesting new code for', employee.phone, 'StoreId:', employee.store_id);
 
         if (employee.store_id) {
             try {
-                await fetch('/api/auth/send-otp', {
+                const response = await fetch('/api/auth/send-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -484,9 +497,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         storeId: employee.store_id
                     })
                 });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    console.log('[OTP Resend] ✅ SMS sent successfully');
+                } else {
+                    console.error('[OTP Resend] ❌ SMS send failed:', result.error);
+                }
             } catch (err) {
-                console.error("Failed to resend OTP via API", err);
+                console.error('[OTP Resend] ❌ Failed to resend OTP via API:', err);
             }
+        } else {
+            console.error('[OTP Resend] ❌ No store_id found for employee');
         }
         return true;
     };
