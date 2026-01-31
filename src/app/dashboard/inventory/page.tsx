@@ -415,7 +415,7 @@ export default function InventoryPage() {
 
         // Try Server if not found locally
         if (!existingProduct) {
-            existingProduct = await getProductByBarcode(code);
+            existingProduct = (await getProductByBarcode(code)) || undefined;
         }
 
         if (existingProduct) {
