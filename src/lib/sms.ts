@@ -1,9 +1,13 @@
-
 export interface SMSConfig {
-    provider: 'mnotify';
+    provider: 'mnotify' | 'hubtel';
     whatsappProvider?: 'meta' | 'none';
-    mnotify: {
+    mnotify?: {
         apiKey: string;
+        senderId: string;
+    };
+    hubtel?: {
+        clientId: string;
+        clientSecret: string;
         senderId: string;
     };
     meta?: {
@@ -44,6 +48,7 @@ let smsConfig: SMSConfig = {
     provider: 'mnotify',
     whatsappProvider: 'meta',
     mnotify: { apiKey: '', senderId: '' },
+    hubtel: { clientId: '', clientSecret: '', senderId: '' },
     meta: { accessToken: '', phoneNumberId: '', businessAccountId: '' },
     notifications: {
         owner: { sms: true, whatsapp: false },
