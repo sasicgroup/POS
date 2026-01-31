@@ -15,6 +15,7 @@ DROP POLICY IF EXISTS "Auth Delete" ON storage.objects;
 DROP POLICY IF EXISTS "Anyone Upload" ON storage.objects;
 DROP POLICY IF EXISTS "Auth Full Access" ON storage.objects;
 DROP POLICY IF EXISTS "Public Read Access" ON storage.objects;
+DROP POLICY IF EXISTS "Universal Access Product Images" ON storage.objects;
 
 -- 3. Create a SINGLE, PERMISSIVE Policy for this bucket
 -- Allows EVERYONE (Auth + Anon) to SELECT, INSERT, UPDATE, DELETE

@@ -828,16 +828,17 @@ export default function SalesPage() {
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') handleScan(searchQuery);
                             }}
-                            className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-12 pr-12 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                            className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-12 pr-4 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
-                        <button
-                            onClick={() => setIsScanning(true)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-indigo-600"
-                            title="Open Camera Scanner"
-                        >
-                            <Scan className="h-5 w-5" />
-                        </button>
                     </div>
+                    <button
+                        onClick={() => setIsScanning(true)}
+                        className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-bold text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 active:scale-95 transition-all whitespace-nowrap"
+                        title="Open Camera Scanner"
+                    >
+                        <Scan className="h-5 w-5" />
+                        SCAN
+                    </button>
                 </div>
 
                 {/* Product List View */}

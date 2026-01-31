@@ -1,13 +1,8 @@
 
 export interface SMSConfig {
-    provider: 'hubtel' | 'mnotify';
+    provider: 'mnotify';
     whatsappProvider?: 'meta' | 'none';
-    hubtel?: {
-        clientId: string;
-        clientSecret: string;
-        senderId: string;
-    };
-    mnotify?: {
+    mnotify: {
         apiKey: string;
         senderId: string;
     };
@@ -29,7 +24,7 @@ export interface SMSConfig {
     automations: {
         lowStockAlert: {
             enabled: boolean;
-            threshold: number; // Alert when stock <= this number
+            threshold: number;
             sms: boolean;
             whatsapp: boolean;
         };
@@ -48,7 +43,6 @@ import { supabase } from '@/lib/supabase';
 let smsConfig: SMSConfig = {
     provider: 'mnotify',
     whatsappProvider: 'meta',
-    hubtel: { clientId: '', clientSecret: '', senderId: '' },
     mnotify: { apiKey: '', senderId: '' },
     meta: { accessToken: '', phoneNumberId: '', businessAccountId: '' },
     notifications: {
@@ -58,7 +52,7 @@ let smsConfig: SMSConfig = {
     automations: {
         lowStockAlert: {
             enabled: false,
-            threshold: 1,
+            threshold: 10,
             sms: true,
             whatsapp: false
         }
@@ -80,8 +74,6 @@ const normalizePhone = (phone: string): string => {
     if (p.startsWith('0') && p.length === 10) {
         return '233' + p.substring(1);
     }
-    // If it's already 233XXXXXXXXX (12 digits), leave it
-    // If it's something else, just return it (best effort)
     return p;
 };
 
@@ -123,7 +115,6 @@ export const updateSMSConfig = async (config: SMSConfig, storeId?: string) => {
     }
 
     if (storeId) {
-        // Upsert to DB
         const { error } = await supabase
             .from('app_settings')
             .upsert({
@@ -135,47 +126,16 @@ export const updateSMSConfig = async (config: SMSConfig, storeId?: string) => {
     }
 };
 
-const sendHubtelSMS = async (config: SMSConfig, phone: string, message: string) => {
-    if (!config.hubtel?.clientId || !config.hubtel?.clientSecret) {
-        console.warn('Hubtel credentials missing');
-        return false;
-    }
-
-    const simplePhone = normalizePhone(phone);
-    const senderId = config.hubtel.senderId || 'SASIC';
-
-    // Hubtel V1 Endpoint
-    const url = `https://smsc.hubtel.com/v1/messages/send?clientsecret=${config.hubtel.clientSecret}&clientid=${config.hubtel.clientId}&from=${encodeURIComponent(senderId)}&to=${simplePhone}&content=${encodeURIComponent(message)}`;
-
-    try {
-        const response = await fetch(url, { method: 'GET' });
-        const data = await response.json();
-        console.log('[Hubtel Response]', data);
-
-        // Check success code (0000 or Status 0)
-        // Hubtel response structure varies slightly by version but typically contains Status or ResponseCode
-        if (response.ok && (data.ResponseCode === '0000' || data.Status === 0 || data.Status === '0')) {
-            return true;
-        }
-        return false;
-    } catch (e) {
-        console.error('[Hubtel Error]', e);
-        return false;
-    }
-};
-
 const sendMNotifySMS = async (config: SMSConfig, phone: string, message: string) => {
     if (!config.mnotify?.apiKey) {
-        console.warn('mNotify credentials missing');
+        console.warn('[SMS] mNotify API key missing');
         return false;
     }
 
     const formattedPhone = normalizePhone(phone);
-    // Sanitize sender ID (mNotify has strict rules, max 11 chars)
     let sender = config.mnotify.senderId || 'SASIC';
     if (sender.length > 11) sender = sender.substring(0, 11);
 
-    // Quick API url
     const url = `https://api.mnotify.com/api/sms/quick?key=${config.mnotify.apiKey}`;
 
     const body = {
@@ -201,28 +161,25 @@ const sendMNotifySMS = async (config: SMSConfig, phone: string, message: string)
         const data = await response.json();
         console.log('[mNotify Response]', data);
 
-        // Success check: code '2000'
         if ((data.code === '2000' || data.code === 2000)) {
             return true;
         }
         return false;
     } catch (e) {
         console.error('[mNotify Error]', e);
-        return false;
+        throw e; // Re-throw for offline queue handling
     }
 };
 
 const sendMetaWhatsApp = async (config: SMSConfig, phone: string, message: string) => {
     if (!config.meta?.accessToken || !config.meta?.phoneNumberId) {
-        console.warn('Meta WhatsApp credentials missing');
+        console.warn('[WhatsApp] Meta credentials missing');
         return false;
     }
 
     const simplePhone = normalizePhone(phone);
     const url = `https://graph.facebook.com/v17.0/${config.meta.phoneNumberId}/messages`;
 
-    // Note: Meta Cloud API usually requires a Template Message for initiation or 24h window.
-    // We will assume "text" payload for simplicity, but template is recommended for business initiated convo.
     const body = {
         messaging_product: "whatsapp",
         recipient_type: "individual",
@@ -246,22 +203,21 @@ const sendMetaWhatsApp = async (config: SMSConfig, phone: string, message: strin
 
         const data = await response.json();
         console.log('[Meta WhatsApp Response]', data);
+
         if (data.error) {
-            console.error('[Meta WhatsApp Error Detail]', data.error);
+            console.error('[Meta WhatsApp Error]', data.error);
             return false;
         }
         return true;
     } catch (e) {
         console.error('[Meta WhatsApp Error]', e);
-        return false;
+        throw e; // Re-throw for offline queue handling
     }
 };
 
 // --- Logging & History ---
 
 export const logSMS = async (phone: string, message: string, channel: 'sms' | 'whatsapp', status: 'sent' | 'failed', storeId?: string) => {
-    // Attempt to log to Supabase.
-    // Ensure you have a table 'sms_logs' with columns: id, created_at, phone, message, channel, status, store_id
     try {
         await supabase.from('sms_logs').insert({
             phone,
@@ -296,11 +252,10 @@ export const getSMSHistory = async (storeId: string, page: number = 1, limit: nu
 };
 
 export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
-    // 1. Ensure config is loaded (Try memory, then DB)
-    let config = getSMSConfig(); // This already tries localStorage and then global smsConfig
+    let config = getSMSConfig();
 
     if (!config) {
-        console.warn('SMS Config not loaded. Notification skipped.');
+        console.warn('[SMS] Config not loaded. Notification skipped.');
         return;
     }
 
@@ -314,7 +269,6 @@ export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
         if (type === 'welcome') {
             msg = config.templates.welcome.replace('{Name}', data.customerName || 'Customer');
         } else if (type === 'sale') {
-            // Support {var} and {Var} for some consistency
             msg = config.templates.receipt
                 .replace(/{Amount}/g, Number(data.amount).toFixed(2))
                 .replace(/{Id}/g, (data.id || '').toString())
@@ -364,21 +318,82 @@ export const sendDirectMessage = async (phone: string, message: string, channels
 
     console.log(`[SMS] Direct Message to ${phone} via ${channels.join(', ')}`);
 
+    // Check if online
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+    if (!isOnline) {
+        console.log('[SMS] Offline - queuing message for later');
+        const { syncManager } = await import('./sync-manager');
+        await syncManager.enqueueRequest({
+            action: 'INSERT',
+            table: 'sms_queue',
+            payload: {
+                phone,
+                message,
+                channels,
+                storeId,
+                status: 'pending',
+                created_at: new Date().toISOString()
+            }
+        });
+        return;
+    }
+
     // Send SMS
     if (channels.includes('sms')) {
         let success = false;
-        if (config.provider === 'hubtel') {
-            success = await sendHubtelSMS(config, phone, message);
-        } else if (config.provider === 'mnotify') {
+        try {
             success = await sendMNotifySMS(config, phone, message);
+            await logSMS(phone, message, 'sms', success ? 'sent' : 'failed', storeId);
+        } catch (error: any) {
+            // If network error, queue it
+            if (error.message?.includes('fetch') || error.message?.includes('network')) {
+                console.log('[SMS] Network error - queuing message');
+                const { syncManager } = await import('./sync-manager');
+                await syncManager.enqueueRequest({
+                    action: 'INSERT',
+                    table: 'sms_queue',
+                    payload: {
+                        phone,
+                        message,
+                        channels: ['sms'],
+                        storeId,
+                        status: 'pending',
+                        created_at: new Date().toISOString()
+                    }
+                });
+            } else {
+                await logSMS(phone, message, 'sms', 'failed', storeId);
+            }
         }
-        await logSMS(phone, message, 'sms', success ? 'sent' : 'failed', storeId);
     }
 
     // Send WhatsApp
     if (channels.includes('whatsapp') && config.meta?.accessToken) {
-        const success = await sendMetaWhatsApp(config, phone, message);
-        await logSMS(phone, message, 'whatsapp', success ? 'sent' : 'failed', storeId);
+        try {
+            const success = await sendMetaWhatsApp(config, phone, message);
+            await logSMS(phone, message, 'whatsapp', success ? 'sent' : 'failed', storeId);
+        } catch (error: any) {
+            // If network error, queue it
+            if (error.message?.includes('fetch') || error.message?.includes('network')) {
+                console.log('[SMS] Network error - queuing WhatsApp message');
+                const { syncManager } = await import('./sync-manager');
+                await syncManager.enqueueRequest({
+                    action: 'INSERT',
+                    table: 'sms_queue',
+                    payload: {
+                        phone,
+                        message,
+                        channels: ['whatsapp'],
+                        storeId,
+                        status: 'pending',
+                        created_at: new Date().toISOString()
+                    }
+                });
+            } else {
+                await logSMS(phone, message, 'whatsapp', 'failed', storeId);
+            }
+        }
     }
 };
 
@@ -386,17 +401,14 @@ export const sendLowStockAlert = async (product: { name: string; stock: number }
     const config = getSMSConfig();
     const { automations } = config;
 
-    // Check if automation is enabled
     if (!automations?.lowStockAlert?.enabled) {
         return;
     }
 
-    // Check if stock is below threshold
     if (product.stock > automations.lowStockAlert.threshold) {
         return;
     }
 
-    // Build message with placeholders
     const template = config.templates.lowStockAlert || "Low Stock Alert: {Product} has only {Stock} left! Please restock.";
     let message = template
         .replace(/{Product}/g, product.name)
@@ -406,7 +418,6 @@ export const sendLowStockAlert = async (product: { name: string; stock: number }
 
     console.log(`[LowStockAlert] Sending alert for ${product.name} (stock: ${product.stock})`);
 
-    // Send via configured channels
     if (automations.lowStockAlert.sms) {
         await sendDirectMessage(ownerPhone, message, ['sms'], storeId);
     }
@@ -429,23 +440,17 @@ export const getSMSBalance = async (): Promise<number> => {
             });
 
             if (!res.ok) {
-                console.error(`mNotify Balance Check Failed: ${res.status} ${res.statusText}`);
-                if (res.status === 401) console.error("Please verify your mNotify API Key.");
+                console.error(`[SMS] mNotify Balance Check Failed: ${res.status} ${res.statusText}`);
+                if (res.status === 401) console.error("[SMS] Please verify your mNotify API Key.");
                 return 0;
             }
 
             const data = await res.json();
-            // mNotify returns { balance: "10.50", ... } or similar
             return parseFloat(data?.balance || '0');
         } catch (e) {
-            console.error("Failed to fetch mNotify balance", e);
+            console.error("[SMS] Failed to fetch mNotify balance", e);
             return 0;
         }
-    }
-
-    if (config.provider === 'hubtel') {
-        // Hubtel balance check implementation deferred
-        return 0;
     }
 
     return 0;

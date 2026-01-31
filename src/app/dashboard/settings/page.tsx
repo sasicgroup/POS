@@ -18,7 +18,7 @@ import { useSearchParams } from 'next/navigation';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function SettingsPage() {
-    const { activeStore, user, updateStoreSettings, teamMembers, addTeamMember, updateTeamMember, removeTeamMember, globalSettings, updateGlobalSettings } = useAuth();
+    const { activeStore, hasPermission, user, updateStoreSettings, teamMembers, addTeamMember, updateTeamMember, removeTeamMember, globalSettings, updateGlobalSettings } = useAuth();
     const { showToast } = useToast();
 
     const { businessTypes, activeCategories, customCategories, toggleBusinessType, addCustomCategory, removeCustomCategory, availableBusinessTypes, addCustomBusinessType, updateBusinessType, deleteBusinessType, updateCustomCategory } = useInventory();
@@ -563,12 +563,12 @@ export default function SettingsPage() {
     const tabs = [
         { id: 'general', label: 'General', description: 'Store details & preference', icon: Building2 },
         { id: 'profile', label: 'My Profile', description: 'Account & security', icon: Users },
-        { id: 'products', label: 'Product Settings', description: 'Categories & types', icon: Package },
-        { id: 'users', label: 'Team Members', description: 'Manage staff access', icon: Users },
+        ...(hasPermission('manage_inventory') ? [{ id: 'products', label: 'Product Settings', description: 'Categories & types', icon: Package }] : []),
+        ...(hasPermission('manage_employees') ? [{ id: 'users', label: 'Team Members', description: 'Manage staff access', icon: Users }] : []),
 
-        { id: 'barcodes', label: 'Barcodes', description: 'Generate & export', icon: Barcode },
-        { id: 'sms', label: 'SMS Config', description: 'Gateway settings', icon: MessageSquare },
-        { id: 'pwa', label: 'PWA Settings', description: 'App installation', icon: Smartphone },
+        ...(hasPermission('manage_inventory') ? [{ id: 'barcodes', label: 'Barcodes', description: 'Generate & export', icon: Barcode }] : []),
+        ...(hasPermission('manage_settings') ? [{ id: 'sms', label: 'SMS Config', description: 'Gateway settings', icon: MessageSquare }] : []),
+        ...(hasPermission('manage_settings') ? [{ id: 'pwa', label: 'PWA Settings', description: 'App installation', icon: Smartphone }] : []),
     ];
 
     return (
@@ -580,7 +580,7 @@ export default function SettingsPage() {
                 </div>
                 <button
                     onClick={handleSave}
-                    disabled={isSaving}
+                    disabled={isSaving || !hasPermission('manage_settings')}
                     className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow-lg shadow-indigo-500/30 transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                 >
                     {isSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -741,7 +741,7 @@ export default function SettingsPage() {
 
                     {/* PRODUCT SETTINGS */}
                     {
-                        activeTab === 'products' && (
+                        activeTab === 'products' && hasPermission('manage_inventory') && (
                             <div className="grid gap-6">
                                 <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
                                     <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Business Types</h2>
@@ -866,7 +866,7 @@ export default function SettingsPage() {
 
                     {/* TEAM MEMBERS */}
                     {
-                        activeTab === 'users' && (
+                        activeTab === 'users' && hasPermission('manage_employees') && (
                             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                                     <div>
@@ -931,7 +931,7 @@ export default function SettingsPage() {
 
                     {/* BARCODES */}
                     {
-                        activeTab === 'barcodes' && (
+                        activeTab === 'barcodes' && hasPermission('manage_inventory') && (
                             <div className="space-y-6">
                                 <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
                                     <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Generate Barcodes</h2>
@@ -970,7 +970,7 @@ export default function SettingsPage() {
 
                     {/* SMS Config */}
                     {
-                        activeTab === 'sms' && smsConfig && (<div className="grid gap-6">
+                        activeTab === 'sms' && hasPermission('manage_settings') && smsConfig && (<div className="grid gap-6">
                             <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm max-w-2xl">
                                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">SMS Gateway Configuration</h2>
                                 <div className="space-y-6">
@@ -1043,7 +1043,7 @@ export default function SettingsPage() {
                     }
 
                     {
-                        activeTab === 'pwa' && (
+                        activeTab === 'pwa' && hasPermission('manage_settings') && (
                             <div className="space-y-6">
                                 <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                                     <div className="flex items-center justify-between mb-6">

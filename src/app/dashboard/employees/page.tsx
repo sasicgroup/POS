@@ -50,7 +50,7 @@ interface Employee {
 }
 
 export default function EmployeesPage() {
-    const { activeStore, unlockAccount } = useAuth();
+    const { activeStore, unlockAccount, hasPermission } = useAuth();
     const { showToast } = useToast();
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -285,7 +285,7 @@ export default function EmployeesPage() {
                             Performance
                         </button>
                     </div>
-                    {activeTab === 'team' && (
+                    {activeTab === 'team' && hasPermission('manage_employees') && (
                         <button
                             onClick={() => {
                                 setEditingId(null);
@@ -317,53 +317,55 @@ export default function EmployeesPage() {
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {filteredEmployees.map((employee) => (
                             <div key={employee.id} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-700">
-                                <div className="absolute top-4 right-4 z-10">
-                                    <button
-                                        onClick={() => setActiveMenu(activeMenu === employee.id ? null : employee.id)}
-                                        className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    >
-                                        <MoreVertical className="h-5 w-5" />
-                                    </button>
+                                {hasPermission('manage_employees') && (
+                                    <div className="absolute top-4 right-4 z-10">
+                                        <button
+                                            onClick={() => setActiveMenu(activeMenu === employee.id ? null : employee.id)}
+                                            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            <MoreVertical className="h-5 w-5" />
+                                        </button>
 
-                                    {activeMenu === employee.id && (
-                                        <>
-                                            <div className="fixed inset-0 z-0" onClick={() => setActiveMenu(null)}></div>
-                                            <div className="absolute right-0 top-10 w-48 rounded-lg border border-slate-100 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 z-50 overflow-hidden">
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingId(employee.id);
-                                                        setNewEmployee({
-                                                            name: employee.name,
-                                                            username: employee.username || '',
-                                                            phone: employee.phone || '',
-                                                            role: employee.role,
-                                                            pin: employee.pin,
-                                                            salary: employee.salary || 0,
-                                                            otp_enabled: employee.otp_enabled,
-                                                            shift_start: employee.shift_start || '',
-                                                            shift_end: employee.shift_end || '',
-                                                            work_days: employee.work_days || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                                                        });
-                                                        setActiveMenu(null);
-                                                        setIsAddEmployeeOpen(true);
-                                                    }}
-                                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-                                                >
-                                                    <Edit2 className="h-4 w-4" /> Edit Details
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setActiveMenu(null);
-                                                        handleDeleteEmployee(employee.id);
-                                                    }}
-                                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                                >
-                                                    <Trash2 className="h-4 w-4" /> Remove
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
+                                        {activeMenu === employee.id && (
+                                            <>
+                                                <div className="fixed inset-0 z-0" onClick={() => setActiveMenu(null)}></div>
+                                                <div className="absolute right-0 top-10 w-48 rounded-lg border border-slate-100 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 z-50 overflow-hidden">
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingId(employee.id);
+                                                            setNewEmployee({
+                                                                name: employee.name,
+                                                                username: employee.username || '',
+                                                                phone: employee.phone || '',
+                                                                role: employee.role,
+                                                                pin: employee.pin,
+                                                                salary: employee.salary || 0,
+                                                                otp_enabled: employee.otp_enabled,
+                                                                shift_start: employee.shift_start || '',
+                                                                shift_end: employee.shift_end || '',
+                                                                work_days: employee.work_days || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                                                            });
+                                                            setActiveMenu(null);
+                                                            setIsAddEmployeeOpen(true);
+                                                        }}
+                                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                                                    >
+                                                        <Edit2 className="h-4 w-4" /> Edit Details
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setActiveMenu(null);
+                                                            handleDeleteEmployee(employee.id);
+                                                        }}
+                                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" /> Remove
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="flex items-center gap-4 mb-6">
                                     <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center text-slate-400">
@@ -404,7 +406,7 @@ export default function EmployeesPage() {
                                         </div>
                                     )}
 
-                                    {employee.is_locked && (
+                                    {employee.is_locked && hasPermission('manage_employees') && (
                                         <button
                                             onClick={() => handleUnlock(employee.id)}
                                             className="w-full mt-2 rounded bg-amber-100 py-1 text-xs font-bold text-amber-700 hover:bg-amber-200"

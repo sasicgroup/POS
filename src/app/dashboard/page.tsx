@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
@@ -13,6 +12,15 @@ import {
     Package,
     Clock
 } from 'lucide-react';
+import {
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer
+} from 'recharts';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -68,10 +76,15 @@ export default function DashboardPage() {
     };
 
     const getChartData = () => {
-        if (!salesData.length) return [];
+        console.log('[Dashboard] Getting chart data, salesData length:', salesData.length);
+        console.log('[Dashboard] Date range:', dateRange);
+
+        if (!salesData.length) {
+            console.log('[Dashboard] No sales data available');
+            return [];
+        }
 
         const now = new Date();
-        const dataMap = new Map<string, number>();
 
         // Helper to normalize date to midnight for consistent grouping
         const getMidnight = (d: Date) => {
@@ -83,6 +96,7 @@ export default function DashboardPage() {
         if (dateRange === '1d') {
             // Today Hourly (0-23)
             const startOfDay = getMidnight(now);
+            console.log('[Dashboard] 1d view - Start of day:', startOfDay);
 
             // Initialize hours 8-20
             const hours: { hour: number; label: string; value: number }[] = [];
@@ -102,7 +116,9 @@ export default function DashboardPage() {
                 }
             });
 
-            return hours.map(h => ({ label: h.label, value: h.value }));
+            const result = hours.map(h => ({ label: h.label, value: h.value }));
+            console.log('[Dashboard] 1d chart data:', result);
+            return result;
         }
         else if (dateRange === '7d') {
             // Last 7 Days - Robust Logic
@@ -118,6 +134,8 @@ export default function DashboardPage() {
                 });
             }
 
+            console.log('[Dashboard] 7d view - Days:', days.map(d => d.dateStr));
+
             // Create cutoff from the first generated day
             const cutoff = new Date(days[0].dateStr);
 
@@ -132,27 +150,40 @@ export default function DashboardPage() {
                 }
             });
 
-            return days.map(d => ({ label: d.label, value: d.value }));
+            const result = days.map(d => ({ label: d.label, value: d.value }));
+            console.log('[Dashboard] 7d chart data:', result);
+            return result;
         }
         else if (dateRange === '1m') {
-            // Last 4 Weeks
-            const weeks = [
-                { label: '3 Weeks Ago', value: 0, minDiff: 21, maxDiff: 28 },
-                { label: '2 Weeks Ago', value: 0, minDiff: 14, maxDiff: 21 },
-                { label: 'Last Week', value: 0, minDiff: 7, maxDiff: 14 },
-                { label: 'This Week', value: 0, minDiff: 0, maxDiff: 7 },
-            ];
+            // Last 30 Days (not 4 weeks)
+            const days: { dateStr: string; label: string; value: number }[] = [];
+            for (let i = 29; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(now.getDate() - i);
+                const midnight = getMidnight(d);
+                days.push({
+                    dateStr: midnight.toISOString().split('T')[0],
+                    label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    value: 0
+                });
+            }
 
-            const oneDay = 24 * 60 * 60 * 1000;
+            const cutoff = new Date(days[0].dateStr);
+
             salesData.forEach(sale => {
-                const diffDays = (now.getTime() - new Date(sale.created_at).getTime()) / oneDay;
-                const target = weeks.find(w => diffDays >= w.minDiff && diffDays < w.maxDiff);
-                if (target) {
-                    target.value += (Number(sale.total_amount) || 0);
+                const saleDate = new Date(sale.created_at);
+                if (saleDate >= cutoff) {
+                    const saleDateStr = getMidnight(saleDate).toISOString().split('T')[0];
+                    const target = days.find(d => d.dateStr === saleDateStr);
+                    if (target) {
+                        target.value += (Number(sale.total_amount) || 0);
+                    }
                 }
             });
 
-            return weeks;
+            const result = days.map(d => ({ label: d.label, value: d.value }));
+            console.log('[Dashboard] 1m chart data:', result);
+            return result;
         }
         else {
             // Monthly View (3m, 6m, 1y)
@@ -178,11 +209,16 @@ export default function DashboardPage() {
                 }
             });
 
-            return months.map(m => ({ label: m.label, value: m.value }));
+            const result = months.map(m => ({ label: m.label, value: m.value }));
+            console.log(`[Dashboard] ${dateRange} chart data:`, result);
+            return result;
         }
     };
 
     const chartData = getChartData();
+    console.log('[Dashboard] Final chartData:', chartData);
+    console.log('[Dashboard] chartData length:', chartData.length);
+    console.log('[Dashboard] Max value in chart:', chartData.length > 0 ? Math.max(...chartData.map(d => d.value)) : 0);
 
     if (isLoading) return <div className="p-8 text-center text-slate-500 animate-pulse">Loading dashboard...</div>;
 
@@ -291,21 +327,39 @@ export default function DashboardPage() {
                         </select>
                     </div>
 
-                    <div className="flex h-80 items-end gap-2 sm:gap-4 justify-between pb-2 px-2">
-                        {stats.revenue > 0 ? (
-                            chartData.map((item, i) => (
-                                <div key={i} className="flex flex-col items-center gap-2 group flex-1">
-                                    <div className="w-full h-full flex items-end justify-center">
-                                        <div
-                                            className="w-full max-w-[40px] bg-indigo-100 dark:bg-indigo-900/30 rounded-t-lg relative group-hover:bg-indigo-200 dark:group-hover:bg-indigo-800 transition-all overflow-hidden"
-                                            style={{ height: `${(item.value / (Math.max(...chartData.map(d => d.value)) || 1)) * 100}%`, minHeight: '4px' }}
-                                        >
-                                            <div className="absolute inset-x-0 bottom-0 bg-indigo-500 opacity-80 h-full w-full transform translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
-                                        </div>
-                                    </div>
-                                    <span className="text-[10px] sm:text-xs text-slate-400 font-medium truncate w-full text-center">{item.label}</span>
-                                </div>
-                            ))
+                    <div className="h-80 w-full mt-4">
+                        {chartData.length > 0 && chartData.some(d => d.value > 0) ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis
+                                        dataKey="label"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fontSize: 12, fill: '#64748b' }}
+                                        dy={10}
+                                        interval={chartData.length > 20 ? 6 : 0}
+                                    />
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fontSize: 12, fill: '#64748b' }}
+                                        tickFormatter={(value) => `GHS ${value >= 1000 ? (value / 1000).toFixed(1) + 'k' : value}`}
+                                    />
+                                    <Tooltip
+                                        cursor={{ fill: '#f1f5f9' }}
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                        formatter={(value: number) => [`GHS ${value.toFixed(2)}`, 'Revenue']}
+                                    />
+                                    <Bar
+                                        dataKey="value"
+                                        fill="#6366f1"
+                                        radius={[4, 4, 0, 0]}
+                                        barSize={chartData.length > 10 ? undefined : 40}
+                                        activeBar={{ fill: '#4f46e5' }}
+                                    />
+                                </BarChart>
+                            </ResponsiveContainer>
                         ) : (
                             <div className="flex flex-col items-center justify-center text-slate-400 h-full w-full">
                                 <TrendingUp className="h-10 w-10 mb-2 opacity-20" />
@@ -359,4 +413,3 @@ export default function DashboardPage() {
         </div>
     );
 }
-

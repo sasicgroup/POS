@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { syncManager } from './sync-manager';
 import { useAuth } from './auth-context';
@@ -26,6 +26,7 @@ interface InventoryContextType {
     searchQuery: string;
     setSearchQuery: (query: string) => void;
     filteredProducts: Product[];
+    getProductByBarcode: (barcode: string) => Promise<Product | null>;
     activeCategories: string[];
     setActiveCategories: (categories: string[]) => void;
     businessTypes: string[];
@@ -56,6 +57,8 @@ interface InventoryContextType {
     setPageSize: (size: number) => void;
     totalCount: number;
     migrateImages: () => Promise<number | undefined>;
+    preloadCacheForOffline: () => Promise<void>;
+    cacheStatus: { isLoaded: boolean; productCount: number; lastUpdated: number | null };
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -84,7 +87,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     // Cache state - Page based + IDB
     const [pageCache, setPageCache] = useState<Record<number, { data: Product[], timestamp: number }>>({});
     const [isCacheLoaded, setIsCacheLoaded] = useState(false);
-    const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    const [cacheStatus, setCacheStatus] = useState({ isLoaded: false, productCount: 0, lastUpdated: null as number | null });
+    const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days for offline support
 
     // Load Cache from IDB
     useEffect(() => {
@@ -92,19 +96,48 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             setIsCacheLoaded(false);
             const key = `sms_inventory_cache_${activeStore.id}`;
             idbGet(key).then((val) => {
-                if (val && typeof val === 'object') setPageCache(val);
-                else setPageCache({});
+                if (val && typeof val === 'object') {
+                    setPageCache(val);
+                    // Update cache status
+                    const allProducts = Object.values(val).flatMap((page: any) => page.data || []);
+                    const timestamps = Object.values(val).map((page: any) => page.timestamp).filter(Boolean);
+                    const lastUpdated = timestamps.length > 0 ? Math.max(...timestamps) : null;
+                    setCacheStatus({
+                        isLoaded: allProducts.length > 0,
+                        productCount: allProducts.length,
+                        lastUpdated
+                    });
+                } else {
+                    setPageCache({});
+                    setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
+                }
                 setIsCacheLoaded(true);
             }).catch(err => {
                 console.error("IDB Cache Load Error", err);
                 setPageCache({});
+                setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
                 setIsCacheLoaded(true);
             });
         } else {
             setPageCache({});
+            setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
             setIsCacheLoaded(true);
         }
     }, [activeStore?.id]);
+
+    // Auto-preload cache on login (if cache is empty or stale)
+    useEffect(() => {
+        if (activeStore?.id && isCacheLoaded && user?.id) {
+            // Check if cache needs refresh
+            const needsPreload = !cacheStatus.isLoaded ||
+                (cacheStatus.lastUpdated && Date.now() - cacheStatus.lastUpdated > CACHE_TTL);
+
+            if (false) { // Disabled per user request (Egress optimization - Scan/Search only)
+                console.log('[Inventory] Auto-preloading cache for offline support...');
+                preloadCacheForOffline().catch(err => console.error('[Inventory] Auto-preload failed:', err));
+            }
+        }
+    }, [activeStore?.id, isCacheLoaded, user?.id]); // Only run when these change
 
     // UI states
     const [businessTypes, setBusinessTypes] = useState<string[]>([]);
@@ -170,7 +203,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     const isFetching = useRef(false);
 
-    const fetchProducts = React.useCallback(async (pageNum = 1, pageSizeNum = 20, retryCount = 0) => {
+    const fetchProducts = React.useCallback(async (pageNum = 1, pageSizeNum = 20, query = '', retryCount = 0) => {
         if (!activeStore?.id || activeStore.id.toString().startsWith('temp-')) {
             setIsLoading(false);
             return;
@@ -199,10 +232,16 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             const from = (pageNum - 1) * pageSizeNum;
             const to = from + pageSizeNum - 1;
 
-            const { data, error, count } = await supabase
+            let queryBuilder = supabase
                 .from('products')
                 .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id', { count: 'estimated' })
-                .eq('store_id', activeStore.id)
+                .eq('store_id', activeStore.id);
+
+            if (query && query.trim()) {
+                queryBuilder = queryBuilder.or(`name.ilike.%${query}%,sku.ilike.%${query}%`);
+            }
+
+            const { data, error, count } = await queryBuilder
                 .range(from, to)
                 .abortSignal(controller.signal);
 
@@ -244,7 +283,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Retry logic
             const isNetworkError = err.message === 'Failed to fetch' || err.message?.includes('network');
             if (retryCount < 3 && isNetworkError) {
-                setTimeout(() => fetchProducts(pageNum, pageSizeNum, retryCount + 1), 1000 * Math.pow(2, retryCount));
+                setTimeout(() => fetchProducts(pageNum, pageSizeNum, query, retryCount + 1), 1000 * Math.pow(2, retryCount));
                 return;
             }
             setIsLoading(false);
@@ -254,26 +293,26 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }, [activeStore?.id, pageCache]);
 
     useEffect(() => {
+        // Wait for cache to load from IDB before proceeding
+        if (!isCacheLoaded) return;
+
         if (activeStore?.id) {
             // Lazy Load Logic: Only fetch if searching
             // We strip leading/trailing whitespace
             const hasSearch = searchQuery && searchQuery.trim().length > 0;
 
             if (hasSearch) {
-                // If searching, ignore cache (or use separate search cache?)
-                // For now, always fetch on search to ensure accuracy
-                fetchProducts(page, pageSize);
+                // If searching, fetch with query
+                fetchProducts(page, pageSize, searchQuery);
             } else {
                 setProducts([]);
-                // But ensure count is accurate
-                fetchTotalCount();
                 setIsLoading(false);
             }
         } else {
             setProducts([]);
             setIsLoading(false);
         }
-    }, [activeStore?.id, page, pageSize, fetchProducts, searchQuery]);
+    }, [activeStore?.id, page, pageSize, fetchProducts, searchQuery, pageCache, isCacheLoaded]);
 
 
     // Load Cart from LocalStorage on mount
@@ -302,7 +341,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 quantity: item.quantity,
                 sku: item.sku,
                 image: (item.image && item.image.length > 500) ? undefined : item.image,
-                category: item.category
+                category: item.category,
+                maxStock: item.maxStock
             }));
             localStorage.setItem('sms_cart', JSON.stringify(minimalCart));
         } catch (error) {
@@ -352,10 +392,88 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             };
             setProducts(prev => prev.map(p => p.id === tempId ? mappedProduct : p));
 
-            // Invalidate cache to force fresh fetch next time
-            setPageCache({});
-            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
+            // Refresh cache in background to keep offline data current
+            refreshCacheInBackground();
         }
+    }, [activeStore?.id]);
+
+    // Helper: Refresh cache in background when inventory changes
+    const refreshCacheInBackground = React.useCallback(async () => {
+        if (!activeStore?.id) return;
+
+        console.log('[Inventory] Refreshing cache after inventory change...');
+
+        try {
+            // Fetch first 100 products (same as preload)
+            const { data, error } = await supabase
+                .from('products')
+                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id')
+                .eq('store_id', activeStore.id)
+                .limit(100);
+
+            if (error) {
+                console.error('[Inventory] Cache refresh error:', error);
+                return;
+            }
+
+            if (data && data.length > 0) {
+                const mappedProducts = data.map((p: any) => ({
+                    ...p,
+                    costPrice: p.cost_price || 0,
+                    status: p.status || 'In Stock',
+                    video: p.video || '',
+                    image: p.image || ''
+                }));
+
+                // Update cache
+                const newCache = {
+                    1: {
+                        data: mappedProducts,
+                        timestamp: Date.now()
+                    }
+                };
+
+                setPageCache(newCache);
+                await idbSet(`sms_inventory_cache_${activeStore.id}`, newCache);
+
+                // Update cache status
+                setCacheStatus({
+                    isLoaded: true,
+                    productCount: mappedProducts.length,
+                    lastUpdated: Date.now()
+                });
+
+                console.log(`[Inventory] Cache refreshed with ${mappedProducts.length} products`);
+            }
+        } catch (err) {
+            console.error('[Inventory] Cache refresh failed:', err);
+        }
+    }, [activeStore?.id]);
+
+
+    const getProductByBarcode = React.useCallback(async (barcode: string) => {
+        if (!activeStore?.id) return null;
+        try {
+            const { data } = await supabase
+                .from('products')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .eq('sku', barcode)
+                .single();
+
+            if (data) {
+                return {
+                    ...data,
+                    costPrice: data.cost_price || 0,
+                    status: data.status || 'In Stock',
+                    video: data.video || '',
+                    image: data.image || ''
+                };
+            }
+        } catch (e) {
+            console.error("Error fetching by barcode:", e);
+        }
+        return null;
     }, [activeStore?.id]);
 
     const updateProduct = React.useCallback(async (product: any) => {
@@ -383,11 +501,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             console.error("Error updating product:", error);
             fetchProducts();
         } else {
-            // Invalidate cache
-            setPageCache({});
-            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
+            // Refresh cache in background
+            refreshCacheInBackground();
         }
-    }, [activeStore?.id, fetchProducts]);
+    }, [activeStore?.id, fetchProducts, refreshCacheInBackground]);
 
     const deleteProduct = React.useCallback(async (id: any) => {
         // Optimistic delete
@@ -399,11 +516,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             console.error("Error deleting product:", error);
             fetchProducts();
         } else {
-            // Invalidate cache
-            setPageCache({});
-            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
+            // Refresh cache in background
+            refreshCacheInBackground();
         }
-    }, [fetchProducts]);
+    }, [fetchProducts, refreshCacheInBackground]);
 
     const processSale = React.useCallback(async (saleData: any) => {
         if (!activeStore?.id) return null;
@@ -536,10 +652,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 return p;
             }));
 
-            // Invalidate Cache (Stock changed)
-            setPageCache({});
-            if (activeStore?.id) idbDel(`sms_inventory_cache_${activeStore.id}`);
-
             // DB Update loop (Sequential to be safe)
             for (const item of saleData.items) {
                 const product = products.find(p => p.id === item.id);
@@ -613,8 +725,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             }
         }
 
+        // Refresh cache in background (stock changed)
+        refreshCacheInBackground();
+
         return sale.id;
-    }, [activeStore?.id, user?.id, products]);
+    }, [activeStore?.id, user?.id, products, refreshCacheInBackground]);
 
     const filteredProducts = products.filter(product => {
         const matchesSearch = (product.name && String(product.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -663,7 +778,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 image: (product.image && product.image.length < 500) ? product.image : undefined,
                 category: product.category,
                 costPrice: product.costPrice,
-                status: product.status
+                status: product.status,
+                maxStock: product.stock
             }];
         });
     }, [products]);
@@ -675,8 +791,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const updateCartQuantity = React.useCallback((id: any, delta: number) => {
         setCart(current => current.map(item => {
             if (item.id === id) {
-                const product = products.find(p => p.id === id);
-                const maxStock = product?.stock || 0;
+                const maxStock = item.maxStock !== undefined ? item.maxStock : (products.find(p => p.id === id)?.stock || 1000);
                 const newQty = Math.max(1, Math.min(item.quantity + delta, maxStock));
                 return { ...item, quantity: newQty };
             }
@@ -687,8 +802,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const setCartQuantity = React.useCallback((id: any, quantity: number) => {
         setCart(current => current.map(item => {
             if (item.id === id) {
-                const product = products.find(p => p.id === id);
-                const maxStock = product?.stock || 0;
+                const maxStock = item.maxStock !== undefined ? item.maxStock : (products.find(p => p.id === id)?.stock || 1000);
                 return { ...item, quantity: Math.max(1, Math.min(quantity, maxStock)) };
             }
             return item;
@@ -783,6 +897,60 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (count !== null) setTotalCount(count);
     };
 
+    const preloadCacheForOffline = async () => {
+        if (!activeStore?.id) return;
+
+        console.log('[Inventory] Preloading cache for offline use...');
+
+        try {
+            // Fetch first 100 products (should cover most small businesses)
+            const { data, error } = await supabase
+                .from('products')
+                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id')
+                .eq('store_id', activeStore.id)
+                .limit(100);
+
+            if (error) {
+                console.error('[Inventory] Preload error:', error);
+                return;
+            }
+
+            if (data && data.length > 0) {
+                const mappedProducts = data.map((p: any) => ({
+                    ...p,
+                    costPrice: p.cost_price || 0,
+                    status: p.status || 'In Stock',
+                    video: p.video || '',
+                    image: p.image || ''
+                }));
+
+                // Store in cache (page 1)
+                const newCache = {
+                    1: {
+                        data: mappedProducts,
+                        timestamp: Date.now()
+                    }
+                };
+
+                setPageCache(newCache);
+                await idbSet(`sms_inventory_cache_${activeStore.id}`, newCache);
+
+                // Update cache status
+                setCacheStatus({
+                    isLoaded: true,
+                    productCount: mappedProducts.length,
+                    lastUpdated: Date.now()
+                });
+
+                console.log(`[Inventory] Cached ${mappedProducts.length} products for offline use`);
+            }
+        } catch (err) {
+            console.error('[Inventory] Preload failed:', err);
+        }
+    };
+
+
+
     return (
         <InventoryContext.Provider value={{
             products,
@@ -820,7 +988,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             pageSize,
             setPageSize,
             totalCount,
-            migrateImages // New
+            migrateImages,
+            getProductByBarcode,
+            preloadCacheForOffline,
+            cacheStatus
         }}>
             {children}
         </InventoryContext.Provider>

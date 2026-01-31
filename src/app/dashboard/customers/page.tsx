@@ -576,6 +576,61 @@ export default function CustomersPage() {
                     )}
                 </div>
 
+                {/* Add Customer Modal */}
+                {isAddCustomerOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                        <div className="w-full max-w-md bg-white rounded-xl shadow-xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 animate-in zoom-in-95">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add New Customer</h2>
+                                <button onClick={() => setIsAddCustomerOpen(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleAddCustomer} className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={newCustomer.name}
+                                        onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                        placeholder="Enter customer name"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Phone</label>
+                                    <input
+                                        type="tel"
+                                        value={newCustomer.phone}
+                                        onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                        placeholder="Enter phone number"
+                                    />
+                                </div>
+
+                                <div className="pt-4 flex gap-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddCustomerOpen(false)}
+                                        className="flex-1 px-4 py-2 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? 'Adding...' : 'Add Customer'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
                 <ConfirmDialog
                     isOpen={resetPointsConfirm}
                     onClose={() => setResetPointsConfirm(false)}

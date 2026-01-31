@@ -155,6 +155,19 @@ class SyncManager {
         const { table, action, payload } = item;
 
         try {
+            // Special handling for SMS queue
+            if (table === 'sms_queue' && action === 'INSERT') {
+                console.log('[SyncManager] Sending queued SMS:', payload);
+                const { sendDirectMessage } = await import('./sms');
+                await sendDirectMessage(
+                    payload.phone,
+                    payload.message,
+                    payload.channels || ['sms'],
+                    payload.storeId
+                );
+                return true;
+            }
+
             let result;
             if (action === 'INSERT') {
                 result = await supabase.from(table).insert(payload);
@@ -186,25 +199,77 @@ class SyncManager {
 
     private async syncOfflineSale(payload: any): Promise<boolean> {
         // Reconstruct the logic from inventory-context processSale
-        // Payload should contain: { activeStoreId, saleData, user }
+        // Payload should contain: { activeStoreId, saleData, userId, timestamp }
         console.log('[SyncManager] Syncing offline sale:', payload);
         const { activeStoreId, saleData, userId } = payload;
 
         try {
-            // 1. Insert Sale
+            // 1. Handle Customer (if provided)
+            let customerId = saleData.customerId || null;
+            let pointsEarned = 0;
+            let loyaltyConfig = null;
+
+            if (saleData.customer && saleData.customer.phone && !customerId) {
+                // Check if customer exists
+                const { data: existing } = await supabase
+                    .from('customers')
+                    .select('id')
+                    .eq('store_id', activeStoreId)
+                    .eq('phone', saleData.customer.phone)
+                    .single();
+
+                if (existing) {
+                    customerId = existing.id;
+                } else {
+                    // Create new customer
+                    const { data: newCustomer } = await supabase.from('customers').insert({
+                        store_id: activeStoreId,
+                        name: saleData.customer.name || 'Unknown',
+                        phone: saleData.customer.phone,
+                        total_spent: 0,
+                        points: 0
+                    }).select().single();
+                    if (newCustomer) customerId = newCustomer.id;
+                }
+            }
+
+            // Fetch Loyalty Config
+            if (customerId) {
+                const { data: config } = await supabase
+                    .from('loyalty_programs')
+                    .select('*')
+                    .eq('store_id', activeStoreId)
+                    .single();
+
+                if (config && config.enabled) {
+                    loyaltyConfig = config;
+                    const rate = config.points_per_currency || 1;
+                    pointsEarned = Math.floor(saleData.totalAmount * rate);
+                }
+            }
+
+            // 2. Insert Sale with ALL fields
             const { data: sale, error: saleError } = await supabase.from('sales').insert({
                 store_id: activeStoreId,
                 total_amount: saleData.totalAmount,
                 payment_method: saleData.paymentMethod,
                 employee_id: userId,
-                customer_id: saleData.customerId, // processed before queueing or during
+                customer_id: customerId,
                 status: 'completed',
+                points_earned: pointsEarned,
+                points_redeemed: saleData.pointsRedeemed || 0,
+                loyalty_discount_amount: saleData.loyaltyDiscount || 0,
+                tax_amount: saleData.taxAmount || 0,
+                total_discount: saleData.totalDiscount || 0,
                 created_at: new Date(payload.timestamp || Date.now()).toISOString() // Preserve offline time
             }).select().single();
 
-            if (saleError || !sale) throw saleError;
+            if (saleError || !sale) {
+                console.error('[SyncManager] Sale insert error:', saleError);
+                throw saleError;
+            }
 
-            // 2. Sale Items
+            // 3. Sale Items
             if (saleData.items && saleData.items.length > 0) {
                 const saleItems = saleData.items.map((item: any) => ({
                     sale_id: sale.id,
@@ -214,27 +279,63 @@ class SyncManager {
                     subtotal: item.quantity * item.price
                 }));
                 const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
-                if (itemsError) throw itemsError;
+                if (itemsError) {
+                    console.error('[SyncManager] Sale items error:', itemsError);
+                    throw itemsError;
+                }
 
-                // 3. Update Stock (One by one to be safe)
+                // 4. Update Stock with Conflict Detection
                 for (const item of saleData.items) {
-                    const { error: stockError } = await supabase.rpc('decrement_stock', {
-                        p_id: item.id,
-                        quantity: item.quantity
-                    });
-                    // Fallback to update if RPC missing, but RPC is safer. 
-                    // Assuming direct update for now to match current logic if no RPC
-                    if (stockError) {
-                        // Try direct update
-                        await supabase.from('products').update({
-                            stock: item.currentStock - item.quantity // Might be inaccurate if stock changed on server. 
-                            // Better to use rpc 'decrement' but sticking to context logic for now
-                        }).eq('id', item.id);
+                    // Fetch current stock to detect conflicts
+                    const { data: product } = await supabase
+                        .from('products')
+                        .select('stock, name')
+                        .eq('id', item.id)
+                        .single();
+
+                    if (product) {
+                        const currentServerStock = product.stock;
+                        const requestedQuantity = item.quantity;
+                        const newStock = currentServerStock - requestedQuantity;
+
+                        // Detect stock conflict
+                        if (currentServerStock < requestedQuantity) {
+                            console.warn(
+                                `[SyncManager] ⚠️ STOCK CONFLICT: ${product.name}`,
+                                `\n  Server stock: ${currentServerStock}`,
+                                `\n  Offline sale quantity: ${requestedQuantity}`,
+                                `\n  Shortfall: ${requestedQuantity - currentServerStock}`
+                            );
+
+                            // Create notification for owner
+                            try {
+                                await supabase.from('notifications').insert({
+                                    store_id: activeStoreId,
+                                    title: '⚠️ Stock Conflict Detected',
+                                    message: `Offline sale synced for "${product.name}" but stock was insufficient. Server had ${currentServerStock}, sale was for ${requestedQuantity}. Stock adjusted to ${Math.max(0, newStock)}.`,
+                                    type: 'warning',
+                                    is_read: false
+                                });
+                            } catch (notifErr) {
+                                console.error('Failed to create notification:', notifErr);
+                            }
+                        }
+
+                        // Update stock (allow negative to preserve sale, but floor at 0 for display)
+                        const finalStock = Math.max(0, newStock);
+                        await supabase.from('products')
+                            .update({ stock: finalStock })
+                            .eq('id', item.id);
+
+                        console.log(
+                            `[SyncManager] Stock updated: ${product.name}`,
+                            `${currentServerStock} → ${finalStock}`
+                        );
                     }
                 }
             }
 
-            // 4. Payments
+            // 5. Record Payment
             if (saleData.totalAmount > 0) {
                 await supabase.from('sale_payments').insert({
                     sale_id: sale.id,
@@ -244,6 +345,52 @@ class SyncManager {
                 });
             }
 
+            // 6. Update Customer Loyalty & Total Spent
+            if (customerId) {
+                const { data: currentCust } = await supabase
+                    .from('customers')
+                    .select('points, total_spent, total_visits')
+                    .eq('id', customerId)
+                    .single();
+
+                if (currentCust) {
+                    const redeemed = saleData.pointsRedeemed || 0;
+                    const newPoints = Math.max(0, (currentCust.points || 0) + pointsEarned - redeemed);
+                    const newTotalSpent = (currentCust.total_spent || 0) + saleData.totalAmount;
+                    const newTotalVisits = (currentCust.total_visits || 0) + 1;
+
+                    await supabase.from('customers').update({
+                        points: newPoints,
+                        total_spent: newTotalSpent,
+                        total_visits: newTotalVisits,
+                        last_visit: new Date().toISOString()
+                    }).eq('id', customerId);
+
+                    // Log Loyalty Earned
+                    if (pointsEarned > 0) {
+                        await supabase.from('loyalty_logs').insert({
+                            store_id: activeStoreId,
+                            customer_id: customerId,
+                            points: pointsEarned,
+                            type: 'earned',
+                            description: `Earned from Offline Sale #${sale.id.slice(0, 8)}`
+                        });
+                    }
+
+                    // Log Loyalty Redeemed
+                    if (redeemed > 0) {
+                        await supabase.from('loyalty_logs').insert({
+                            store_id: activeStoreId,
+                            customer_id: customerId,
+                            points: redeemed,
+                            type: 'redeemed',
+                            description: `Redeemed on Offline Sale #${sale.id.slice(0, 8)}`
+                        });
+                    }
+                }
+            }
+
+            console.log('[SyncManager] Offline sale synced successfully:', sale.id);
             return true;
         } catch (err) {
             console.error('[SyncManager] Failed to sync offline sale', err);

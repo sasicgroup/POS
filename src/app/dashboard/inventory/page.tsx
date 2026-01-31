@@ -27,6 +27,7 @@ export default function InventoryPage() {
         cart,
         setCart,
         migrateImages,
+        getProductByBarcode,
         searchQuery,
         setSearchQuery
     } = useInventory();
@@ -404,28 +405,33 @@ export default function InventoryPage() {
         setIsScanning(false);
     };
 
-    const handleScan = (code: string) => {
+    const handleScan = async (code: string) => {
         if (!code) return;
 
-        // Try to find existing product by SKU
-        const existingProduct = products.find(p =>
+        // Try to find existing product by SKU (Local)
+        let existingProduct = products.find(p =>
             p.sku && p.sku.toLowerCase().trim() === code.toLowerCase().trim()
         );
 
+        // Try Server if not found locally
+        if (!existingProduct) {
+            existingProduct = await getProductByBarcode(code);
+        }
+
         if (existingProduct) {
             // Product found - highlight it and show only this product
-            setSelectedProducts([existingProduct.id]);
+            setSelectedProducts([]); // Clear selection? Or set to ID. Wait, ID might not match if product not in list?
+            // If getProductByBarcode returned a product, it's NOT in filteredProducts list yet.
+            // But setSearchQuery will trigger a fetch.
+            // So we just clear selection and set search query.
+
+            // setSelectedProducts([existingProduct.id]); // Should work after fetch update
             setSearchQuery(existingProduct.sku); // Filter to show only this product
             setIsScanning(false);
             showToast('success', `Product found: ${existingProduct.name}`);
 
-            // Scroll to the product
-            setTimeout(() => {
-                const element = document.getElementById(`product-${existingProduct.id}`);
-                if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            }, 100);
+            // Scroll to the product (Wait for fetch to populate)
+            // setTimeout(() => { ... }, 500); // Increased timeout
         } else {
             // Product not found - pre-fill SKU for new product
             setNewProduct({ ...newProduct, sku: code });
