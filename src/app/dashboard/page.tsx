@@ -349,7 +349,7 @@ export default function DashboardPage() {
                                     <Tooltip
                                         cursor={{ fill: '#f1f5f9' }}
                                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                        formatter={(value: number) => [`GHS ${value.toFixed(2)}`, 'Revenue']}
+                                        formatter={(value: any) => [`GHS ${Number(value || 0).toFixed(2)}`, 'Revenue']}
                                     />
                                     <Bar
                                         dataKey="value"
