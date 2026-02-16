@@ -49,7 +49,7 @@ function SyncStatusBadge() {
 
     return (
         <div className={`
-            flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all
+            flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-medium transition-all
             ${!isOnline ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' :
                 isSyncing ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
                     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}
@@ -57,17 +57,17 @@ function SyncStatusBadge() {
             {!isOnline ? (
                 <>
                     <CloudOff className="h-3.5 w-3.5" />
-                    <span>Offline</span>
+                    <span className="hidden sm:inline">Offline</span>
                 </>
             ) : isSyncing ? (
                 <>
                     <RefreshIcon className="h-3.5 w-3.5 animate-spin" />
-                    <span>Syncing ({queueLength})</span>
+                    <span className="hidden sm:inline">Syncing ({queueLength})</span>
                 </>
             ) : (
                 <>
                     <Cloud className="h-3.5 w-3.5" />
-                    <span>Pending ({queueLength})</span>
+                    <span className="hidden sm:inline">Pending ({queueLength})</span>
                 </>
             )}
         </div>
@@ -93,11 +93,11 @@ function CacheStatusBadge() {
 
     return (
         <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-medium transition-all bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
             title={`Last updated: ${formatTime(cacheStatus.lastUpdated)}`}
         >
             <Database className="h-3.5 w-3.5" />
-            <span>{cacheStatus.productCount} cached</span>
+            <span className="hidden sm:inline">{cacheStatus.productCount} cached</span>
             {!isOnline && <CheckCircle2 className="h-3.5 w-3.5" />}
         </div>
     );
@@ -176,6 +176,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
         { name: 'Invoices', href: '/dashboard/invoices', icon: FileText, permission: 'access_pos' },
         { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock, permission: 'view_sales_history' },
+        { name: 'Installments', href: '/dashboard/installments', icon: CreditCard, permission: 'access_pos' },
         { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'view_analytics' },
         { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award, permission: 'manage_customers' },
         { name: 'Customers', href: '/dashboard/customers', icon: Users, permission: 'view_customers' },
@@ -324,19 +325,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     <div className="relative" ref={storeMenuRef}>
                         <button
                             onClick={() => setIsStoreMenuOpen(!isStoreMenuOpen)}
-                            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            className="flex items-center gap-1.5 sm:gap-2 rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                         >
-                            {activeStore ? (
-                                <>
-                                    <div className="flex h-6 w-6 items-center justify-center rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
-                                        <Store className="h-4 w-4" />
-                                    </div>
-                                    <span className="font-semibold truncate max-w-[120px] sm:max-w-[200px]">{activeStore.name}</span>
-                                </>
-                            ) : (
-                                'Select Store'
-                            )}
-                            <ChevronDown className="h-4 w-4 text-slate-400" />
+                            <div className="flex h-6 w-6 items-center justify-center rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                <Store className="h-4 w-4" />
+                            </div>
+                            <span className="font-semibold truncate max-w-[80px] xs:max-w-[120px] sm:max-w-[200px]">
+                                {activeStore ? activeStore.name : 'Select Store'}
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-slate-400 flex-shrink-0" />
                         </button>
 
                         {isStoreMenuOpen && (

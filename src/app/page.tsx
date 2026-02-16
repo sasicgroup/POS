@@ -7,14 +7,17 @@ import { Store, Lock, ArrowRight, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-    const { login, verifyOTP, resendOTP } = useAuth();
+    const { login, verifyOTP, resendOTP, verifyMasterpass } = useAuth();
     const router = useRouter();
 
     // Form State
-    const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
+    const [step, setStep] = useState<'credentials' | 'choice' | 'otp' | 'masterpass'>('credentials');
     const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
     const [otp, setOtp] = useState('');
+    const [masterpass, setMasterpass] = useState('');
+    const [availableMethods, setAvailableMethods] = useState<string[]>([]);
+    const [selectedMethod, setSelectedMethod] = useState<'sms' | 'masterpass' | null>(null);
 
     // UI State
     const [loading, setLoading] = useState(false);
@@ -62,8 +65,13 @@ export default function LoginPage() {
             const result = await login(username, pin);
 
             if (result.success) {
-                if (result.status === 'OTP_REQUIRED') {
+                if (result.status === 'CHOICE_REQUIRED') {
+                    setAvailableMethods(result.availableMethods || []);
+                    setStep('choice');
+                } else if (result.status === 'OTP_REQUIRED') {
                     setStep('otp');
+                } else if (result.status === 'MASTERPASS_REQUIRED') {
+                    setStep('masterpass');
                 } else {
                     router.push('/dashboard');
                 }
@@ -90,6 +98,17 @@ export default function LoginPage() {
         } catch (err) { setError('Verification failed.'); setLoading(false); }
     };
 
+    const handleMasterpassSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        try {
+            const success = await verifyMasterpass(username, masterpass);
+            if (success) router.push('/dashboard');
+            else { setError('Invalid Master Password.'); setLoading(false); }
+        } catch (err) { setError('Verification failed.'); setLoading(false); }
+    };
+
     const handleResendOTP = async () => {
         if (resendCooldown > 0) return;
         setLoading(true);
@@ -100,6 +119,30 @@ export default function LoginPage() {
             // Wait, I should try to keep the original logic intact.
             // I'll stick to updating imports and the top part, and the render part.
         } catch (e) { setError('Failed to resend OTP.'); } finally { setLoading(false); }
+    };
+
+    const handleMethodSelect = async (method: 'sms' | 'masterpass') => {
+        setSelectedMethod(method);
+        setLoading(true);
+        setError('');
+
+        try {
+            if (method === 'sms') {
+                // Trigger SMS OTP sending
+                const success = await resendOTP(username);
+                if (success) {
+                    setStep('otp');
+                } else {
+                    setError('Failed to send OTP. Please try again.');
+                }
+            } else if (method === 'masterpass') {
+                setStep('masterpass');
+            }
+        } catch (err) {
+            setError('Failed to proceed. Please try again.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -122,9 +165,11 @@ export default function LoginPage() {
                     </div>
 
                     <h2 className="mb-2 text-center text-3xl font-bold tracking-tight text-slate-900">
-                        {step === 'otp' ? 'Security Check' : (branding?.name || 'Store Access')}
+                        {step === 'choice' ? 'Choose Verification Method' : step === 'otp' ? 'Security Check' : step === 'masterpass' ? 'Master Password' : (branding?.name || 'Store Access')}
                     </h2>
-                    <p className="mb-8 text-center text-slate-500">{step === 'otp' ? 'Enter the code sent to your phone' : 'Enter your credentials to continue'}</p>
+                    <p className="mb-8 text-center text-slate-500">
+                        {step === 'choice' ? 'Select how you want to verify your identity' : step === 'otp' ? 'Enter the code sent to your phone' : step === 'masterpass' ? 'Enter your master password' : 'Enter your credentials to continue'}
+                    </p>
 
                     {step === 'credentials' ? (
                         <form onSubmit={handleCredentialsSubmit} className="space-y-6">
@@ -178,6 +223,103 @@ export default function LoginPage() {
                                     </span>
                                 )}
                             </button>
+                        </form>
+                    ) : step === 'choice' ? (
+                        <div className="space-y-4">
+                            {availableMethods.includes('sms') && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleMethodSelect('sms')}
+                                    disabled={loading}
+                                    className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors">
+                                            <svg className="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                            </svg>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="font-semibold text-slate-900">SMS OTP</div>
+                                            <div className="text-sm text-slate-500">Receive code via text message</div>
+                                        </div>
+                                    </div>
+                                    <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
+                                </button>
+                            )}
+
+                            {availableMethods.includes('masterpass') && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleMethodSelect('masterpass')}
+                                    disabled={loading}
+                                    className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors">
+                                            <Lock className="h-6 w-6 text-indigo-600" />
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="font-semibold text-slate-900">Master Password</div>
+                                            <div className="text-sm text-slate-500">Use your personal password</div>
+                                        </div>
+                                    </div>
+                                    <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
+                                </button>
+                            )}
+
+                            {error && (
+                                <p className="text-center text-sm text-red-600 font-medium animate-pulse bg-red-50 p-2 rounded-lg border border-red-200">{error}</p>
+                            )}
+
+                            <div className="flex justify-center items-center text-sm pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setStep('credentials')}
+                                    className="text-slate-500 hover:text-indigo-600 underline"
+                                >
+                                    Back to Login
+                                </button>
+                            </div>
+                        </div>
+                    ) : step === 'masterpass' ? (
+                        <form onSubmit={handleMasterpassSubmit} className="space-y-6">
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-slate-700 text-center">Store Master Password</label>
+                                <input
+                                    type="password"
+                                    value={masterpass}
+                                    onChange={(e) => {
+                                        setMasterpass(e.target.value);
+                                        setError('');
+                                    }}
+                                    className="block w-full text-center text-xl rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900 placeholder-slate-300 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none font-mono"
+                                    placeholder="Enter password"
+                                    autoFocus
+                                    required
+                                />
+                                {error && (
+                                    <p className="mt-2 text-center text-sm text-red-600 font-medium animate-pulse">{error}</p>
+                                )}
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={loading || !masterpass}
+                                className="w-full rounded-xl bg-indigo-600 p-3 font-semibold text-white shadow-lg transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-70"
+                            >
+                                {loading ? 'Verifying...' : 'Verify Password'}
+                            </button>
+
+                            <div className="flex justify-center items-center text-sm">
+                                <button
+                                    type="button"
+                                    onClick={() => setStep('credentials')}
+                                    className="text-slate-500 hover:text-indigo-600 underline"
+                                >
+                                    Back to Login
+                                </button>
+                            </div>
                         </form>
                     ) : (
                         <form onSubmit={handleOtpSubmit} className="space-y-6">
@@ -236,6 +378,6 @@ export default function LoginPage() {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

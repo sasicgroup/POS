@@ -29,7 +29,8 @@ export default function InventoryPage() {
         migrateImages,
         getProductByBarcode,
         searchQuery,
-        setSearchQuery
+        setSearchQuery,
+        loyaltyConfig
     } = useInventory();
     const { showToast } = useToast();
 
@@ -46,6 +47,9 @@ export default function InventoryPage() {
         stock: 0,
         price: 0,
         costPrice: 0,
+        earnablePoints: 0,
+        pointsValue: 0,
+        estimatedProfit: 0,
         status: 'In Stock',
         image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7', // Default placeholder
         video: ''
@@ -550,6 +554,9 @@ export default function InventoryPage() {
             stock: 0,
             price: 0,
             costPrice: 0,
+            earnablePoints: 0,
+            pointsValue: 0,
+            estimatedProfit: 0,
             status: 'In Stock',
             image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
             video: ''
@@ -790,14 +797,70 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Cost Price (GHS)</label>
-                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.costPrice} onChange={e => setNewProduct({ ...newProduct, costPrice: parseFloat(e.target.value) })} />
+                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.costPrice} onChange={e => {
+                                        const cost = parseFloat(e.target.value) || 0;
+                                        setNewProduct({
+                                            ...newProduct,
+                                            costPrice: cost,
+                                            estimatedProfit: newProduct.price - cost - newProduct.pointsValue
+                                        });
+                                    }} />
                                     <p className="text-xs text-slate-500 mt-1">For profit calc</p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Selling Price (GHS)</label>
-                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.price} onChange={e => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) })} />
+                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.price} onChange={e => {
+                                        const price = parseFloat(e.target.value) || 0;
+                                        // Auto-calculate loyalty points if config exists
+                                        let points = newProduct.earnablePoints;
+                                        let val = newProduct.pointsValue;
+
+                                        if (loyaltyConfig?.enabled) {
+                                            points = Math.floor(price * (loyaltyConfig.points_per_currency || 0));
+                                            val = points * (loyaltyConfig.redemption_rate || 0);
+                                        }
+
+                                        setNewProduct({
+                                            ...newProduct,
+                                            price: price,
+                                            earnablePoints: points,
+                                            pointsValue: val,
+                                            estimatedProfit: price - newProduct.costPrice - val
+                                        });
+                                    }} />
                                 </div>
                             </div>
+
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-indigo-600 dark:text-indigo-400">Earnable Points</label>
+                                    <input type="number" className="mt-1 w-full rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-900/30 dark:bg-indigo-900/10 dark:text-white" value={newProduct.earnablePoints} onChange={e => setNewProduct({ ...newProduct, earnablePoints: parseInt(e.target.value) || 0 })} />
+                                    <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-bold">Points user earns per unit</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-rose-600 dark:text-rose-400">Points Value (GHS Cost)</label>
+                                    <input type="number" step="0.01" className="mt-1 w-full rounded-lg border border-rose-100 bg-rose-50/30 px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 dark:border-rose-900/30 dark:bg-rose-900/10 dark:text-white" value={newProduct.pointsValue} onChange={e => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        setNewProduct({
+                                            ...newProduct,
+                                            pointsValue: val,
+                                            estimatedProfit: newProduct.price - newProduct.costPrice - val
+                                        });
+                                    }} />
+                                    <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-bold">Cost of points to your profit</p>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl bg-slate-900 p-4 text-white">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Estimated Profit</span>
+                                    <span className={`text-xl font-black ${newProduct.estimatedProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        GHS {newProduct.estimatedProfit.toFixed(2)}
+                                    </span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-1">Calculation: (Price - Cost - Points Value)</p>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Stock</label>
@@ -1078,6 +1141,9 @@ export default function InventoryPage() {
                                                             stock: product.stock,
                                                             price: product.price,
                                                             costPrice: product.costPrice || 0,
+                                                            earnablePoints: product.earnablePoints || 0,
+                                                            pointsValue: product.pointsValue || 0,
+                                                            estimatedProfit: product.estimatedProfit || 0,
                                                             status: product.status || 'In Stock',
                                                             image: product.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
                                                             video: product.video || ''

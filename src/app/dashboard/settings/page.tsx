@@ -56,7 +56,7 @@ export default function SettingsPage() {
     const [editingMember, setEditingMember] = useState<any>(null);
     const [otpEnabled, setOtpEnabled] = useState(true);
     const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<{ id: string, name: string } | null>(null);
-    const [newUser, setNewUser] = useState({ name: '', phone: '', pin: '', role: 'staff' });
+    const [newUser, setNewUser] = useState({ name: '', phone: '', pin: '', role: 'staff', master_password: '', username: '' });
     const [inviteLoading, setInviteLoading] = useState(false);
 
     const [storeToDelete, setStoreToDelete] = useState<any>(null);
@@ -143,23 +143,17 @@ export default function SettingsPage() {
                 setNewUser({
                     name: editingMember.name,
                     phone: editingMember.phone,
-                    pin: editingMember.pin || '', // Assuming pin might not be visible/stored plainly, but for editing we might need to reset or leave blank? 
-                    // Ideally we don't show the PIN. If blank, we keep old PIN. But for simplicity let's assume we might overwrite it or it's needed.
-                    // If the backend doesn't return the PIN (security), we should probably leave it blank and only update if user types something.
-                    // My handleInviteMember logic requires PIN length 4. 
-                    // Let's assume for this mock/simple app we might receive it or we just require a new one for edits? 
-                    // Actually, let's just prefill what we have. If no pin came back, we might need a way to say "keep existing".
-                    // But looking at the state, `newUser` needs a pin. 
-                    // Let's just set it to '****' or handle it in the saving logic. 
-                    // For now, let's just set it to editingMember.pin if available, or empty string.
-                    role: editingMember.role
+                    pin: '',
+                    role: editingMember.role,
+                    master_password: '', // Don't show existing password, only allow setting new one
+                    username: editingMember.username || ''
                 });
                 // If pin is secret, we might need to adjust validation. 
                 // Let's assume existing PIN is kept if input is empty? 
                 // My handler check: if (newUser.pin.length !== 4) ...
                 // I'll adjust the handler to allow empty PIN on edit.
             } else {
-                setNewUser({ name: '', phone: '', pin: '', role: 'staff' });
+                setNewUser({ name: '', phone: '', pin: '', role: 'staff', master_password: '', username: '' });
             }
         }
     }, [showInviteModal, editingMember]);
@@ -337,11 +331,12 @@ export default function SettingsPage() {
                 const updateData: any = {
                     name: newUser.name,
                     phone: newUser.phone,
-                    username: newUser.phone, // Ensure username flows through
+                    username: newUser.username || newUser.phone, // Manual username or fallback to phone
                     role: newUser.role,
                     otp_enabled: otpEnabled
                 };
                 if (newUser.pin) updateData.pin = newUser.pin;
+                if (newUser.master_password) updateData.master_password = newUser.master_password;
 
                 await updateTeamMember(editingMember.id, updateData);
 
@@ -357,6 +352,7 @@ export default function SettingsPage() {
                     pin: newUser.pin,
                     role: newUser.role as any,
                     otp_enabled: otpEnabled,
+                    master_password: newUser.master_password,
                     avatar: '',
                     is_locked: false,
                     failed_attempts: 0
@@ -527,35 +523,149 @@ export default function SettingsPage() {
         setDeleteItemConfirm(null);
     };
 
+    // Code 39 lookup table
+    const code39: Record<string, string> = {
+        '0': '000110100', '1': '100100001', '2': '001100001', '3': '101100000',
+        '4': '000110001', '5': '100110000', '6': '001110000', '7': '000100101',
+        '8': '100100100', '9': '001100100', 'A': '100001001', 'B': '001001001',
+        'C': '101001000', 'D': '000011001', 'E': '100011000', 'F': '001011000',
+        'G': '000001101', 'H': '100001100', 'I': '001001100', 'J': '000011100',
+        'K': '100000011', 'L': '001000011', 'M': '101000010', 'N': '000010011',
+        'O': '100010010', 'P': '001010010', 'Q': '000000111', 'R': '100000110',
+        'S': '001000110', 'T': '000010110', 'U': '110000001', 'V': '011000001',
+        'W': '111000000', 'X': '010010001', 'Y': '110010000', 'Z': '011010000',
+        '-': '010000101', '.': '110000100', ' ': '011000100', '*': '010010100',
+        '$': '010101000', '/': '010100010', '+': '010001010', '%': '000101010'
+    };
+
     const drawBarcode = (doc: jsPDF, code: string, x: number, y: number, width: number, height: number) => {
-        // Simplified Code39 logic for brevity - in production use a library
-        const barWidth = width / (code.length * 11 + 12);
-        let currentX = x + barWidth * 2;
-        // Mock pattern
-        doc.rect(x, y, width, height, 'F'); // Placeholder black box if logic fails
-        // Re-implement or import drawing logic if needed, keeping simple for now
+        // Enclose code in asterisks for Code 39
+        const encoded = `*${code.toUpperCase()}*`;
+
+        // Calculate total units (wide=2.5, narrow=1, gap=1)
+        const wide = 2.5;
+        const narrow = 1;
+
+        let totalUnits = 0;
+        for (let i = 0; i < encoded.length; i++) {
+            const char = encoded[i];
+            const seq = code39[char] || code39[' '];
+            for (let j = 0; j < 9; j++) {
+                totalUnits += (seq[j] === '1' ? wide : narrow);
+            }
+            if (i < encoded.length - 1) totalUnits += narrow; // Inter-char gap
+        }
+
+        if (totalUnits === 0) return;
+
+        const unitWidth = width / totalUnits;
+        let cursorX = x;
+
+        doc.setFillColor(0, 0, 0);
+
+        for (let i = 0; i < encoded.length; i++) {
+            const char = encoded[i];
+            const seq = code39[char] || code39[' '];
+
+            for (let j = 0; j < 9; j++) {
+                const isBar = j % 2 === 0;
+                const weight = seq[j] === '1' ? wide : narrow;
+                const w = weight * unitWidth;
+
+                if (isBar) {
+                    doc.rect(cursorX, y, w, height, 'F');
+                }
+                cursorX += w;
+            }
+            // Inter-character gap (narrow space)
+            if (i < encoded.length - 1) {
+                cursorX += narrow * unitWidth;
+            }
+        }
+    };
+
+    const renderBarcodeSvg = (code: string) => {
+        const encoded = `*${code.toUpperCase()}*`;
+        const wide = 2.5;
+        const narrow = 1;
+
+        let rects = [];
+        let cursorX = 0;
+
+        for (let i = 0; i < encoded.length; i++) {
+            const char = encoded[i];
+            const seq = code39[char] || code39[' '];
+
+            for (let j = 0; j < 9; j++) {
+                const isBar = j % 2 === 0;
+                const weight = seq[j] === '1' ? wide : narrow;
+
+                if (isBar) {
+                    rects.push(<rect key={`${i}-${j}`} x={cursorX} y={0} width={weight} height={100} fill="currentColor" />);
+                }
+                cursorX += weight;
+            }
+            if (i < encoded.length - 1) cursorX += narrow;
+        }
+
+        return (
+            <svg viewBox={`0 0 ${cursorX} 100`} className="w-full h-8 mb-2 text-slate-900 dark:text-slate-100" preserveAspectRatio="none">
+                {rects}
+            </svg>
+        );
     };
 
     const downloadBarcodesPDF = async () => {
-        if (barcodeList.length === 0) return;
+        if (!barcodeList || barcodeList.length === 0 || !activeStore) return;
         const doc = new jsPDF();
-        doc.setFontSize(20);
-        doc.text('Barcode Library', 10, 20);
-        doc.setFontSize(10);
-        let y = 35, x = 15;
-        const barcodeWidth = 60, barcodeHeight = 12, colGap = 25, rowGap = 25;
+
+        const barcodeWidth = 40;
+        const barcodeHeight = 10;
+        const colGap = 8;
+        const rowStep = 27;
+        const businessName = activeStore.name || 'Store';
+        const startX = 14;
+        const startY = 15;
+
+        let x = startX;
+        let y = startY;
+
         for (let i = 0; i < barcodeList.length; i++) {
             const item = barcodeList[i];
-            if (y + barcodeHeight + 18 > 280) { doc.addPage(); y = 20; }
-            doc.setFillColor(0, 0, 0);
-            doc.rect(x, y, barcodeWidth, barcodeHeight, 'F'); // Placeholder for actual barcode
-            doc.setFontSize(8);
+
+            // Handle page overflow
+            if (y + barcodeHeight + 10 > 285) {
+                doc.addPage();
+                y = startY;
+                x = startX;
+            }
+
+            // 1. Business Name (Top Label)
+            doc.setFontSize(5.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(71, 85, 105);
+            doc.text(businessName.toUpperCase(), x + barcodeWidth / 2, y - 1.5, { align: 'center', maxWidth: barcodeWidth });
+
+            // 2. Barcode
+            doc.setTextColor(0, 0, 0);
+            drawBarcode(doc, item.code, x, y, barcodeWidth, barcodeHeight);
+
+            // 3. Code (Bottom Label)
+            doc.setFontSize(6.5);
+            doc.setFont('helvetica', 'normal');
             doc.text(item.code, x + barcodeWidth / 2, y + barcodeHeight + 4, { align: 'center' });
-            x += barcodeWidth + colGap;
-            if (x + barcodeWidth > 190) { x = 15; y += barcodeHeight + rowGap; }
+
+            // Grid logic: 4 columns
+            if ((i + 1) % 4 === 0) {
+                x = startX;
+                y += rowStep;
+            } else {
+                x += barcodeWidth + colGap;
+            }
         }
-        doc.save('barcode-library.pdf');
-        showToast('success', 'Barcode library exported to PDF');
+
+        doc.save(`${activeStore.name.replace(/\s+/g, '-').toLowerCase()}-barcodes.pdf`);
+        showToast('success', 'Barcode library exported successfully');
     };
 
     if (!activeStore || !user || !smsConfig) return null;
@@ -683,6 +793,8 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                             </section>
+
+
 
 
                             {/* Removed Branding Section from General Tab */}
@@ -954,7 +1066,8 @@ export default function SettingsPage() {
                                     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
                                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4">
                                             {barcodeList.map((item) => (
-                                                <div key={item.id} className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg text-center bg-slate-50 dark:bg-slate-950/50">
+                                                <div key={item.id} className="p-3 border border-slate-100 dark:border-slate-800 rounded-lg text-center bg-slate-50 dark:bg-slate-950/50 hover:bg-white dark:hover:bg-slate-900 transition-colors">
+                                                    {renderBarcodeSvg(item.code)}
                                                     <div className="text-xs font-mono text-slate-500 mb-1">{item.code}</div>
                                                     <div className={`text-[10px] uppercase font-bold tracking-wider ${item.is_assigned ? 'text-green-600' : 'text-slate-400'}`}>
                                                         {item.is_assigned ? 'Assigned' : 'Available'}
@@ -1351,6 +1464,17 @@ export default function SettingsPage() {
                             </div>
 
                             <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Username (for login)</label>
+                                <input
+                                    type="text"
+                                    value={newUser.username || ''}
+                                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono"
+                                    placeholder="e.g. sasic"
+                                />
+                            </div>
+
+                            <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
                                 <input
                                     type="tel"
@@ -1371,47 +1495,58 @@ export default function SettingsPage() {
                                     >
                                         <option value="staff">Staff</option>
                                         <option value="manager">Manager</option>
-                                        <option value="admin">Admin</option>
+                                        <option value="owner">Owner</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        {editingMember ? 'New PIN (Optional)' : 'Access PIN'}
-                                    </label>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">PIN (4 digits)</label>
                                     <input
-                                        type="tel"
-                                        maxLength={4}
+                                        type="text"
                                         value={newUser.pin}
-                                        onChange={(e) => setNewUser({ ...newUser, pin: e.target.value.replace(/\D/g, '') })}
-                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none text-center tracking-widest"
-                                        placeholder={editingMember ? 'Leave blank' : '0000'}
+                                        onChange={(e) => setNewUser({ ...newUser, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono text-center tracking-widest"
+                                        placeholder="****"
                                     />
                                 </div>
                             </div>
+                        </div>
 
-                            <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                                <div>
-                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Require OTP</p>
-                                    <p className="text-xs text-slate-500">Send SMS code for login verification</p>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked={otpEnabled} onChange={(e) => setOtpEnabled(e.target.checked)} className="sr-only peer" />
-                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    {editingMember ? 'New Master Password (Optional)' : 'Master Password (Optional)'}
                                 </label>
+                                <input
+                                    type="text"
+                                    value={newUser.master_password || ''}
+                                    onChange={(e) => setNewUser({ ...newUser, master_password: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono"
+                                    placeholder={editingMember ? 'Leave blank to keep current' : 'Set password'}
+                                />
+                                <p className="text-xs text-slate-500 mt-1">For Masterpass 2FA option</p>
                             </div>
 
-                            <button
-                                onClick={handleInviteMember}
-                                disabled={inviteLoading}
-                                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                            >
-                                {inviteLoading && <RefreshCw className="h-4 w-4 animate-spin" />}
-                                {editingMember ? 'Update Member' : 'Add Member'}
-                            </button>
+                            <div className="flex items-center pt-6">
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" checked={otpEnabled} onChange={(e) => setOtpEnabled(e.target.checked)} className="sr-only peer" />
+                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                                    <span className="ml-3 text-sm font-medium text-slate-700 dark:text-slate-300">Enable 2FA</span>
+                                </label>
+                            </div>
                         </div>
+
+
+                        <button
+                            onClick={handleInviteMember}
+                            disabled={inviteLoading}
+                            className="w-full mt-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {inviteLoading ? 'Saving...' : (editingMember ? 'Update Member' : 'Add Member')}
+                        </button>
                     </div>
                 </div>
             )}
+
 
             <ConfirmDialog
                 isOpen={!!deleteMemberConfirm}

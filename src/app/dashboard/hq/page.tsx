@@ -23,16 +23,30 @@ export default function HQDashboardPage() {
             setIsLoading(true);
 
             try {
-                // 1. Get Sales for Last 30 Days across ALL stores
+                // 1. Fetch Fresh Store List (Realtime)
+                const { data: freshStores, error: storesError } = await supabase
+                    .from('stores')
+                    .select('*')
+                    .neq('status', 'deleted')
+                    .order('sort_order', { ascending: true });
+
+                if (storesError) throw storesError;
+
+                const activeStoreIds = (freshStores || []).map(s => s.id);
+
+                // 2. Get Sales for Last 30 Days across these stores
                 const thirtyDaysAgo = new Date();
                 thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-                const { data: sales } = await supabase
+                const { data: sales, error: salesError } = await supabase
                     .from('sales')
                     .select('store_id, total_amount')
+                    .in('store_id', activeStoreIds)
                     .gte('created_at', thirtyDaysAgo.toISOString());
 
-                // 2. Aggregate Data
+                if (salesError) throw salesError;
+
+                // 3. Aggregate Data
                 let grandTotal = 0;
                 let countTotal = 0;
                 const storeMap: Record<string, { revenue: number, count: number }> = {};
@@ -50,9 +64,8 @@ export default function HQDashboardPage() {
                     });
                 }
 
-                // 3. Map to Stores
-                const filteredStores = stores.filter(s => s.status?.toLowerCase() !== 'deleted');
-                const metrics = filteredStores.map(store => {
+                // 4. Map to metrics
+                const metrics = (freshStores || []).map(store => {
                     const data = storeMap[store.id] || { revenue: 0, count: 0 };
                     return {
                         id: store.id,
@@ -68,7 +81,7 @@ export default function HQDashboardPage() {
                 setStats({
                     totalRevenue: grandTotal,
                     totalSalesCount: countTotal,
-                    activeStores: filteredStores.filter(s => s.status !== 'archived' && s.status !== 'hidden').length,
+                    activeStores: (freshStores || []).filter(s => s.status !== 'archived' && s.status !== 'hidden').length,
                     topStoreName: metrics[0]?.name || 'N/A'
                 });
 
@@ -80,7 +93,7 @@ export default function HQDashboardPage() {
         };
 
         loadHQData();
-    }, [user, stores]);
+    }, [user]);
 
     if (!user || user.role !== 'owner') {
         return (
@@ -134,7 +147,7 @@ export default function HQDashboardPage() {
                         <span className="text-sm font-medium text-slate-500">Active Stores</span>
                         <Store className="h-5 w-5 text-blue-600" />
                     </div>
-                    <div className="text-2xl font-bold text-slate-900 dark:text-white">{stats.activeStores} <span className="text-sm font-normal text-slate-400">/ {stores.length}</span></div>
+                    <div className="text-2xl font-bold text-slate-900 dark:text-white">{stats.activeStores} <span className="text-sm font-normal text-slate-400">/ {storeMetrics.length}</span></div>
                     <div className="text-xs text-slate-500 mt-1">Total Locations</div>
                 </div>
 

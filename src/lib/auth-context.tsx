@@ -36,6 +36,7 @@ export interface Store {
     businessTypes?: string[];
     categories?: string[];
     sort_order?: number;
+    master_password?: string;
 }
 
 
@@ -76,6 +77,8 @@ export interface User {
     shift_start?: string;
     shift_end?: string;
     work_days?: string[];
+    two_factor_method?: 'sms' | 'masterpass';
+    master_password?: string;
 }
 
 interface AuthContextType {
@@ -84,8 +87,9 @@ interface AuthContextType {
     stores: Store[];
     isLoading: boolean;
     teamMembers: User[];
-    login: (username: string, pin: string) => Promise<{ success: boolean; status: 'SUCCESS' | 'OTP_REQUIRED' | 'LOCKED' | 'INVALID_CREDENTIALS' | 'OUTSIDE_SHIFT' | 'ERROR'; message?: string; tempUser?: User }>;
+    login: (username: string, pin: string) => Promise<{ success: boolean; status: 'SUCCESS' | 'CHOICE_REQUIRED' | 'OTP_REQUIRED' | 'MASTERPASS_REQUIRED' | 'LOCKED' | 'INVALID_CREDENTIALS' | 'OUTSIDE_SHIFT' | 'ERROR'; message?: string; tempUser?: User; availableMethods?: string[] }>;
     verifyOTP: (username: string, code: string) => Promise<boolean>;
+    verifyMasterpass: (username: string, password: string) => Promise<boolean>;
     resendOTP: (username: string) => Promise<boolean>;
     unlockAccount: (userId: any) => Promise<boolean>;
     logout: () => void;
@@ -188,7 +192,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         lastTransactionNumber: s.last_transaction_number || 0,
                         businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
                         categories: s.categories || [],
-                        sort_order: s.sort_order || 0
+                        sort_order: s.sort_order || 0,
+                        master_password: s.master_password
                     }));
                     setStores(mappedStores);
 
@@ -256,7 +261,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 lastTransactionNumber: s.last_transaction_number || 0,
                 businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
                 categories: s.categories || [],
-                sort_order: s.sort_order || 0
+                sort_order: s.sort_order || 0,
+                master_password: s.master_password
             }));
             setStores(mappedStores);
             setActiveStore(mappedStores[0]);
@@ -278,18 +284,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true, status: 'SUCCESS', tempUser: loggedUser };
     };
 
-    const login = async (username: string, pin: string): Promise<{ success: boolean; status: 'SUCCESS' | 'OTP_REQUIRED' | 'LOCKED' | 'INVALID_CREDENTIALS' | 'OUTSIDE_SHIFT' | 'ERROR'; message?: string; tempUser?: User }> => {
+    const login = async (username: string, pin: string): Promise<{ success: boolean; status: 'SUCCESS' | 'CHOICE_REQUIRED' | 'OTP_REQUIRED' | 'MASTERPASS_REQUIRED' | 'LOCKED' | 'INVALID_CREDENTIALS' | 'OUTSIDE_SHIFT' | 'ERROR'; message?: string; tempUser?: User; availableMethods?: string[] }> => {
         setIsLoading(true);
         try {
             // 1. Find Employee by Username (Case Insensitive)
             // Check 'username' OR 'name' (legacy fallback)
-            let query = supabase.from('employees').select('*').ilike('username', username).limit(1);
+            let query = supabase.from('employees').select('*').ilike('username', username).is('deleted_at', null).limit(1);
             let { data: employees, error } = await query;
+
 
 
             if (error || !employees || employees.length === 0) {
                 // Try searching by name just in case (optional, remove if strict)
-                const { data: byName } = await supabase.from('employees').select('*').ilike('name', username).limit(1);
+                const { data: byName, error: nameError } = await supabase.from('employees').select('*').ilike('name', username).is('deleted_at', null).limit(1);
                 if (byName && byName.length > 0) employees = byName;
                 else return { success: false, status: 'INVALID_CREDENTIALS', message: 'User not found' };
             }
@@ -355,64 +362,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 role: employee.role as any,
                 pin: employee.pin,
                 phone: employee.phone,
-                otp_enabled: employee.otp_enabled
+                otp_enabled: employee.otp_enabled,
+                two_factor_method: employee.two_factor_method || 'sms'
             };
 
-            // 4. Check OTP
-            if (employee.otp_enabled && employee.phone) {
-                const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
-                // if (typeof window !== 'undefined') alert(`[DEV] Your OTP code is: ${code}`); // Dev Helper - REMOVED for Production Check
-                // console.log('[DEV] Generated OTP:', code); // REMOVED for Security
-                const expiry = new Date(Date.now() + 5 * 60000); // 5 mins
+            // 4. Check 2FA
+            if (employee.otp_enabled) {
+                const methods: string[] = [];
+                if (employee.phone) methods.push('sms');
+                if (employee.master_password) methods.push('masterpass');
 
-                // Save OTP to DB
-                await supabase.from('employees').update({
-                    otp_code: code,
-                    otp_expiry: expiry.toISOString()
-                }).eq('id', employee.id);
-
-                // Send OTP via Server API (Bypassing RLS)
-                const { data: empStore } = await supabase.from('employee_access').select('store_id').eq('employee_id', employee.id).limit(1).maybeSingle();
-                let storeId = employee.store_id || empStore?.store_id;
-
-                if (!storeId) {
-                    const { data: s } = await supabase.from('stores').select('id').neq('status', 'deleted').limit(1).maybeSingle();
-                    if (s) storeId = s.id;
+                // If no methods available but 2FA on, maybe fallback to SMS if phone exists or just error?
+                // Assuming phone exists if 2FA is on largely.
+                if (methods.length > 0) {
+                    return { success: true, status: 'CHOICE_REQUIRED', tempUser: userObj, availableMethods: methods };
                 }
-
-                console.log('[OTP] Attempting to send SMS:', { phone: employee.phone, storeId });
-
-                if (storeId) {
-                    try {
-                        const response = await fetch('/api/auth/send-otp', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                phone: employee.phone,
-                                message: `Your OTP is ${code}. Valid for 5 minutes.`,
-                                storeId: storeId
-                            })
-                        });
-
-                        const result = await response.json();
-
-                        if (result.success) {
-                            console.log('[OTP] ✅ SMS sent successfully');
-                        } else {
-                            console.error('[OTP] ❌ SMS send failed:', result.error);
-                            // Still allow login to proceed - user has alert fallback
-                        }
-                    } catch (err) {
-                        console.error('[OTP] ❌ Failed to send OTP via API:', err);
-                    }
-                } else {
-                    console.error('[OTP] ❌ No valid storeId found, cannot send SMS');
-                }
-
-                return { success: true, status: 'OTP_REQUIRED', tempUser: userObj };
             }
 
-            // 5. Finalize Login (Direct)
+            // 5. Finalize Login (Direct - if OTP disabled or no phone/method requires it)
             await logActivity('LOGIN_SUCCESS', { method: 'PIN' }, userObj.id, employee.store_id);
             return await finalizeLogin(userObj);
 
@@ -463,6 +430,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
         } else {
             console.error('[OTP] Code mismatch');
+        }
+        return false;
+    };
+
+    const verifyMasterpass = async (username: string, password: string): Promise<boolean> => {
+        // Check User's Master Password
+        const { data: employee } = await supabase.from('employees').select('master_password, id, name, username, role, pin, phone, otp_enabled, two_factor_method, store_id').ilike('username', username).single();
+
+        if (employee && employee.master_password === password) {
+            const userObj: User = {
+                id: employee.id,
+                name: employee.name,
+                username: employee.username,
+                role: employee.role as any,
+                pin: employee.pin,
+                phone: employee.phone,
+                otp_enabled: employee.otp_enabled,
+                two_factor_method: employee.two_factor_method
+                // We don't store master_password in session user object for security
+            };
+            await finalizeLogin(userObj);
+            await logActivity('LOGIN_SUCCESS', { method: 'MASTERPASS' }, userObj.id, employee.store_id);
+            return true;
         }
         return false;
     };
@@ -566,13 +556,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: directEmployees } = await supabase
             .from('employees')
             .select('*')
-            .eq('store_id', activeStore.id);
+            .eq('store_id', activeStore.id)
+            .is('deleted_at', null); // Exclude deleted employees
 
         // 2. Get employees linked via employee_access (Multi-Store Mode)
         const { data: accessEmployees } = await supabase
             .from('employee_access')
-            .select('employee_id, role, employees(*)')
-            .eq('store_id', activeStore.id);
+            .select('employee_id, role, employees!inner(*)')
+            .eq('store_id', activeStore.id)
+            .is('employees.deleted_at', null); // Exclude deleted employees
 
         let mergedMembers: User[] = [];
 
@@ -590,7 +582,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 failed_attempts: e.failed_attempts,
                 shift_start: e.shift_start,
                 shift_end: e.shift_end,
-                work_days: e.work_days
+                work_days: e.work_days,
+                two_factor_method: e.two_factor_method,
+                master_password: e.master_password
             }))];
         }
 
@@ -608,7 +602,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 failed_attempts: a.employees.failed_attempts,
                 shift_start: a.employees.shift_start,
                 shift_end: a.employees.shift_end,
-                work_days: a.employees.work_days
+                work_days: a.employees.work_days,
+                two_factor_method: a.employees.two_factor_method,
+                master_password: a.employees.master_password
             }));
 
             // Merge avoiding duplicates (Access table usually overrides)
@@ -625,7 +621,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!activeStore?.id) return;
 
         // 1. Create in 'employees' table
-        const { data: newEmp, error: createError } = await supabase.from('employees').insert({
+        const insertData: any = {
             name: member.name,
             username: member.username,
             phone: member.phone,
@@ -636,7 +632,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             shift_start: member.shift_start,
             shift_end: member.shift_end,
             work_days: member.work_days
-        }).select().single();
+        };
+
+        // Only include master_password if it's provided
+        if (member.master_password) {
+            insertData.master_password = member.master_password;
+        }
+
+        const { data: newEmp, error: createError } = await supabase.from('employees').insert(insertData).select().single();
 
         if (createError) throw createError;
         if (!newEmp) return;
@@ -656,8 +659,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!activeStore?.id) return;
 
         // Update basic info
-        if (updates.name || updates.pin || updates.username || updates.phone || updates.otp_enabled !== undefined || updates.shift_start || updates.shift_end || updates.work_days) {
-            await supabase.from('employees').update({
+        if (updates.name || updates.pin || updates.username || updates.phone || updates.otp_enabled !== undefined || updates.shift_start || updates.shift_end || updates.work_days || updates.master_password) {
+            const updateData: any = {
                 name: updates.name,
                 username: updates.username,
                 phone: updates.phone,
@@ -666,7 +669,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 shift_start: updates.shift_start,
                 shift_end: updates.shift_end,
                 work_days: updates.work_days
-            }).eq('id', id);
+            };
+
+            // Only include master_password if it's provided (not empty)
+            if (updates.master_password) {
+                updateData.master_password = updates.master_password;
+            }
+
+            await supabase.from('employees').update(updateData).eq('id', id);
         }
 
         // Update Role for this store
@@ -699,10 +709,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const removeTeamMember = async (id: any) => {
         if (!activeStore?.id) return;
 
+        // 1. Remove store access
         await supabase.from('employee_access')
             .delete()
             .eq('employee_id', id)
             .eq('store_id', activeStore.id);
+
+        // 2. Soft-delete from main employees table
+        // This ensures they stop showing up in the "Direct Employees" section of the store they were created in
+        await supabase.from('employees')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', id);
 
         await logActivity('DELETE_EMPLOYEE', { target_user_id: id }, user?.id, activeStore?.id);
 
@@ -1006,6 +1023,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             updateTeamMember,
             removeTeamMember,
             verifyOTP,
+            verifyMasterpass,
             resendOTP,
             unlockAccount,
             hasPermission,

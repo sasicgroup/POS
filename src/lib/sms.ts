@@ -38,6 +38,7 @@ export interface SMSConfig {
         receipt: string;
         ownerSale?: string;
         lowStockAlert?: string;
+        installment: string;
     };
 }
 
@@ -66,7 +67,8 @@ let smsConfig: SMSConfig = {
         welcome: "Welcome {Name}! You have been registered. Shop with us to earn points.",
         receipt: "Thanks for buying! Total: GHS {Amount}. See you soon!",
         ownerSale: "New Sale Alert: GHS {Amount} by {Name}. Total Today: {TotalOrders} orders.",
-        lowStockAlert: "Low Stock Alert: {Product} has only {Stock} left! Please restock."
+        lowStockAlert: "Low Stock Alert: {Product} has only {Stock} left! Please restock.",
+        installment: "Hi {Name}, your installment payment of GHS {AmountPaid} for {Id} has been received. Balance left: GHS {AmountLeft}. Thank you!"
     }
 };
 
@@ -256,69 +258,9 @@ export const getSMSHistory = async (storeId: string, page: number = 1, limit: nu
     return { data, count };
 };
 
-export const sendNotification = async (type: 'welcome' | 'sale', data: any) => {
-    let config = getSMSConfig();
+// --- Notification Functions ---
 
-    if (!config) {
-        console.warn('[SMS] Config not loaded. Notification skipped.');
-        return;
-    }
-
-    const { notifications } = config;
-    const { owner, customer } = notifications;
-    const storeId = data.storeId;
-
-    // --- Customer Notifications ---
-    if (data.customerPhone) {
-        let msg = '';
-        if (type === 'welcome') {
-            msg = config.templates.welcome.replace('{Name}', data.customerName || 'Customer');
-        } else if (type === 'sale') {
-            msg = config.templates.receipt
-                .replace(/{Amount}/g, Number(data.amount).toFixed(2))
-                .replace(/{Id}/g, (data.id || '').toString())
-                .replace(/{receipt}/g, (data.id || '').toString())
-                .replace(/{Receipt}/g, (data.id || '').toString())
-                .replace(/{PointsEarned}/g, (data.pointsEarned || '0').toString())
-                .replace(/{PointsUsed}/g, (data.pointsUsed || '0').toString())
-                .replace(/{PointsBalance}/g, (data.pointsBalance || '0').toString())
-                .replace(/{TotalPoints}/g, (data.totalPoints || '0').toString())
-                .replace(/{Name}/g, data.customerName || 'Customer')
-                .replace(/{name}/g, data.customerName || 'Customer')
-                .replace(/{staff-name}/g, data.staffName || 'Staff');
-        }
-
-        console.log(`[SMS] Sending ${type} to customer: ${data.customerPhone}`);
-
-        if (msg) {
-            if (customer.sms) await sendDirectMessage(data.customerPhone, msg, ['sms'], storeId);
-            if (customer.whatsapp) await sendDirectMessage(data.customerPhone, msg, ['whatsapp'], storeId);
-        }
-    }
-
-    // --- Owner Notifications ---
-    if (data.ownerPhone) {
-        let msg = '';
-        if (type === 'sale') {
-            const template = config.templates.ownerSale || "New sale: GHS {Amount} by {Name}.";
-            msg = template
-                .replace(/{Amount}/g, Number(data.amount).toFixed(2))
-                .replace(/{Name}/g, data.customerName || 'Customer')
-                .replace(/{TotalOrders}/g, (data.totalOrders || '0').toString())
-                .replace(/{Receipt}/g, (data.id || '').toString())
-                .replace(/{Staff}/g, data.staffName || 'Staff');
-        }
-
-        if (msg) {
-            if (owner.sms) await sendDirectMessage(data.ownerPhone, msg, ['sms'], storeId);
-            if (owner.whatsapp) await sendDirectMessage(data.ownerPhone, msg, ['whatsapp'], storeId);
-        }
-    }
-
-    return true;
-};
-
-export const sendDirectMessage = async (phone: string, message: string, channels: ('sms' | 'whatsapp')[] = ['sms', 'whatsapp'], storeId?: string) => {
+export async function sendDirectMessage(phone: string, message: string, channels: ('sms' | 'whatsapp')[] = ['sms', 'whatsapp'], storeId?: string) {
     const config = getSMSConfig();
 
     console.log(`[SMS] Direct Message to ${phone} via ${channels.join(', ')}`);
@@ -400,7 +342,80 @@ export const sendDirectMessage = async (phone: string, message: string, channels
             }
         }
     }
+}
+
+export const sendNotification = async (type: 'welcome' | 'sale' | 'installment', data: any) => {
+    let config = getSMSConfig();
+
+    if (!config) {
+        console.warn('[SMS] Config not loaded. Notification skipped.');
+        return;
+    }
+
+    const { notifications } = config;
+    const { owner, customer } = notifications;
+    const storeId = data.storeId;
+
+    // --- Customer Notifications ---
+    if (data.customerPhone) {
+        let msg = data.customMessage || '';
+        if (!msg) {
+            if (type === 'welcome') {
+                msg = config.templates.welcome.replace('{Name}', data.customerName || 'Customer');
+            } else if (type === 'sale') {
+                msg = config.templates.receipt
+                    .replace(/{Amount}/g, Number(data.amount).toFixed(2))
+                    .replace(/{Id}/g, (data.id || '').toString())
+                    .replace(/{receipt}/g, (data.id || '').toString())
+                    .replace(/{Receipt}/g, (data.id || '').toString())
+                    .replace(/{PointsEarned}/g, (data.pointsEarned || '0').toString())
+                    .replace(/{PointsUsed}/g, (data.pointsUsed || '0').toString())
+                    .replace(/{PointsBalance}/g, (data.pointsBalance || '0').toString())
+                    .replace(/{TotalPoints}/g, (data.totalPoints || '0').toString())
+                    .replace(/{Name}/g, data.customerName || 'Customer')
+                    .replace(/{name}/g, data.customerName || 'Customer')
+                    .replace(/{staff-name}/g, data.staffName || 'Staff');
+            } else if (type === 'installment') {
+                msg = (config.templates.installment || "Hi {Name}, your installment payment of GHS {AmountPaid} for {Id} has been received. Balance left: GHS {AmountLeft}. Thank you!")
+                    .replace(/{Name}/g, data.customerName || 'Customer')
+                    .replace(/{AmountPaid}/g, Number(data.amountPaid).toFixed(2))
+                    .replace(/{AmountLeft}/g, Number(data.amountLeft).toFixed(2))
+                    .replace(/{Id}/g, (data.id || '').toString());
+            }
+        }
+
+        console.log(`[SMS] Sending ${type} to customer: ${data.customerPhone}`);
+
+        if (msg) {
+            if (customer.sms) await sendDirectMessage(data.customerPhone, msg, ['sms'], storeId);
+            if (customer.whatsapp) await sendDirectMessage(data.customerPhone, msg, ['whatsapp'], storeId);
+        }
+    }
+
+    // --- Owner Notifications ---
+    if (data.ownerPhone) {
+        let msg = '';
+        if (type === 'sale') {
+            const template = config.templates.ownerSale || "New sale: GHS {Amount} by {Name}.";
+            msg = template
+                .replace(/{Amount}/g, Number(data.amount).toFixed(2))
+                .replace(/{Name}/g, data.customerName || 'Customer')
+                .replace(/{TotalOrders}/g, (data.totalOrders || '0').toString())
+                .replace(/{Receipt}/g, (data.id || '').toString())
+                .replace(/{Staff}/g, data.staffName || 'Staff');
+        }
+
+        if (msg) {
+            if (owner.sms) await sendDirectMessage(data.ownerPhone, msg, ['sms'], storeId);
+            if (owner.whatsapp) await sendDirectMessage(data.ownerPhone, msg, ['whatsapp'], storeId);
+        }
+    }
+
+    return true;
 };
+
+
+
 
 export const sendLowStockAlert = async (product: { name: string; stock: number }, storeId: string, ownerPhone: string) => {
     const config = getSMSConfig();

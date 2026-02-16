@@ -25,7 +25,9 @@ export default function SalesPage() {
         setCartQuantity: contextSetCartQuantity,
         clearCart,
         searchQuery,
-        setSearchQuery
+        setSearchQuery,
+        loyaltyConfig: contextLoyaltyConfig,
+        installmentSettings
     } = useInventory();
     const { showToast } = useToast();
 
@@ -92,9 +94,13 @@ export default function SalesPage() {
 
     const [showCheckoutSuccess, setShowCheckoutSuccess] = useState(false);
     const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | 'installment' | null>(null);
+    const [depositAmount, setDepositAmount] = useState('');
     const [showMobileCart, setShowMobileCart] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+
+
+
 
 
     // Scanner Logic - must be declared before early return
@@ -288,6 +294,41 @@ export default function SalesPage() {
         };
     }, [isScanning]);
 
+    // Moving calculations and hooks above early return to comply with Rules of Hooks
+    const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    const totalDiscount = cart.reduce((sum, item) => {
+        const originalProduct = products.find(p => p.id === item.id);
+        const originalPrice = originalProduct?.price || item.price;
+        const diff = originalPrice - item.price;
+        return sum + (diff > 0 ? diff * item.quantity : 0);
+    }, 0);
+
+    // Dynamic Tax Calculation
+    const taxSettings = activeStore?.taxSettings || { enabled: true, type: 'percentage', value: 8 };
+    const taxAmount = taxSettings.enabled
+        ? (taxSettings.type === 'percentage'
+            ? cartTotal * (taxSettings.value / 100)
+            : taxSettings.value)
+        : 0;
+
+    // Loyalty Redemption Calculation
+    const minRedeemPoints = loyaltyConfig?.min_points_to_redeem || 1; // Default to 1 to allow redemption
+    const loyaltyRedeemValue = (redeemPoints ? pointsToRedeem : 0) * (loyaltyConfig?.redemption_rate || 0.05);
+
+    const grandTotal = Math.max(0, cartTotal + taxAmount - loyaltyRedeemValue);
+
+    // Auto-fill deposit based on settings
+    useEffect(() => {
+        if (paymentMethod === 'installment' && installmentSettings) {
+            const minDeposit = (installmentSettings.min_deposit_percentage / 100) * grandTotal;
+            setDepositAmount(minDeposit.toFixed(2));
+        } else if (paymentMethod !== 'installment') {
+            setDepositAmount('');
+        }
+    }, [paymentMethod, installmentSettings, grandTotal]);
+
+
     // Early return AFTER all hooks
     if (!activeStore) return null;
 
@@ -394,28 +435,7 @@ export default function SalesPage() {
     };
 
 
-    const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    const totalDiscount = cart.reduce((sum, item) => {
-        const originalProduct = products.find(p => p.id === item.id);
-        const originalPrice = originalProduct?.price || item.price;
-        const diff = originalPrice - item.price;
-        return sum + (diff > 0 ? diff * item.quantity : 0);
-    }, 0);
-
-    // Dynamic Tax Calculation
-    const taxSettings = activeStore.taxSettings || { enabled: true, type: 'percentage', value: 8 };
-    const taxAmount = taxSettings.enabled
-        ? (taxSettings.type === 'percentage'
-            ? cartTotal * (taxSettings.value / 100)
-            : taxSettings.value)
-        : 0;
-
-    // Loyalty Redemption Calculation
-    const minRedeemPoints = loyaltyConfig?.min_points_to_redeem || 1; // Default to 1 to allow redemption
-    const loyaltyRedeemValue = (redeemPoints ? pointsToRedeem : 0) * (loyaltyConfig?.redemption_rate || 0.05);
-
-    const grandTotal = Math.max(0, cartTotal + taxAmount - loyaltyRedeemValue);
 
     const handlePrintReceipt = (transactionId: string) => {
         const receiptWindow = window.open('', '_blank', 'width=400,height=600');
@@ -425,9 +445,12 @@ export default function SalesPage() {
         // Calculate totals for receipt
 
 
-        const pointsEarned = loyaltyConfig?.enabled
-            ? Math.floor(cartTotal * (loyaltyConfig.points_per_currency || 0.01)) // Use cartTotal (before tax) for points
-            : 0;
+        // Calculate points earned: priority to item-specific points, fallback to global rate
+        const totalProductPoints = cart.reduce((sum, item) => sum + ((item.earnablePoints || 0) * item.quantity), 0);
+
+        const pointsEarned = totalProductPoints > 0
+            ? totalProductPoints
+            : (loyaltyConfig?.enabled ? Math.floor(cartTotal * (loyaltyConfig.points_per_currency || 0.01)) : 0);
 
         const receiptContent = `
             <html>
@@ -569,7 +592,9 @@ export default function SalesPage() {
                 items: cart.map(item => ({
                     id: item.id,
                     quantity: item.quantity,
-                    price: item.price
+                    price: item.price,
+                    earnablePoints: item.earnablePoints,
+                    pointsValue: item.pointsValue
                 })),
                 totalAmount: grandTotal,
                 paymentMethod: paymentMethod!,
@@ -580,7 +605,8 @@ export default function SalesPage() {
                 pointsRedeemed: redeemPoints ? pointsToRedeem : 0,
                 loyaltyDiscount: redeemPoints ? loyaltyRedeemValue : 0,
                 taxAmount: taxSettings.enabled ? taxAmount : 0,
-                totalDiscount: totalDiscount || 0
+                totalDiscount: totalDiscount || 0,
+                depositAmount: depositAmount
             });
 
             if (!saleId) {
@@ -663,21 +689,60 @@ export default function SalesPage() {
                         });
                     }
 
-                    // Sale Receipt
-                    await sendNotification('sale', {
-                        id: trxId,
-                        amount: grandTotal,
-                        customerPhone: customerPhone,
-                        customerName: customerName,
-                        ownerPhone: user?.phone, // Send to current user's phone as owner notification
-                        items: cart.length,
-                        pointsEarned: pointsEarned,
-                        pointsUsed: redeemPoints ? pointsToRedeem : 0,
-                        pointsBalance: finalPoints,
-                        totalPoints: finalPoints,
-                        staffName: user?.name,
-                        storeId: activeStore.id
-                    });
+                    // Sale Receipt or Installment
+                    if (paymentMethod === 'installment') {
+                        const amountPaid = parseFloat(depositAmount) || 0;
+                        const balance = grandTotal - amountPaid;
+
+                        // Record Installment in DB
+                        const { data: installment, error: instError } = await supabase.from('installments').insert({
+                            store_id: activeStore.id,
+                            customer_id: freshCust.id,
+                            sale_id: saleId,
+                            total_amount: grandTotal,
+                            amount_paid: amountPaid,
+                            balance: balance,
+                            status: 'active'
+                        }).select().single();
+
+                        if (installment) {
+                            // Record the initial payment
+                            if (amountPaid > 0) {
+                                await supabase.from('installment_payments').insert({
+                                    installment_id: installment.id,
+                                    amount: amountPaid,
+                                    payment_method: 'deposit',
+                                    recorded_by: user?.id
+                                });
+                            }
+
+                            // Send Installment SMS
+                            await sendNotification('installment', {
+                                id: trxId,
+                                amountPaid: amountPaid,
+                                amountLeft: balance,
+                                customerPhone: customerPhone,
+                                customerName: customerName,
+                                storeId: activeStore.id
+                            });
+                        }
+                    } else {
+                        await sendNotification('sale', {
+                            id: trxId,
+                            amount: grandTotal,
+                            customerPhone: customerPhone,
+                            customerName: customerName,
+                            ownerPhone: user?.phone, // Send to current user's phone as owner notification
+                            items: cart.length,
+                            pointsEarned: pointsEarned,
+                            pointsUsed: redeemPoints ? pointsToRedeem : 0,
+                            pointsBalance: finalPoints,
+                            totalPoints: finalPoints,
+                            staffName: user?.name,
+                            storeId: activeStore.id
+                        });
+                    }
+
 
                 } else {
                     console.warn("Customer not found for points update after sale processing", customerPhone);
@@ -719,7 +784,7 @@ export default function SalesPage() {
     // ... (keep existing scanner/modal logic)
 
     return (
-        <div className="h-[calc(100vh-4rem)] lg:h-[calc(100vh-6rem)] animate-in fade-in slide-in-from-bottom-4 duration-500 relative flex flex-col lg:flex-row gap-4 lg:gap-6">
+        <div className="h-[calc(100vh-10rem)] sm:h-[calc(100vh-11rem)] lg:h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-bottom-4 duration-500 relative flex flex-col lg:flex-row gap-2 sm:gap-4 lg:gap-6 overflow-hidden">
 
             {/* Scanner Overlay Modal */}
             {isScanning && (
@@ -842,10 +907,10 @@ export default function SalesPage() {
                 </div>
 
                 {/* Product List View */}
-                <div className="flex-1 overflow-y-auto pb-20 lg:pb-0">
-                    <div className="space-y-3">
-                        {/* Headers primarily for desktop, hidden on very small screens if needed, but useful */}
-                        <div className="grid grid-cols-12 gap-2 sm:gap-4 px-2 sm:px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">
+                <div className="flex-1 overflow-y-auto pb-32 lg:pb-0">
+                    <div className="space-y-2 sm:space-y-3">
+                        {/* Headers primarily for desktop */}
+                        <div className="grid grid-cols-12 gap-2 px-2 sm:px-4 text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">
                             <div className="col-span-8 sm:col-span-6">Product</div>
                             <div className="hidden sm:block sm:col-span-3">Details / Stock</div>
                             <div className="col-span-3 sm:col-span-2 text-right">Price</div>
@@ -970,8 +1035,8 @@ export default function SalesPage() {
             </div>
 
             {/* Mobile Bottom Cart Bar */}
-            <div className={`fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-slate-200 lg:hidden z-[60] dark:bg-slate-950 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0'}`}>
-                <div className="flex gap-4">
+            <div className={`fixed bottom-16 left-0 right-0 p-3 sm:p-4 bg-white/95 backdrop-blur border-t border-slate-200 lg:hidden z-[60] dark:bg-slate-950/95 dark:border-slate-800 transition-transform duration-300 ${showMobileCart ? 'translate-y-full' : 'translate-y-0 shadow-[0_-4px_10px_-1px_rgba(0,0,0,0.1)]'}`}>
+                <div className="flex items-center gap-3 sm:gap-4">
                     <div className="flex-1">
                         <p className="text-xs text-slate-500 dark:text-slate-400">{cart.length} items in cart</p>
                         <p className="text-lg font-bold text-slate-900 dark:text-white">GHS {grandTotal.toFixed(2)}</p>
@@ -995,11 +1060,11 @@ export default function SalesPage() {
             `} onClick={() => setShowMobileCart(false)} />
 
             <div className={`
-                fixed inset-y-0 right-0 z-[70] w-full max-w-md bg-white shadow-2xl transition-transform duration-300 ease-in-out dark:bg-slate-900
+                fixed inset-y-0 right-0 z-[70] w-full max-w-md bg-white shadow-2xl transition-transform duration-300 ease-in-out dark:bg-slate-900 flex flex-col
                 lg:static lg:h-full lg:w-96 lg:bg-transparent lg:shadow-none lg:translate-x-0 lg:z-0
                 ${showMobileCart ? 'translate-x-0' : 'translate-x-full'}
             `}>
-                <div className="h-full flex flex-col rounded-none lg:rounded-2xl border-l lg:border border-slate-200 lg:bg-white lg:shadow-xl dark:border-slate-800 dark:lg:bg-slate-900">
+                <div className="flex-1 flex flex-col min-h-0 rounded-none lg:rounded-2xl border-l lg:border border-slate-200 lg:bg-white lg:shadow-xl dark:border-slate-800 dark:lg:bg-slate-900 overflow-hidden">
                     <div className="border-b border-slate-200 p-4 dark:border-slate-800 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <button onClick={() => setShowMobileCart(false)} className="lg:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -1291,12 +1356,35 @@ export default function SalesPage() {
                             >
                                 <Smartphone className={`h-6 w-6 ${paymentMethod === 'momo' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> MoMo
                             </button>
+                            <button
+                                onClick={() => setPaymentMethod('installment')}
+                                className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'installment' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                            >
+                                <CreditCard className={`h-6 w-6 ${paymentMethod === 'installment' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> Installment
+                            </button>
                         </div>
+
+                        {paymentMethod === 'installment' && (
+                            <div className="mb-4 animate-in slide-in-from-top-2">
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider text-center">Initial Deposit</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">GHS</span>
+                                    <input
+                                        type="number"
+                                        placeholder="0.00"
+                                        className="w-full rounded-xl border-2 border-indigo-100 bg-white py-3 pl-12 pr-4 text-center text-xl font-black text-indigo-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-900/30 dark:bg-slate-800"
+                                        value={depositAmount}
+                                        onChange={(e) => setDepositAmount(e.target.value)}
+                                    />
+                                </div>
+                                <p className="text-[10px] text-center text-slate-400 mt-2 font-medium">Balance of GHS {(grandTotal - (parseFloat(depositAmount) || 0)).toFixed(2)} will be tracked as installment</p>
+                            </div>
+                        )}
 
                         <button
                             onClick={() => setShowCheckoutConfirm(true)}
                             disabled={cart.length === 0 || !paymentMethod || isProcessing}
-                            className="w-full rounded-xl bg-indigo-600 py-3.5 text-center font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                            className="w-full rounded-xl bg-indigo-600 py-3 sm:py-3.5 text-center font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none mb-safe"
                             title={isProcessing ? "Processing..." : (!paymentMethod ? "Please select a payment method" : "")}
                         >
                             {isProcessing ? 'Processing...' : (paymentMethod ? `Checkout • GHS ${grandTotal.toFixed(2)}` : 'Select Payment Method')}

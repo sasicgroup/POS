@@ -16,6 +16,9 @@ interface Product {
     sku: string;
     image: string;
     costPrice?: number;
+    earnablePoints?: number;
+    pointsValue?: number;
+    estimatedProfit?: number;
     status?: string;
     video?: string;
 }
@@ -59,6 +62,10 @@ interface InventoryContextType {
     migrateImages: () => Promise<number | undefined>;
     preloadCacheForOffline: () => Promise<void>;
     cacheStatus: { isLoaded: boolean; productCount: number; lastUpdated: number | null };
+    loyaltyConfig: any;
+    refreshLoyaltyConfig: () => Promise<void>;
+    installmentSettings: any;
+    refreshInstallmentSettings: () => Promise<void>;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -88,6 +95,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [pageCache, setPageCache] = useState<Record<number, { data: Product[], timestamp: number }>>({});
     const [isCacheLoaded, setIsCacheLoaded] = useState(false);
     const [cacheStatus, setCacheStatus] = useState({ isLoaded: false, productCount: 0, lastUpdated: null as number | null });
+    const [loyaltyConfig, setLoyaltyConfig] = useState<any>(null);
+    const [installmentSettings, setInstallmentSettings] = useState<any>(null);
     const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days for offline support
 
     // Load Cache from IDB
@@ -138,6 +147,42 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             }
         }
     }, [activeStore?.id, isCacheLoaded, user?.id]); // Only run when these change
+
+    const refreshLoyaltyConfig = React.useCallback(async () => {
+        if (!activeStore?.id) return;
+        try {
+            const { data } = await supabase
+                .from('loyalty_programs')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .single();
+            if (data) setLoyaltyConfig(data);
+        } catch (e) {
+            console.error("Error fetching loyalty config:", e);
+        }
+    }, [activeStore?.id]);
+
+    useEffect(() => {
+        refreshLoyaltyConfig();
+    }, [activeStore?.id, refreshLoyaltyConfig]);
+
+    const refreshInstallmentSettings = React.useCallback(async () => {
+        if (!activeStore?.id) return;
+        try {
+            const { data } = await supabase
+                .from('installment_settings')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .single();
+            if (data) setInstallmentSettings(data);
+        } catch (e) {
+            console.error("Error fetching installment settings:", e);
+        }
+    }, [activeStore?.id]);
+
+    useEffect(() => {
+        refreshInstallmentSettings();
+    }, [activeStore?.id, refreshInstallmentSettings]);
 
     // UI states
     const [businessTypes, setBusinessTypes] = useState<string[]>([]);
@@ -234,7 +279,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
             let queryBuilder = supabase
                 .from('products')
-                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id', { count: 'estimated' })
+                .select('id, name, category, price, stock, sku, image, cost_price, earnable_points, points_value, estimated_profit, status, video, store_id', { count: 'estimated' })
                 .eq('store_id', activeStore.id);
 
             if (query && query.trim()) {
@@ -253,7 +298,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             } else if (data) {
                 const mappedProducts = data.map((p: any) => ({
                     ...p,
-                    costPrice: p.cost_price || 0, // Ensure mapping
+                    costPrice: p.cost_price || 0,
+                    earnablePoints: p.earnable_points || 0,
+                    pointsValue: p.points_value || 0,
+                    estimatedProfit: p.estimated_profit || 0,
                     status: p.status || 'In Stock',
                     video: p.video || '',
                     image: p.image || ''
@@ -374,7 +422,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             image: optimizedImage, // Use URL
             video: product.video,
             status: product.status,
-            cost_price: product.costPrice
+            cost_price: product.costPrice,
+            earnable_points: product.earnablePoints,
+            points_value: product.pointsValue,
+            estimated_profit: product.estimatedProfit
         }).select().single();
 
         if (error) {
@@ -386,6 +437,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             const mappedProduct = {
                 ...data,
                 costPrice: data.cost_price || 0,
+                earnablePoints: data.earnable_points || 0,
+                pointsValue: data.points_value || 0,
+                estimatedProfit: data.estimated_profit || 0,
                 status: data.status || 'In Stock',
                 video: data.video || '',
                 image: data.image || ''
@@ -407,7 +461,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Fetch first 100 products (same as preload)
             const { data, error } = await supabase
                 .from('products')
-                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id')
+                .select('id, name, category, price, stock, sku, image, cost_price, earnable_points, points_value, estimated_profit, status, video, store_id')
                 .eq('store_id', activeStore.id)
                 .limit(100);
 
@@ -420,6 +474,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 const mappedProducts = data.map((p: any) => ({
                     ...p,
                     costPrice: p.cost_price || 0,
+                    earnablePoints: p.earnable_points || 0,
+                    pointsValue: p.points_value || 0,
+                    estimatedProfit: p.estimated_profit || 0,
                     status: p.status || 'In Stock',
                     video: p.video || '',
                     image: p.image || ''
@@ -465,6 +522,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 return {
                     ...data,
                     costPrice: data.cost_price || 0,
+                    earnablePoints: data.earnable_points || 0,
+                    pointsValue: data.points_value || 0,
+                    estimatedProfit: data.estimated_profit || 0,
                     status: data.status || 'In Stock',
                     video: data.video || '',
                     image: data.image || ''
@@ -494,7 +554,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             image: optimizedImage,
             video: product.video,
             status: product.status,
-            cost_price: product.costPrice
+            cost_price: product.costPrice,
+            earnable_points: product.earnablePoints,
+            points_value: product.pointsValue,
+            estimated_profit: product.estimatedProfit
         }).eq('id', product.id);
 
         if (error) {
@@ -554,16 +617,27 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         let pointsEarned = 0;
         let loyaltyConfig = null;
         if (customerId) {
-            const { data: config } = await supabase
-                .from('loyalty_programs')
-                .select('*')
-                .eq('store_id', activeStore.id)
-                .single();
+            // Priority 1: Product specific points from the cart
+            let totalProductPoints = 0;
+            if (saleData.items && saleData.items.length > 0) {
+                totalProductPoints = saleData.items.reduce((acc: number, item: any) => acc + ((item.earnablePoints || 0) * item.quantity), 0);
+            }
 
-            if (config && config.enabled) {
-                loyaltyConfig = config;
-                const rate = config.points_per_currency || 1;
-                pointsEarned = Math.floor(saleData.totalAmount * rate);
+            if (totalProductPoints > 0) {
+                pointsEarned = totalProductPoints;
+            } else {
+                // Priority 2: Global rate
+                const { data: config } = await supabase
+                    .from('loyalty_programs')
+                    .select('*')
+                    .eq('store_id', activeStore.id)
+                    .single();
+
+                if (config && config.enabled) {
+                    loyaltyConfig = config;
+                    const rate = config.points_per_currency || 1;
+                    pointsEarned = Math.floor(saleData.totalAmount * rate);
+                }
             }
         }
 
@@ -621,7 +695,35 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Record Payment
-        if (saleData.totalAmount > 0) {
+        if (saleData.paymentMethod === 'installment') {
+            const deposit = parseFloat(saleData.depositAmount) || 0;
+            // Record initial deposit
+            if (deposit > 0) {
+                await supabase.from('sale_payments').insert({
+                    sale_id: sale.id,
+                    amount: deposit,
+                    payment_method: 'installment_deposit',
+                    recorded_by: safeEmployeeId
+                });
+            }
+
+            // Create Installment Record
+            if (customerId) {
+                const balance = saleData.totalAmount - deposit;
+                const { error: instError } = await supabase.from('installments').insert({
+                    store_id: activeStore.id,
+                    customer_id: customerId,
+                    sale_id: sale.id,
+                    total_amount: saleData.totalAmount,
+                    amount_paid: deposit,
+                    balance: balance,
+                    status: balance <= 0 ? 'completed' : 'active',
+                    plan_type: 'installment',
+                    next_payment_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // Default 30 days
+                });
+                if (instError) console.error("Installment creation failed", instError);
+            }
+        } else if (saleData.totalAmount > 0) {
             await supabase.from('sale_payments').insert({
                 sale_id: sale.id,
                 amount: saleData.totalAmount,
@@ -778,6 +880,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 image: (product.image && product.image.length < 500) ? product.image : undefined,
                 category: product.category,
                 costPrice: product.costPrice,
+                earnablePoints: product.earnablePoints || 0,
+                pointsValue: product.pointsValue || 0,
                 status: product.status,
                 maxStock: product.stock
             }];
@@ -991,7 +1095,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             migrateImages,
             getProductByBarcode,
             preloadCacheForOffline,
-            cacheStatus
+            cacheStatus,
+            loyaltyConfig,
+            refreshLoyaltyConfig,
+            installmentSettings,
+            refreshInstallmentSettings
         }}>
             {children}
         </InventoryContext.Provider>
