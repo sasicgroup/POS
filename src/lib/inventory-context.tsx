@@ -62,6 +62,7 @@ interface InventoryContextType {
     migrateImages: () => Promise<number | undefined>;
     preloadCacheForOffline: () => Promise<void>;
     cacheStatus: { isLoaded: boolean; productCount: number; lastUpdated: number | null };
+    purgeCache: () => Promise<void>;
     loyaltyConfig: any;
     refreshLoyaltyConfig: () => Promise<void>;
     installmentSettings: any;
@@ -1053,6 +1054,40 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const purgeCache = async () => {
+        if (!activeStore?.id) return;
+
+        console.log('[Inventory] Purging cache...');
+        setIsLoading(true);
+
+        try {
+            // 1. Clear IDB
+            const key = `sms_inventory_cache_${activeStore.id}`;
+            await idbDel(key);
+
+            // 2. Clear local state
+            setPageCache({});
+            setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
+
+            // 3. Clear Cart (optional, but requested as "purge cached items")
+            clearCart();
+
+            // 4. Fresh fetch of current page / settings
+            await Promise.all([
+                refreshLoyaltyConfig(),
+                refreshInstallmentSettings(),
+                fetchTotalCount(),
+                // If there's a search query, fetch with it, otherwise just reset products
+                searchQuery.trim() ? fetchProducts(page, pageSize, searchQuery) : Promise.resolve()
+            ]);
+
+            console.log('[Inventory] Cache purged and data re-fetched');
+        } catch (err) {
+            console.error('[Inventory] Purge failed:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
 
     return (
@@ -1096,6 +1131,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             getProductByBarcode,
             preloadCacheForOffline,
             cacheStatus,
+            purgeCache,
             loyaltyConfig,
             refreshLoyaltyConfig,
             installmentSettings,

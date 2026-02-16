@@ -21,7 +21,7 @@ export default function SettingsPage() {
     const { activeStore, hasPermission, user, updateStoreSettings, teamMembers, addTeamMember, updateTeamMember, removeTeamMember, globalSettings, updateGlobalSettings } = useAuth();
     const { showToast } = useToast();
 
-    const { businessTypes, activeCategories, customCategories, toggleBusinessType, addCustomCategory, removeCustomCategory, availableBusinessTypes, addCustomBusinessType, updateBusinessType, deleteBusinessType, updateCustomCategory } = useInventory();
+    const { businessTypes, activeCategories, customCategories, toggleBusinessType, addCustomCategory, removeCustomCategory, availableBusinessTypes, addCustomBusinessType, updateBusinessType, deleteBusinessType, updateCustomCategory, purgeCache } = useInventory();
 
     const searchParams = useSearchParams();
     const [activeTab, setActiveTab] = useState('general');
@@ -796,6 +796,52 @@ export default function SettingsPage() {
 
 
 
+
+                            <section className="bg-white dark:bg-slate-900 rounded-xl border border-red-100 dark:border-red-900/30 p-6 shadow-sm overflow-hidden relative">
+                                <div className="absolute top-0 right-0 p-4 opacity-5">
+                                    <ShieldAlert className="h-24 w-24 text-red-600" />
+                                </div>
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                                        <RotateCcw className="h-5 w-5 text-red-600" />
+                                    </div>
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Data Maintenance</h2>
+                                </div>
+                                <div className="space-y-4">
+                                    <div>
+                                        <h3 className="text-sm font-medium text-slate-900 dark:text-white">Clear Local Cache</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                            If you're noticing that updates made on other devices (like your phone) aren't showing up here,
+                                            purging the local cache will force the application to fetch fresh data from the cloud.
+                                        </p>
+                                    </div>
+                                    <div className="pt-2 flex items-center gap-3">
+                                        <button
+                                            onClick={async () => {
+                                                if (confirm('Are you sure? This will clear your local cart and force a fresh data sync from the server.')) {
+                                                    try {
+                                                        await purgeCache();
+                                                        showToast('success', 'Cache cleared! Refreshing data...');
+                                                    } catch (err) {
+                                                        showToast('error', 'Failed to purge cache');
+                                                    }
+                                                }
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg font-medium transition-all"
+                                        >
+                                            <RotateCcw className="h-4 w-4" />
+                                            Purge Cache
+                                        </button>
+                                        <button
+                                            onClick={() => window.location.reload()}
+                                            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-all"
+                                        >
+                                            <RefreshCw className="h-4 w-4" />
+                                            Reload App
+                                        </button>
+                                    </div>
+                                </div>
+                            </section>
 
                             {/* Removed Branding Section from General Tab */}
                         </div>
