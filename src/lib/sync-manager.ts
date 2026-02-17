@@ -284,53 +284,54 @@ class SyncManager {
                     throw itemsError;
                 }
 
-                // 4. Update Stock with Conflict Detection
-                for (const item of saleData.items) {
-                    // Fetch current stock to detect conflicts
-                    const { data: product } = await supabase
-                        .from('products')
-                        .select('stock, name')
-                        .eq('id', item.id)
-                        .single();
+                // 4. Update Stock (Batch Update) with Conflict Detection
+                const stockUpdates: { id: any; stock: number }[] = [];
+                const conflictNotifications: any[] = [];
 
-                    if (product) {
-                        const currentServerStock = product.stock;
-                        const requestedQuantity = item.quantity;
-                        const newStock = currentServerStock - requestedQuantity;
+                // Fetch current stock for all items in one go
+                const { data: serverProducts } = await supabase
+                    .from('products')
+                    .select('id, stock, name')
+                    .in('id', saleData.items.map((i: any) => i.id));
 
-                        // Detect stock conflict
-                        if (currentServerStock < requestedQuantity) {
-                            console.warn(
-                                `[SyncManager] ⚠️ STOCK CONFLICT: ${product.name}`,
-                                `\n  Server stock: ${currentServerStock}`,
-                                `\n  Offline sale quantity: ${requestedQuantity}`,
-                                `\n  Shortfall: ${requestedQuantity - currentServerStock}`
-                            );
+                if (serverProducts) {
+                    saleData.items.forEach((item: any) => {
+                        const product = serverProducts.find(p => p.id === item.id);
+                        if (product) {
+                            const currentServerStock = product.stock;
+                            const requestedQuantity = item.quantity;
+                            const newStock = currentServerStock - requestedQuantity;
 
-                            // Create notification for owner
-                            try {
-                                await supabase.from('notifications').insert({
+                            // Detect stock conflict
+                            if (currentServerStock < requestedQuantity) {
+                                console.warn(`[SyncManager] ⚠️ STOCK CONFLICT: ${product.name}`);
+                                conflictNotifications.push({
                                     store_id: activeStoreId,
                                     title: '⚠️ Stock Conflict Detected',
                                     message: `Offline sale synced for "${product.name}" but stock was insufficient. Server had ${currentServerStock}, sale was for ${requestedQuantity}. Stock adjusted to ${Math.max(0, newStock)}.`,
                                     type: 'warning',
                                     is_read: false
                                 });
-                            } catch (notifErr) {
-                                console.error('Failed to create notification:', notifErr);
                             }
+
+                            stockUpdates.push({ id: item.id, stock: Math.max(0, newStock) });
                         }
+                    });
 
-                        // Update stock (allow negative to preserve sale, but floor at 0 for display)
-                        const finalStock = Math.max(0, newStock);
-                        await supabase.from('products')
-                            .update({ stock: finalStock })
-                            .eq('id', item.id);
+                    // Batch Update Stock
+                    if (stockUpdates.length > 0) {
+                        const { error: stockError } = await supabase
+                            .from('products')
+                            .upsert(stockUpdates, { onConflict: 'id' });
+                        if (stockError) console.error('[SyncManager] Batch stock update error:', stockError);
+                    }
 
-                        console.log(
-                            `[SyncManager] Stock updated: ${product.name}`,
-                            `${currentServerStock} → ${finalStock}`
-                        );
+                    // Batch Insert Conflict Notifications
+                    if (conflictNotifications.length > 0) {
+                        const { error: notifError } = await supabase
+                            .from('notifications')
+                            .insert(conflictNotifications);
+                        if (notifError) console.error('[SyncManager] Batch notification error:', notifError);
                     }
                 }
             }

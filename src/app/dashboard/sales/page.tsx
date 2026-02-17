@@ -10,6 +10,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { playBeep as playBeepSound, playSuccess as playSuccessSound, playError as playErrorSound } from '@/lib/audio-utils';
+import { getOptimizedImageUrl } from '@/lib/utils/image-utils';
 
 export default function SalesPage() {
     const { activeStore, user, updateStoreSettings } = useAuth();
@@ -578,8 +579,6 @@ export default function SalesPage() {
         setIsProcessing(true);
 
         try {
-            // Process Payment Logic would go here
-
             // Generate transaction ID with store prefix and sequential number
             const transactionNumber = (activeStore.lastTransactionNumber || 0) + 1;
             const prefix = activeStore.receiptPrefix || 'TRX';
@@ -587,9 +586,8 @@ export default function SalesPage() {
             const paddedNumber = transactionNumber.toString().padStart(5, '0');
             const trxId = `${prefix}${paddedNumber}${suffix}`;
 
-            // Process Inventory Sync & DB Save
-
-            const saleId = await processSale({
+            // Process Sale Transaction
+            const saleResult = await processSale({
                 items: cart.map(item => ({
                     id: item.id,
                     quantity: item.quantity,
@@ -607,27 +605,28 @@ export default function SalesPage() {
                 loyaltyDiscount: redeemPoints ? loyaltyRedeemValue : 0,
                 taxAmount: taxSettings.enabled ? taxAmount : 0,
                 totalDiscount: totalDiscount || 0,
-                depositAmount: depositAmount
+                depositAmount: depositAmount,
+                subtotalAmount: cartTotal
             });
 
-            if (!saleId) {
+            if (!saleResult) {
                 showToast('error', "Failed to process sale. Please try again.");
+                setIsProcessing(false);
                 return;
             }
 
-            // Update transaction counter in database
-            const { error: storeUpdateError } = await supabase
-                .from('stores')
+            const { saleId, pointsEarned, finalPoints } = saleResult;
+
+            // Update transaction counter in database (non-blocking)
+            supabase.from('stores')
                 .update({ last_transaction_number: transactionNumber })
-                .eq('id', activeStore.id);
+                .eq('id', activeStore.id)
+                .then(({ error }) => {
+                    if (!error) updateStoreSettings({ lastTransactionNumber: transactionNumber });
+                });
 
-            if (!storeUpdateError) {
-                // CRITICAL: Update local state so next transaction ID is incremented
-                updateStoreSettings({ lastTransactionNumber: transactionNumber });
-            }
-
-            // Create order notification
-            await supabase.from('notifications').insert({
+            // Create order notification (non-blocking)
+            supabase.from('notifications').insert({
                 store_id: activeStore.id,
                 type: 'order',
                 title: `New Order #${trxId}`,
@@ -638,15 +637,12 @@ export default function SalesPage() {
                     amount: grandTotal,
                     customer: customerName || 'Guest'
                 }
+            }).then(({ error }) => {
+                if (error) console.error('Notification error:', error);
             });
 
-            const pointsEarned = loyaltyConfig?.enabled
-                ? Math.floor(cartTotal * (loyaltyConfig.points_per_currency || 0.01)) // Use cartTotal (before tax) for points
-                : 0;
-
-            // --- Update Customer Loyalty Points & Stats ---
+            // --- Update Customer Loyalty Points & Stats UI ---
             if (customerPhone) {
-                // 1. Fetch fresh customer data to ensure we have the latest points/existence
                 const { data: freshCust } = await supabase
                     .from('customers')
                     .select('*')
@@ -655,21 +651,6 @@ export default function SalesPage() {
                     .single();
 
                 if (freshCust) {
-                    // Calculate based on DB data
-                    const currentDbPoints = freshCust.points || 0;
-                    // If redeeming, we subtract 100, then add earned. 
-                    // Note: grandTotal already has the discount applied if redeemPoints was true, 
-                    // so we don't need to adjust pointsEarned, just the starting balance.
-                    // Calculate final points for UI update (DB update moved to processSale)
-                    const finalPoints = redeemPoints
-                        ? (currentDbPoints - pointsToRedeem) + pointsEarned
-                        : currentDbPoints + pointsEarned;
-
-                    // We rely on processSale to update the customer points in DB
-                    // Just update local state here
-
-
-                    // Update Local State for UI
                     setLoyaltyPoints(finalPoints);
                     setExistingCustomer({
                         ...freshCust,
@@ -679,10 +660,7 @@ export default function SalesPage() {
                     });
                     setRedeemPoints(false);
 
-                    // --- Notifications ---
-                    // Trigger 'new customer' welcome if they were just created (points check or created_at check?)
-                    // Since we just updated them, let's use the local 'existingCustomer' state check
-                    // If existingCustomer was null BEFORE this transaction, they are new.
+                    // Notifications
                     if (!existingCustomer) {
                         await sendNotification('welcome', {
                             customerName: freshCust.name,
@@ -690,50 +668,26 @@ export default function SalesPage() {
                         });
                     }
 
-                    // Sale Receipt or Installment
                     if (paymentMethod === 'installment') {
                         const amountPaid = parseFloat(depositAmount) || 0;
                         const balance = grandTotal - amountPaid;
 
-                        // Record Installment in DB
-                        const { data: installment, error: instError } = await supabase.from('installments').insert({
-                            store_id: activeStore.id,
-                            customer_id: freshCust.id,
-                            sale_id: saleId,
-                            total_amount: grandTotal,
-                            amount_paid: amountPaid,
-                            balance: balance,
-                            status: 'active'
-                        }).select().single();
-
-                        if (installment) {
-                            // Record the initial payment
-                            if (amountPaid > 0) {
-                                await supabase.from('installment_payments').insert({
-                                    installment_id: installment.id,
-                                    amount: amountPaid,
-                                    payment_method: 'deposit',
-                                    recorded_by: user?.id
-                                });
-                            }
-
-                            // Send Installment SMS
-                            await sendNotification('installment', {
-                                id: trxId,
-                                amountPaid: amountPaid,
-                                amountLeft: balance,
-                                customerPhone: customerPhone,
-                                customerName: customerName,
-                                storeId: activeStore.id
-                            });
-                        }
+                        // Note: processSale already created the installment record
+                        await sendNotification('installment', {
+                            id: trxId,
+                            amountPaid: amountPaid,
+                            amountLeft: balance,
+                            customerPhone: customerPhone,
+                            customerName: customerName,
+                            storeId: activeStore.id
+                        });
                     } else {
                         await sendNotification('sale', {
                             id: trxId,
                             amount: grandTotal,
                             customerPhone: customerPhone,
                             customerName: customerName,
-                            ownerPhone: user?.phone, // Send to current user's phone as owner notification
+                            ownerPhone: user?.phone,
                             items: cart.length,
                             pointsEarned: pointsEarned,
                             pointsUsed: redeemPoints ? pointsToRedeem : 0,
@@ -743,17 +697,11 @@ export default function SalesPage() {
                             storeId: activeStore.id
                         });
                     }
-
-
-                } else {
-                    console.warn("Customer not found for points update after sale processing", customerPhone);
                 }
             }
 
             console.log(`Processing Sale: ${trxId}`);
             handlePrintReceipt(trxId);
-
-            // Play Success Sound
             playSuccess();
 
             setShowCheckoutSuccess(true);
@@ -762,12 +710,14 @@ export default function SalesPage() {
             setCustomerName('');
             setCustomerPhone('');
             setLoyaltyPoints(0);
-            setLoyaltyPoints(0);
             setRedeemPoints(false);
 
             setTimeout(() => {
                 setShowCheckoutSuccess(false);
             }, 3000);
+        } catch (error) {
+            console.error("Checkout error:", error);
+            showToast('error', "Something went wrong during checkout.");
         } finally {
             setIsProcessing(false);
         }
@@ -832,7 +782,7 @@ export default function SalesPage() {
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Product Scanned</h3>
                             <button onClick={() => setScannedProduct(null)} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
                         </div>
-                        <img src={scannedProduct.image} className="w-32 h-32 rounded-xl mx-auto mb-4 bg-slate-100 object-cover" />
+                        <img src={getOptimizedImageUrl(scannedProduct.image, 'medium')} className="w-32 h-32 rounded-xl mx-auto mb-4 bg-slate-100 object-cover" />
                         <div className="text-center space-y-2">
                             <h4 className="font-semibold text-slate-900 dark:text-slate-100">{scannedProduct.name}</h4>
                             <p className="text-sm text-slate-500">{scannedProduct.sku}</p>
@@ -1390,9 +1340,9 @@ export default function SalesPage() {
 
                         <button
                             onClick={() => setShowCheckoutConfirm(true)}
-                            disabled={cart.length === 0 || !paymentMethod || isProcessing}
+                            disabled={cart.length === 0 || !paymentMethod || (paymentMethod === 'installment' && !customerPhone) || isProcessing}
                             className="w-full rounded-xl bg-indigo-600 py-3 sm:py-3.5 text-center font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none mb-safe"
-                            title={isProcessing ? "Processing..." : (!paymentMethod ? "Please select a payment method" : "")}
+                            title={isProcessing ? "Processing..." : (!paymentMethod ? "Please select a payment method" : (paymentMethod === 'installment' && !customerPhone ? "Installments require a customer phone number" : ""))}
                         >
                             {isProcessing ? 'Processing...' : (paymentMethod ? `Checkout • GHS ${grandTotal.toFixed(2)}` : 'Select Payment Method')}
                         </button>
@@ -1518,7 +1468,7 @@ export default function SalesPage() {
                             <X className="h-6 w-6" />
                         </button>
                         <img
-                            src={activeImageUrl}
+                            src={getOptimizedImageUrl(activeImageUrl, 'large')}
                             alt="Product Preview"
                             className="max-w-full max-h-[85vh] object-contain rounded-lg"
                         />

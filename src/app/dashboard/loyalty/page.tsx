@@ -22,9 +22,12 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/lib/toast-context';
+import { useInventory } from '@/lib/inventory-context';
+import { RefreshCcw } from 'lucide-react';
 
 export default function LoyaltyPage() {
     const { activeStore } = useAuth();
+    const { refreshLoyaltyConfig, syncAllProductsToLoyalty, loyaltyConfig } = useInventory();
     const [activeTab, setActiveTab] = useState('overview');
 
     // --- Redemption Logic State ---
@@ -220,8 +223,8 @@ export default function LoyaltyPage() {
                 // Initialize if missing
                 await supabase.from('loyalty_programs').insert({
                     store_id: activeStore.id,
-                    points_per_currency: 0.01,
-                    redemption_rate: 0.01,
+                    points_per_currency: 1,
+                    redemption_rate: 0.05,
                     min_points_to_redeem: 100
                 });
             }
@@ -336,6 +339,7 @@ export default function LoyaltyPage() {
             console.error('Failed to save settings:', error);
             showToast('error', 'Failed to save loyalty settings');
         } else {
+            await refreshLoyaltyConfig();
             showToast('success', 'Loyalty settings saved!');
         }
         setIsSavingSettings(false);
@@ -813,7 +817,6 @@ export default function LoyaltyPage() {
                                     <p className="mt-1 text-xs text-slate-500">Minimum balance required to start redeeming.</p>
                                 </div>
 
-
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Redemption Value</label>
                                     <div className="mt-1 relative rounded-md shadow-sm">
@@ -834,28 +837,65 @@ export default function LoyaltyPage() {
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Expiry</label>
-                                <select
-                                    value={settings.expiryMonths}
-                                    onChange={e => setSettings({ ...settings, expiryMonths: parseInt(e.target.value) })}
-                                    className="mt-1 block w-full rounded-md border-slate-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm dark:bg-slate-800 dark:border-slate-700 border"
-                                >
-                                    <option value={6}>6 Months</option>
-                                    <option value={12}>12 Months (1 Year)</option>
-                                    <option value={24}>24 Months (2 Years)</option>
-                                    <option value={0}>Never Expire</option>
-                                </select>
+                            <hr className="border-slate-200 dark:border-slate-700" />
+
+                            <div className="grid gap-6 sm:grid-cols-2">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Expiry Duration</label>
+                                    <select
+                                        value={settings.expiryMonths}
+                                        onChange={e => setSettings({ ...settings, expiryMonths: parseInt(e.target.value) })}
+                                        className="mt-1 block w-full rounded-md border-slate-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700 border"
+                                    >
+                                        <option value={6}>6 Months</option>
+                                        <option value={12}>12 Months (1 Year)</option>
+                                        <option value={24}>24 Months (2 Years)</option>
+                                        <option value={0}>Never Expire</option>
+                                    </select>
+                                </div>
+
+                                {/* Reward Ratio Indicator */}
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-slate-900 dark:text-white">Cashback Value</h4>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">Sale % given as rewards.</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={`text-xl font-bold ${(settings.pointsPerCurrency * (settings.redemptionRate || 0)) > 0.1 ? 'text-rose-600' : 'text-indigo-600'}`}>
+                                                {(settings.pointsPerCurrency * (settings.redemptionRate || 0) * 100).toFixed(1)}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="flex justify-end pt-4">
+                            <div className="pt-6 flex flex-col gap-4">
+                                <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/50">
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                        <div>
+                                            <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">Synchronize Inventory</h4>
+                                            <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
+                                                Apply these rates to all existing products.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={syncAllProductsToLoyalty}
+                                            className="whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm active:scale-95"
+                                        >
+                                            <RefreshCcw className="h-4 w-4" />
+                                            Sync Now
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <button
                                     onClick={handleSaveSettings}
                                     disabled={isSavingSettings}
-                                    className="flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full inline-flex justify-center items-center py-3 px-4 border border-transparent shadow-sm text-sm font-medium rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-all font-bold"
                                 >
-                                    <Save className="mr-2 h-4 w-4" />
-                                    {isSavingSettings ? 'Saving...' : 'Save Settings'}
+                                    {isSavingSettings ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                                    Save Program Settings
                                 </button>
                             </div>
                         </div>

@@ -14,7 +14,8 @@ import {
     ArrowDownRight,
     DollarSign,
     MoreHorizontal,
-    TrendingUp
+    TrendingUp,
+    Sparkles
 } from 'lucide-react';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -32,6 +33,7 @@ export default function IncomeExpensesPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [view, setView] = useState<'expenses' | 'income' | 'other_income'>('expenses');
     const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, type: 'expense' | 'income' } | null>(null);
+    const [inventoryStats, setInventoryStats] = useState({ totalValue: 0, potentialProfit: 0 });
 
     // Form State
     const [formData, setFormData] = useState({
@@ -97,13 +99,24 @@ export default function IncomeExpensesPage() {
             }
 
             // 3. Fetch Other Income
-            const { data: incomeData } = await supabase
-                .from('other_income')
-                .select('*')
-                .eq('store_id', activeStore?.id)
-                .order('date', { ascending: false });
+            // 4. Fetch Inventory Stats
+            const { data: invData } = await supabase
+                .from('products')
+                .select('price, cost_price, stock')
+                .eq('store_id', activeStore?.id);
 
-            if (incomeData) setOtherIncomeList(incomeData);
+            if (invData) {
+                let totalV = 0;
+                let potentialP = 0;
+                invData.forEach((p: any) => {
+                    const stock = p.stock || 0;
+                    const price = p.price || 0;
+                    const cost = p.cost_price || 0;
+                    totalV += cost * stock;
+                    potentialP += (price - cost) * stock;
+                });
+                setInventoryStats({ totalValue: totalV, potentialProfit: potentialP });
+            }
 
         } catch (error) {
             console.error("Error fetching data:", error);
@@ -212,32 +225,31 @@ export default function IncomeExpensesPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {/* Total Income Card */}
-                <div onClick={() => setView('income')} className={`cursor-pointer transition-all rounded-xl border p-6 ${view === 'income' || view === 'other_income' ? 'ring-2 ring-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-emerald-100 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'}`}>
-                    <div className="flex items-center gap-4">
-                        <div className="rounded-full bg-emerald-100 p-3 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
-                            <TrendingUp className="h-6 w-6" />
+                <div onClick={() => setView('income')} className={`cursor-pointer transition-all rounded-xl border p-4 ${view === 'income' || view === 'other_income' ? 'ring-2 ring-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-emerald-100 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-full bg-emerald-100 p-2 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
+                            <TrendingUp className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Total Income (Profit + Other)</p>
-                            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                            <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Total Income</p>
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white">
                                 {activeStore?.currency} {totalGrossIncome.toFixed(2)}
                             </h3>
-                            <p className="text-xs text-emerald-600/70 mt-1">Sales: {salesIncome.toFixed(2)} | Other: {totalOtherIncome.toFixed(2)}</p>
                         </div>
                     </div>
                 </div>
 
                 {/* Expenses Card */}
-                <div onClick={() => setView('expenses')} className={`cursor-pointer transition-all rounded-xl border p-6 ${view === 'expenses' ? 'ring-2 ring-rose-500 bg-rose-50 dark:bg-rose-900/30' : 'border-rose-100 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-900/20'}`}>
-                    <div className="flex items-center gap-4">
-                        <div className="rounded-full bg-rose-100 p-3 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400">
-                            <ArrowDownRight className="h-6 w-6" />
+                <div onClick={() => setView('expenses')} className={`cursor-pointer transition-all rounded-xl border p-4 ${view === 'expenses' ? 'ring-2 ring-rose-500 bg-rose-50 dark:bg-rose-900/30' : 'border-rose-100 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-900/20'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-full bg-rose-100 p-2 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400">
+                            <ArrowDownRight className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-rose-600 dark:text-rose-400">Total Expenses</p>
-                            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                            <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Total Expenses</p>
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white">
                                 {activeStore?.currency} {totalExpenses.toFixed(2)}
                             </h3>
                         </div>
@@ -245,21 +257,51 @@ export default function IncomeExpensesPage() {
                 </div>
 
                 {/* Net Profit Card */}
-                <div className={`rounded-xl border p-6 ${netProfit >= 0
+                <div className={`rounded-xl border p-4 ${netProfit >= 0
                     ? 'border-indigo-100 bg-indigo-50 dark:border-indigo-900/50 dark:bg-indigo-900/20'
                     : 'border-orange-100 bg-orange-50 dark:border-orange-900/50 dark:bg-orange-900/20'}`}>
-                    <div className="flex items-center gap-4">
-                        <div className={`rounded-full p-3 ${netProfit >= 0
+                    <div className="flex items-center gap-3">
+                        <div className={`rounded-full p-2 ${netProfit >= 0
                             ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
                             : 'bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-400'}`}>
-                            <DollarSign className="h-6 w-6" />
+                            <DollarSign className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className={`text-sm font-medium ${netProfit >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${netProfit >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-orange-600 dark:text-orange-400'}`}>
                                 Net Profit
                             </p>
-                            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white">
                                 {activeStore?.currency} {netProfit.toFixed(2)}
+                            </h3>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Inventory Value Card */}
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
+                            <Receipt className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Inventory Value</p>
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                                {activeStore?.currency} {inventoryStats.totalValue.toFixed(2)}
+                            </h3>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Potential Profit Card */}
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-full bg-amber-100 p-2 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
+                            <Sparkles className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Est. Stock Profit</p>
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                                {activeStore?.currency} {inventoryStats.potentialProfit.toFixed(2)}
                             </h3>
                         </div>
                     </div>

@@ -8,6 +8,8 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Html5Qrcode } from 'html5-qrcode';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { getOptimizedImageUrl } from '@/lib/utils/image-utils';
+import JsBarcode from 'jsbarcode';
 
 export default function InventoryPage() {
     const { activeStore } = useAuth();
@@ -15,8 +17,10 @@ export default function InventoryPage() {
         products,
         isLoading,
         addProduct,
+        addProducts,
         activeCategories,
         deleteProduct,
+        deleteProducts,
         updateProduct,
         page,
         setPage,
@@ -54,9 +58,157 @@ export default function InventoryPage() {
         image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7', // Default placeholder
         video: ''
     });
+
+    // Barcode Export State
+    const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
+    const [barcodeQtys, setBarcodeQtys] = useState<Record<number, number>>({});
+    const [barcodeList, setBarcodeList] = useState<any[]>([]);
+    const [barcodePage, setBarcodePage] = useState(1);
+    const barcodePageSize = 5;
+    const [isGeneratingBarcodes, setIsGeneratingBarcodes] = useState(false);
     const [showAiAnalysis, setShowAiAnalysis] = useState(false);
     const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState<any | null>(null);
     const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+
+    const handleBarcodeExport = () => {
+        const itemsToExport = selectedProducts.length > 0
+            ? products.filter(p => selectedProducts.includes(p.id))
+            : products;
+
+        const initialQtys: Record<number, number> = {};
+        itemsToExport.forEach(p => {
+            initialQtys[p.id] = 1; // Default to 1
+        });
+
+        setBarcodeList(itemsToExport);
+        setBarcodeQtys(initialQtys);
+        setBarcodePage(1);
+        setIsBarcodeModalOpen(true);
+    };
+
+    const generateBarcodePrint = () => {
+        setIsGeneratingBarcodes(true);
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            showToast('error', 'Pop-up blocked. Please allow pop-ups to print barcodes.');
+            setIsGeneratingBarcodes(false);
+            return;
+        }
+
+        const html = `
+            <html>
+                <head>
+                    <title>Inventory Barcodes</title>
+                    <style>
+                        @page { size: auto; margin: 0; }
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            margin: 20px;
+                            background: white;
+                        }
+                        .label-container {
+                            display: grid;
+                            grid-template-columns: repeat(4, 1fr);
+                            gap: 10px;
+                        }
+                        .label {
+                            border: 1px solid #eee;
+                            padding: 10px;
+                            text-align: center;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            page-break-inside: avoid;
+                            height: 100px; /* Helps with 10 rows per page */
+                        }
+                        .product-name {
+                            font-size: 9px;
+                            font-weight: bold;
+                            margin-bottom: 2px;
+                            max-width: 100%;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        }
+                        canvas {
+                            max-width: 100%;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="label-container" id="barcode-grid"></div>
+                    <script>
+                        // We will inject the barcode generation script here after loading JsBarcode
+                    </script>
+                </body>
+            </html>
+        `;
+
+        printWindow.document.write(html);
+
+        // Prepare indices for barcodes
+        const labels: any[] = [];
+        barcodeList.forEach(p => {
+            const count = barcodeQtys[p.id] || 0;
+            for (let i = 0; i < count; i++) {
+                labels.push({
+                    id: p.id,
+                    name: p.name,
+                    sku: p.sku || 'N/A',
+                    price: p.price
+                });
+            }
+        });
+
+        const grid = printWindow.document.getElementById('barcode-grid');
+
+        // Dynamically create labels and render barcodes
+        labels.forEach((item, index) => {
+            const labelDiv = printWindow.document.createElement('div');
+            labelDiv.className = 'label';
+
+            const nameDiv = printWindow.document.createElement('div');
+            nameDiv.className = 'product-name';
+            nameDiv.innerText = item.name;
+
+            const canvas = printWindow.document.createElement('canvas');
+            canvas.id = `barcode-${index}`;
+
+            labelDiv.appendChild(nameDiv);
+            labelDiv.appendChild(canvas);
+            grid?.appendChild(labelDiv);
+
+            // Import JsBarcode and render
+            const script = printWindow.document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';
+            script.onload = () => {
+                // @ts-ignore
+                printWindow.JsBarcode('#barcode-' + index, item.sku, {
+                    format: "CODE128",
+                    width: 2,
+                    height: 50,
+                    displayValue: true,
+                    fontSize: 10
+                });
+
+                // If last one, trigger print
+                if (index === labels.length - 1) {
+                    setTimeout(() => {
+                        printWindow.print();
+                        // printWindow.close();
+                    }, 500);
+                }
+            };
+            printWindow.document.head.appendChild(script);
+        });
+
+        setIsGeneratingBarcodes(false);
+        setIsBarcodeModalOpen(false);
+        showToast('success', 'Barcodes ready for printing');
+    };
+
     const [showMoreActions, setShowMoreActions] = useState(false);
     const [imageInputType, setImageInputType] = useState<'url' | 'upload'>('url');
     // isScanning declared once below in restored block
@@ -212,8 +364,9 @@ export default function InventoryPage() {
         setBulkDeleteConfirmOpen(true);
     };
 
-    const performBulkDelete = () => {
-        selectedProducts.forEach(id => deleteProduct(id));
+    const performBulkDelete = async () => {
+        if (selectedProducts.length === 0) return;
+        await deleteProducts(selectedProducts);
         showToast('success', `Deleted ${selectedProducts.length} products successfully`);
         setSelectedProducts([]);
         setBulkDeleteConfirmOpen(false);
@@ -225,76 +378,24 @@ export default function InventoryPage() {
         const selectedItems = products.filter(p => selectedProducts.includes(p.id));
         if (selectedItems.length === 0) return;
 
-        selectedItems.forEach(product => {
-            addToCart(product);
+        setCart((current: any[]) => {
+            let newCart = [...current];
+            selectedItems.forEach(product => {
+                const existing = newCart.find(item => item.id === product.id);
+                if (existing) {
+                    if (existing.quantity < product.stock) {
+                        newCart = newCart.map(item =>
+                            item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                        );
+                    }
+                } else if (product.stock > 0) {
+                    newCart.push({ ...product, quantity: 1 });
+                }
+            });
+            return newCart;
         });
 
         showToast('success', `${selectedItems.length} items added to cart`);
-        setSelectedProducts([]);
-    };
-
-    const handleBulkBarcode = () => {
-        if (selectedProducts.length === 0 || !activeStore) return;
-        const selectedItems = products.filter(p => selectedProducts.includes(p.id));
-        if (selectedItems.length === 0) return;
-
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        if (!printWindow) return;
-
-        const barcodesHtml = selectedItems.map(product => `
-            <div style="display: inline-block; width: 200px; text-align: center; padding: 15px; border: 1px dashed #ccc; margin: 5px; border-radius: 4px;">
-                <div style="font-weight: bold; font-size: 10px; margin-bottom: 2px;">${activeStore.name}</div>
-                <div style="font-size: 10px; margin-bottom: 5px; height: 24px; overflow: hidden;">${product.name}</div>
-                <svg id="barcode-${product.id}"></svg>
-                <div style="font-size: 10px; font-weight: bold; margin-top: 5px;">GHS ${product.price.toFixed(2)}</div>
-                <script>
-                    setTimeout(() => {
-                        try {
-                            JsBarcode("#barcode-${product.id}", "${product.sku}", {
-                                format: "CODE128",
-                                width: 1.2,
-                                height: 30,
-                                displayValue: true,
-                                fontSize: 10
-                            });
-                        } catch(e) { console.error(e); }
-                    }, 0);
-                </script>
-            </div>
-        `).join('');
-
-        const html = `
-            <html>
-                <head>
-                    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
-                    <style>
-                        @media print {
-                            .no-print { display: none; }
-                            body { margin: 0; }
-                        }
-                    </style>
-                </head>
-                <body style="font-family: sans-serif; padding: 20px;">
-                    <div class="no-print" style="margin-bottom: 20px; text-align: center;">
-                        <button onclick="window.print()" style="padding: 10px 20px; background: #4f46e5; color: white; border: none; border-radius: 6px; cursor: pointer;">Print Now</button>
-                    </div>
-                    <div style="display: flex; flex-wrap: wrap; justify-content: flex-start;">
-                        ${barcodesHtml}
-                    </div>
-                    <script>
-                        window.onload = () => {
-                            setTimeout(() => {
-                                // window.print();
-                            }, 1000);
-                        };
-                    </script>
-                </body>
-            </html>
-        `;
-        printWindow.document.write(html);
-        printWindow.document.close();
-
-        showToast('success', `Generated ${selectedItems.length} barcodes`);
         setSelectedProducts([]);
     };
 
@@ -449,6 +550,32 @@ export default function InventoryPage() {
     const [editingId, setEditingId] = useState<any | null>(null);
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: number, name: string } | null>(null);
 
+    // Dynamic loyalty point calculation when price or config changes
+    useEffect(() => {
+        if (loyaltyConfig?.enabled && isAddProductOpen) {
+            const price = parseFloat(newProduct.price as any) || 0;
+            const cost = parseFloat(newProduct.costPrice as any) || 0;
+            const points = Math.floor(price * (loyaltyConfig.points_per_currency || 0));
+            const val = points * (loyaltyConfig.redemption_rate || 0);
+            const profit = price - cost - val;
+
+            // Comparison with tolerance for floating point numbers
+            const hasChanged =
+                newProduct.earnablePoints !== points ||
+                Math.abs(newProduct.pointsValue - val) > 0.001 ||
+                Math.abs(newProduct.estimatedProfit - profit) > 0.001;
+
+            if (hasChanged) {
+                setNewProduct(prev => ({
+                    ...prev,
+                    earnablePoints: points,
+                    pointsValue: val,
+                    estimatedProfit: profit
+                }));
+            }
+        }
+    }, [newProduct.price, newProduct.costPrice, loyaltyConfig, isAddProductOpen]);
+
 
     // --- Bulk Import/Export Logic ---
     const handleExport = () => {
@@ -516,19 +643,18 @@ export default function InventoryPage() {
     };
 
     const confirmImport = async () => {
-        let count = 0;
-        for (const p of importData) {
-            if (p.name) {
-                await addProduct({
-                    ...p,
-                    image: p.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
-                });
-                count++;
-            }
+        try {
+            const productsToAdd = importData.filter(p => p.name);
+            if (productsToAdd.length === 0) return;
+
+            await addProducts(productsToAdd);
+            showToast('success', `Imported ${productsToAdd.length} products`);
+            setIsImportModalOpen(false);
+            setImportData([]);
+        } catch (err) {
+            showToast('error', 'Import failed. Please check your CSV format.');
+            console.error(err);
         }
-        showToast('success', `Imported ${count} products`);
-        setIsImportModalOpen(false);
-        setImportData([]);
     };
 
     const handleAddProduct = (e: React.FormEvent) => {
@@ -597,6 +723,15 @@ export default function InventoryPage() {
                     </button>
 
                     <button
+                        onClick={handleBarcodeExport}
+                        className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
+                    >
+                        <Barcode className="h-4 w-4" />
+                        <span className="hidden sm:inline">Export Barcodes</span>
+                        <span className="sm:hidden">Barcodes</span>
+                    </button>
+
+                    <button
                         onClick={generateAiInsights}
                         className="hidden lg:flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-400"
                     >
@@ -649,6 +784,149 @@ export default function InventoryPage() {
                         <div className="flex justify-end gap-3">
                             <button onClick={() => setIsImportModalOpen(false)} className="px-4 py-2 rounded-lg text-slate-500 hover:bg-slate-100">Cancel</button>
                             <button onClick={confirmImport} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Import Products</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isBarcodeModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Export Barcodes</h2>
+                                <p className="text-sm text-slate-500">Configure label quantities for {barcodeList.length} items</p>
+                            </div>
+                            <button onClick={() => setIsBarcodeModalOpen(false)} className="rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                <X className="h-5 w-5 text-slate-500" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                            <div className="flex flex-wrap gap-2 mb-4">
+                                <button
+                                    onClick={() => {
+                                        setBarcodeList(products);
+                                        const newQtys = { ...barcodeQtys };
+                                        products.forEach(p => {
+                                            if (!newQtys[p.id]) newQtys[p.id] = 1;
+                                        });
+                                        setBarcodeQtys(newQtys);
+                                        setBarcodePage(1);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors border border-indigo-100 dark:border-indigo-900/30"
+                                >
+                                    Load All Inventory
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const newQtys = { ...barcodeQtys };
+                                        barcodeList.forEach(p => newQtys[p.id] = (p.stock || 0));
+                                        setBarcodeQtys(newQtys);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold hover:bg-slate-200 transition-colors border border-transparent"
+                                >
+                                    Sync All to Stock Qty
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const newQtys = { ...barcodeQtys };
+                                        barcodeList.forEach(p => newQtys[p.id] = 1);
+                                        setBarcodeQtys(newQtys);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold hover:bg-slate-200 transition-colors border border-transparent"
+                                >
+                                    Set All to 1
+                                </button>
+                            </div>
+
+                            <div className="space-y-2">
+                                {barcodeList
+                                    .slice((barcodePage - 1) * barcodePageSize, barcodePage * barcodePageSize)
+                                    .map((product) => (
+                                        <div key={product.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                                            <div className="min-w-0 flex-1 mr-4">
+                                                <div className="text-sm font-bold text-slate-900 dark:text-white truncate">{product.name}</div>
+                                                <div className="text-[10px] text-slate-500 font-mono uppercase">SKU: {product.sku || 'N/A'} • Stock: {product.stock || 0}</div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase">Labels</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    className="w-16 px-2 py-1 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-sm text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={barcodeQtys[product.id] || 0}
+                                                    onChange={(e) => setBarcodeQtys({ ...barcodeQtys, [product.id]: parseInt(e.target.value) || 0 })}
+                                                />
+                                                <button
+                                                    onClick={() => {
+                                                        const updatedList = barcodeList.filter(p => p.id !== product.id);
+                                                        setBarcodeList(updatedList);
+                                                        if (updatedList.length === 0) {
+                                                            setIsBarcodeModalOpen(false);
+                                                        } else {
+                                                            // Adjust page if current page becomes empty
+                                                            const newTotalPages = Math.ceil(updatedList.length / barcodePageSize);
+                                                            if (barcodePage > newTotalPages && newTotalPages > 0) {
+                                                                setBarcodePage(newTotalPages);
+                                                            }
+                                                        }
+                                                    }}
+                                                    className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+
+                            {/* Pagination Controls */}
+                            {barcodeList.length > barcodePageSize && (
+                                <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    <button
+                                        disabled={barcodePage === 1}
+                                        onClick={() => setBarcodePage(prev => Math.max(1, prev - 1))}
+                                        className="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:opacity-30"
+                                    >
+                                        Prev
+                                    </button>
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                                        Page {barcodePage} of {Math.ceil(barcodeList.length / barcodePageSize)}
+                                    </span>
+                                    <button
+                                        disabled={barcodePage >= Math.ceil(barcodeList.length / barcodePageSize)}
+                                        onClick={() => setBarcodePage(prev => prev + 1)}
+                                        className="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold disabled:opacity-30"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                            <div className="flex items-center justify-between mb-4">
+                                <span className="text-sm text-slate-500 font-medium">Total Labels to Print:</span>
+                                <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">
+                                    {Object.values(barcodeQtys).reduce((a, b) => a + b, 0)}
+                                </span>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setIsBarcodeModalOpen(false)}
+                                    className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={generateBarcodePrint}
+                                    disabled={isGeneratingBarcodes}
+                                    className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 text-white text-sm font-black shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                                >
+                                    {isGeneratingBarcodes ? 'Generating...' : 'Go to Print'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -799,11 +1077,9 @@ export default function InventoryPage() {
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Cost Price (GHS)</label>
                                     <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.costPrice} onChange={e => {
-                                        const cost = parseFloat(e.target.value) || 0;
                                         setNewProduct({
                                             ...newProduct,
-                                            costPrice: cost,
-                                            estimatedProfit: newProduct.price - cost - newProduct.pointsValue
+                                            costPrice: parseFloat(e.target.value) || 0
                                         });
                                     }} />
                                     <p className="text-xs text-slate-500 mt-1">For profit calc</p>
@@ -811,22 +1087,9 @@ export default function InventoryPage() {
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Selling Price (GHS)</label>
                                     <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.price} onChange={e => {
-                                        const price = parseFloat(e.target.value) || 0;
-                                        // Auto-calculate loyalty points if config exists
-                                        let points = newProduct.earnablePoints;
-                                        let val = newProduct.pointsValue;
-
-                                        if (loyaltyConfig?.enabled) {
-                                            points = Math.floor(price * (loyaltyConfig.points_per_currency || 0));
-                                            val = points * (loyaltyConfig.redemption_rate || 0);
-                                        }
-
                                         setNewProduct({
                                             ...newProduct,
-                                            price: price,
-                                            earnablePoints: points,
-                                            pointsValue: val,
-                                            estimatedProfit: price - newProduct.costPrice - val
+                                            price: parseFloat(e.target.value) || 0
                                         });
                                     }} />
                                 </div>
@@ -841,11 +1104,9 @@ export default function InventoryPage() {
                                 <div>
                                     <label className="block text-sm font-medium text-rose-600 dark:text-rose-400">Points Value (GHS Cost)</label>
                                     <input type="number" step="0.01" className="mt-1 w-full rounded-lg border border-rose-100 bg-rose-50/30 px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 dark:border-rose-900/30 dark:bg-rose-900/10 dark:text-white" value={newProduct.pointsValue} onChange={e => {
-                                        const val = parseFloat(e.target.value) || 0;
                                         setNewProduct({
                                             ...newProduct,
-                                            pointsValue: val,
-                                            estimatedProfit: newProduct.price - newProduct.costPrice - val
+                                            pointsValue: parseFloat(e.target.value) || 0
                                         });
                                     }} />
                                     <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-bold">Cost of points to your profit</p>
@@ -854,12 +1115,25 @@ export default function InventoryPage() {
 
                             <div className="rounded-xl bg-slate-900 p-4 text-white">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Estimated Profit</span>
-                                    <span className={`text-xl font-black ${newProduct.estimatedProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                        GHS {newProduct.estimatedProfit.toFixed(2)}
-                                    </span>
+                                    <div>
+                                        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Estimated Profit</span>
+                                        <div className="text-[10px] text-slate-500 flex gap-2">
+                                            <span>Price: {newProduct.price}</span>
+                                            <span>- Cost: {newProduct.costPrice}</span>
+                                            <span className="text-rose-400">- Loyalty: {newProduct.pointsValue}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className={`text-xl font-black ${newProduct.estimatedProfit > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            GHS {newProduct.estimatedProfit.toFixed(2)}
+                                        </div>
+                                        {newProduct.price > 0 && newProduct.pointsValue > 0 && (
+                                            <p className="text-[9px] text-rose-300 font-bold uppercase tracking-tighter">
+                                                -{((newProduct.pointsValue / newProduct.price) * 100).toFixed(1)}% Loyalty Impact
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
-                                <p className="text-[10px] text-slate-500 mt-1">Calculation: (Price - Cost - Points Value)</p>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -876,7 +1150,8 @@ export default function InventoryPage() {
                         </form>
                     </div>
                 </div>
-            )}
+            )
+            }
 
 
 
@@ -940,249 +1215,251 @@ export default function InventoryPage() {
             </div>
 
             {/* Product List */}
-            {products.length === 0 && !isLoading ? (
-                <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-slate-200 bg-white/50 border-dashed dark:border-slate-800 dark:bg-slate-900/50">
-                    <div className="h-16 w-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                        <Search className="h-8 w-8 text-slate-400" />
+            {
+                products.length === 0 && !isLoading ? (
+                    <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-slate-200 bg-white/50 border-dashed dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="h-16 w-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                            <Search className="h-8 w-8 text-slate-400" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                            {searchQuery ? "No products found" : "Ready to Search"}
+                        </h3>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6">
+                            {searchQuery ? `We couldn't find anything matching "${searchQuery}". Try a different term or scan a barcode.` : "Enter a product name, SKU, or scan a barcode to view inventory."}
+                        </p>
+                        {!searchQuery && (
+                            <button
+                                onClick={() => setIsScanning(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                            >
+                                <Scan className="h-4 w-4" />
+                                Scan Barcode
+                            </button>
+                        )}
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                        {searchQuery ? "No products found" : "Ready to Search"}
-                    </h3>
-                    <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6">
-                        {searchQuery ? `We couldn't find anything matching "${searchQuery}". Try a different term or scan a barcode.` : "Enter a product name, SKU, or scan a barcode to view inventory."}
-                    </p>
-                    {!searchQuery && (
-                        <button
-                            onClick={() => setIsScanning(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                        >
-                            <Scan className="h-4 w-4" />
-                            Scan Barcode
-                        </button>
-                    )}
-                </div>
-            ) : (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto dark:bg-slate-800 dark:border-slate-700 pb-20 lg:pb-0">
-                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-                        <thead className="bg-slate-50 dark:bg-slate-800/50">
-                            <tr>
-                                <th scope="col" className="px-6 py-3 text-left">
-                                    <button onClick={handleSelectAll} className="flex items-center">
-                                        <CheckSquare className={`h-5 w-5 ${selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'text-indigo-600' : 'text-slate-300'}`} />
-                                    </button>
-                                </th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Product</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Image</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Video</th>
-                                <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">SKU / Category</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Stock</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Price</th>
-                                <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-800 dark:divide-slate-700">
-                            {isLoading ? (
-                                // Loading skeleton
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <tr key={`skeleton-${i}`} className="animate-pulse">
-                                        <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center">
-                                                <div className="h-10 w-10 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                                <div className="ml-4 space-y-2">
-                                                    <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                                    <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
-                                        <td className="hidden sm:table-cell px-6 py-4">
-                                            <div className="space-y-2">
-                                                <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                                <div className="h-3 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full"></div></td>
-                                        <td className="px-6 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex justify-end gap-2">
-                                                <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                                <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                                <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : filteredProducts.length === 0 ? (
+                ) : (
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto dark:bg-slate-800 dark:border-slate-700 pb-20 lg:pb-0">
+                        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                            <thead className="bg-slate-50 dark:bg-slate-800/50">
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center">
-                                        <div className="text-slate-400 dark:text-slate-500">
-                                            <p className="text-lg font-medium mb-2">No products found</p>
-                                            <p className="text-sm">Add your first product to get started</p>
-                                        </div>
-                                    </td>
+                                    <th scope="col" className="px-6 py-3 text-left">
+                                        <button onClick={handleSelectAll} className="flex items-center">
+                                            <CheckSquare className={`h-5 w-5 ${selectedProducts.length === filteredProducts.length && filteredProducts.length > 0 ? 'text-indigo-600' : 'text-slate-300'}`} />
+                                        </button>
+                                    </th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Product</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Image</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Video</th>
+                                    <th scope="col" className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">SKU / Category</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Stock</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Price</th>
+                                    <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                                 </tr>
-                            ) : (
-                                filteredProducts.map((product) => (
-                                    <tr
-                                        key={product.id}
-                                        id={`product-${product.id}`}
-                                        className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
-                                        onClick={(e) => {
-                                            if (!(e.target as HTMLElement).closest('button')) {
-                                                handleSelectProduct(product.id);
-                                            }
-                                        }}
-                                    >
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleSelectProduct(product.id);
-                                                }}
-                                                className="text-slate-400 hover:text-indigo-600"
-                                            >
-                                                {selectedProducts.includes(product.id) ?
-                                                    <CheckSquare className="h-5 w-5 text-indigo-600" /> :
-                                                    <Square className="h-5 w-5" />
-                                                }
-                                            </button>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="ml-0">
-                                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{product.name}</div>
-                                                    <div className="text-xs text-slate-500 sm:hidden">{product.sku}</div>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-800 dark:divide-slate-700">
+                                {isLoading ? (
+                                    // Loading skeleton
+                                    Array.from({ length: 5 }).map((_, i) => (
+                                        <tr key={`skeleton-${i}`} className="animate-pulse">
+                                            <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center">
+                                                    <div className="h-10 w-10 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                                    <div className="ml-4 space-y-2">
+                                                        <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                                        <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {product.image ? (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setActiveImageUrl(product.image || null);
-                                                    }}
-                                                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30 transition-colors"
-                                                    title="View Image"
-                                                >
-                                                    <Camera className="h-5 w-5" />
-                                                </button>
-                                            ) : (
-                                                <div className="flex justify-center w-9">
-                                                    <Camera className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                            </td>
+                                            <td className="px-6 py-4"><div className="h-5 w-5 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
+                                            <td className="hidden sm:table-cell px-6 py-4">
+                                                <div className="space-y-2">
+                                                    <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                                    <div className="h-3 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
                                                 </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {product.video ? (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setActiveVideoUrl(product.video || null);
-                                                    }}
-                                                    className="text-pink-600 hover:text-pink-900 dark:text-pink-400 dark:hover:text-pink-300 p-2 hover:bg-pink-50 rounded-lg dark:hover:bg-pink-900/30 transition-colors"
-                                                    title="Watch Video"
-                                                >
-                                                    <Video className="h-5 w-5" />
-                                                </button>
-                                            ) : (
-                                                <div className="flex justify-center w-9">
-                                                    <Video className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                            </td>
+                                            <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full"></div></td>
+                                            <td className="px-6 py-4"><div className="h-4 w-16 bg-slate-200 dark:bg-slate-700 rounded"></div></td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex justify-end gap-2">
+                                                    <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                                    <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                                                    <div className="h-8 w-8 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
                                                 </div>
-                                            )}
-                                        </td>
-                                        <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-slate-900 dark:text-white">{product.sku}</div>
-                                            {product.barcode && product.barcode !== product.sku && (
-                                                <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">BC: {product.barcode}</div>
-                                            )}
-                                            <div className="text-xs text-slate-500 dark:text-slate-400">{product.category}</div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${product.status === 'In Stock' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                                                product.status === 'Low Stock' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
-                                                    'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400'
-                                                }`}>
-                                                {product.stock} Units
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">
-                                            GHS {product.price.toFixed(2)}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <div className="flex justify-end gap-2">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handlePrintBarcode(product);
-                                                    }}
-                                                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30"
-                                                    title="Print Barcode"
-                                                >
-                                                    <Barcode className="h-4 w-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleAddToCart(product);
-                                                    }}
-                                                    className="text-emerald-600 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 p-2 hover:bg-emerald-50 rounded-lg dark:hover:bg-emerald-900/30"
-                                                    title="Add to Cart"
-                                                >
-                                                    <ShoppingCart className="h-4 w-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setNewProduct({
-                                                            name: product.name,
-                                                            sku: product.sku,
-                                                            category: product.category,
-                                                            stock: product.stock,
-                                                            price: product.price,
-                                                            costPrice: product.costPrice || 0,
-                                                            earnablePoints: product.earnablePoints || 0,
-                                                            pointsValue: product.pointsValue || 0,
-                                                            estimatedProfit: product.estimatedProfit || 0,
-                                                            status: product.status || 'In Stock',
-                                                            image: product.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
-                                                            video: product.video || ''
-                                                        });
-                                                        setEditingId(product.id);
-                                                        setIsAddProductOpen(true);
-                                                    }}
-                                                    className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 rounded-lg dark:hover:bg-blue-900/30"
-                                                    title="Edit Product"
-                                                >
-                                                    <Edit className="h-4 w-4" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        if (selectedProducts.length > 0 && selectedProducts.includes(product.id)) {
-                                                            // Allow single delete even if bulk selected? simpler to just use confirmation
-                                                        }
-                                                        setDeleteConfirmation({ id: product.id, name: product.name });
-                                                    }}
-                                                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 rounded-lg dark:hover:bg-red-900/30"
-                                                    title="Delete Product"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : filteredProducts.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="px-6 py-12 text-center">
+                                            <div className="text-slate-400 dark:text-slate-500">
+                                                <p className="text-lg font-medium mb-2">No products found</p>
+                                                <p className="text-sm">Add your first product to get started</p>
                                             </div>
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                                ) : (
+                                    filteredProducts.map((product) => (
+                                        <tr
+                                            key={product.id}
+                                            id={`product-${product.id}`}
+                                            className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer ${selectedProducts.includes(product.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}
+                                            onClick={(e) => {
+                                                if (!(e.target as HTMLElement).closest('button')) {
+                                                    handleSelectProduct(product.id);
+                                                }
+                                            }}
+                                        >
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleSelectProduct(product.id);
+                                                    }}
+                                                    className="text-slate-400 hover:text-indigo-600"
+                                                >
+                                                    {selectedProducts.includes(product.id) ?
+                                                        <CheckSquare className="h-5 w-5 text-indigo-600" /> :
+                                                        <Square className="h-5 w-5" />
+                                                    }
+                                                </button>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex items-center">
+                                                    <div className="ml-0">
+                                                        <div className="text-sm font-medium text-slate-900 dark:text-white">{product.name}</div>
+                                                        <div className="text-xs text-slate-500 sm:hidden">{product.sku}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {product.image ? (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setActiveImageUrl(product.image || null);
+                                                        }}
+                                                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30 transition-colors"
+                                                        title="View Image"
+                                                    >
+                                                        <Camera className="h-5 w-5" />
+                                                    </button>
+                                                ) : (
+                                                    <div className="flex justify-center w-9">
+                                                        <Camera className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {product.video ? (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setActiveVideoUrl(product.video || null);
+                                                        }}
+                                                        className="text-pink-600 hover:text-pink-900 dark:text-pink-400 dark:hover:text-pink-300 p-2 hover:bg-pink-50 rounded-lg dark:hover:bg-pink-900/30 transition-colors"
+                                                        title="Watch Video"
+                                                    >
+                                                        <Video className="h-5 w-5" />
+                                                    </button>
+                                                ) : (
+                                                    <div className="flex justify-center w-9">
+                                                        <Video className="h-5 w-5 text-slate-200 dark:text-slate-700" />
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm text-slate-900 dark:text-white">{product.sku}</div>
+                                                {product.barcode && product.barcode !== product.sku && (
+                                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">BC: {product.barcode}</div>
+                                                )}
+                                                <div className="text-xs text-slate-500 dark:text-slate-400">{product.category}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${product.status === 'In Stock' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                                    product.status === 'Low Stock' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                        'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400'
+                                                    }`}>
+                                                    {product.stock} Units
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">
+                                                GHS {product.price.toFixed(2)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <div className="flex justify-end gap-2">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handlePrintBarcode(product);
+                                                        }}
+                                                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 p-2 hover:bg-indigo-50 rounded-lg dark:hover:bg-indigo-900/30"
+                                                        title="Print Barcode"
+                                                    >
+                                                        <Barcode className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleAddToCart(product);
+                                                        }}
+                                                        className="text-emerald-600 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 p-2 hover:bg-emerald-50 rounded-lg dark:hover:bg-emerald-900/30"
+                                                        title="Add to Cart"
+                                                    >
+                                                        <ShoppingCart className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setNewProduct({
+                                                                name: product.name,
+                                                                sku: product.sku,
+                                                                category: product.category,
+                                                                stock: product.stock,
+                                                                price: product.price,
+                                                                costPrice: product.costPrice || 0,
+                                                                earnablePoints: product.earnablePoints || 0,
+                                                                pointsValue: product.pointsValue || 0,
+                                                                estimatedProfit: product.estimatedProfit || 0,
+                                                                status: product.status || 'In Stock',
+                                                                image: product.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
+                                                                video: product.video || ''
+                                                            });
+                                                            setEditingId(product.id);
+                                                            setIsAddProductOpen(true);
+                                                        }}
+                                                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 rounded-lg dark:hover:bg-blue-900/30"
+                                                        title="Edit Product"
+                                                    >
+                                                        <Edit className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            if (selectedProducts.length > 0 && selectedProducts.includes(product.id)) {
+                                                                // Allow single delete even if bulk selected? simpler to just use confirmation
+                                                            }
+                                                            setDeleteConfirmation({ id: product.id, name: product.name });
+                                                        }}
+                                                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 rounded-lg dark:hover:bg-red-900/30"
+                                                        title="Delete Product"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )
+            }
             {/* End of Conditional Product List View */}
 
             {/* Bulk Action Sticky Bar */}
@@ -1197,7 +1474,7 @@ export default function InventoryPage() {
                     </div>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={handleBulkBarcode}
+                            onClick={handleBarcodeExport}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors dark:bg-slate-100 dark:text-slate-600 dark:hover:bg-slate-200 dark:hover:text-slate-900"
                         >
                             <Barcode className="h-4 w-4" />
@@ -1390,7 +1667,7 @@ export default function InventoryPage() {
                                 <X className="h-6 w-6" />
                             </button>
                             <img
-                                src={activeImageUrl}
+                                src={getOptimizedImageUrl(activeImageUrl, 'large')}
                                 alt="Product Preview"
                                 className="max-w-full max-h-[85vh] object-contain rounded-lg"
                             />

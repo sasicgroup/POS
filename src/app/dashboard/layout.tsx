@@ -16,7 +16,7 @@ import {
     Type, DollarSign, Percent, Store, Check, Plus, Search, ChevronRight,
     CreditCard, Smartphone, Download, Globe,
     Activity, ShieldCheck, MessageSquare, Menu, Bell, User, LogOut, Moon, Sun, X, ChevronDown,
-    Cloud, CloudOff, RefreshCw as RefreshIcon, Database, CheckCircle2
+    Cloud, CloudOff, RefreshCw as RefreshIcon
 } from 'lucide-react';
 import { useSyncStatus } from '@/lib/use-sync-status';
 
@@ -74,34 +74,7 @@ function SyncStatusBadge() {
     );
 }
 
-function CacheStatusBadge() {
-    const { cacheStatus } = useInventory();
-    const { isOnline } = useSyncStatus();
 
-    // Only show when offline or when cache is loaded
-    if (!cacheStatus.isLoaded) return null;
-
-    const formatTime = (timestamp: number | null) => {
-        if (!timestamp) return 'Never';
-        const diff = Date.now() - timestamp;
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const days = Math.floor(hours / 24);
-        if (days > 0) return `${days}d ago`;
-        if (hours > 0) return `${hours}h ago`;
-        return 'Just now';
-    };
-
-    return (
-        <div
-            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-medium transition-all bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-            title={`Last updated: ${formatTime(cacheStatus.lastUpdated)}`}
-        >
-            <Database className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{cacheStatus.productCount} cached</span>
-            {!isOnline && <CheckCircle2 className="h-3.5 w-3.5" />}
-        </div>
-    );
-}
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, logout, activeStore, stores, switchStore, createStore, hasPermission, globalSettings } = useAuth();
@@ -378,7 +351,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
                     <div className="flex items-center gap-2 relative">
                         <SyncStatusBadge />
-                        <CacheStatusBadge />
                         <div className="relative" ref={notificationRef}>
                             <button
                                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}

@@ -166,53 +166,76 @@ export default function SalesHistoryPage() {
     };
 
     const handleDeleteSale = async (saleId: string) => {
-        // 0. Fetch Sale Details for Points Reversal
-        const { data: saleToDelete } = await supabase.from('sales').select('*, customers(id, points)').eq('id', saleId).single();
+        try {
+            // 0. Fetch Sale and Items Details
+            const { data: saleToDelete } = await supabase.from('sales').select('*, customers(id, points)').eq('id', saleId).single();
+            const { data: items } = await supabase.from('sale_items').select('*').eq('sale_id', saleId);
 
-        if (saleToDelete && saleToDelete.customer_id) {
-            // Calculate points to revoke (1 Point = 1 GHS approx, or just use 1:1 rule)
-            const pointsToRevoke = Math.floor(saleToDelete.total_amount);
+            if (!saleToDelete) return;
 
-            if (pointsToRevoke > 0) {
-                // Deduct points from customer
-                const { error: pointsError } = await supabase.rpc('decrement_points', {
-                    row_id: saleToDelete.customer_id,
-                    amount: pointsToRevoke
-                });
+            // 1. Restore Stock for all items
+            if (items && items.length > 0) {
+                for (const item of items) {
+                    const { error: stockError } = await supabase.rpc('increment_stock', {
+                        row_id: item.product_id,
+                        quantity: item.quantity
+                    });
 
-                // Fallback if RPC fails or not exists, do manual update
-                if (pointsError) {
-                    // Fetch current points
-                    const { data: customer } = await supabase.from('customers').select('points').eq('id', saleToDelete.customer_id).single();
-                    if (customer) {
-                        const newPoints = Math.max(0, (customer.points || 0) - pointsToRevoke);
-                        await supabase.from('customers').update({ points: newPoints }).eq('id', saleToDelete.customer_id);
+                    // Fallback for stock update if RPC fails
+                    if (stockError) {
+                        const { data: prod } = await supabase.from('products').select('stock').eq('id', item.product_id).single();
+                        if (prod) {
+                            await supabase.from('products').update({ stock: prod.stock + item.quantity }).eq('id', item.product_id);
+                        }
                     }
                 }
-
-                // Log Loyalty Reversal
-                await supabase.from('loyalty_logs').insert({
-                    customer_id: saleToDelete.customer_id,
-                    points: -pointsToRevoke,
-                    type: 'revoked', // or 'refund'
-                    description: `Transaction #${saleId.slice(0, 6)} deleted`
-                });
             }
-        }
 
-        // 1. Delete Items first (to be safe if cascade missing)
-        await supabase.from('sale_items').delete().eq('sale_id', saleId);
+            // 2. Loyalty Points Reversal
+            if (saleToDelete.customer_id) {
+                const pointsToRevoke = saleToDelete.points_earned || Math.floor(saleToDelete.total_amount);
 
-        // 2. Delete Sale
-        const { error } = await supabase.from('sales').delete().eq('id', saleId);
+                if (pointsToRevoke > 0) {
+                    await supabase.rpc('decrement_points', {
+                        row_id: saleToDelete.customer_id,
+                        amount: pointsToRevoke
+                    });
 
-        if (error) {
-            console.error(error);
-            showToast('error', 'Failed to delete record');
-        } else {
+                    // Log Loyalty Reversal
+                    await supabase.from('loyalty_logs').insert({
+                        store_id: activeStore?.id,
+                        customer_id: saleToDelete.customer_id,
+                        points: -pointsToRevoke,
+                        type: 'revoked',
+                        description: `Transaction #${saleId.toString().slice(0, 8)} deleted (Stock restored)`
+                    });
+                }
+            }
+
+            // 3. Delete Associated Records (Installments, Payments)
+            // First installments to handle FKs
+            const { data: insts } = await supabase.from('installments').select('id').eq('sale_id', saleId);
+            if (insts && insts.length > 0) {
+                const instIds = insts.map(i => i.id);
+                await supabase.from('installment_payments').delete().in('installment_id', instIds);
+                await supabase.from('installments').delete().eq('sale_id', saleId);
+            }
+
+            await supabase.from('sale_payments').delete().eq('sale_id', saleId);
+            await supabase.from('sale_items').delete().eq('sale_id', saleId);
+
+            // 4. Finally Delete the Sale
+            const { error } = await supabase.from('sales').delete().eq('id', saleId);
+
+            if (error) throw error;
+
             setSales(sales.filter(s => s.id !== saleId));
-            showToast('success', 'Transaction record deleted permanently');
+            showToast('success', 'Sale deleted and stock restored successfully');
             setDeleteConfirmation(null);
+
+        } catch (e: any) {
+            console.error('Delete error:', e);
+            showToast('error', `Failed to delete: ${e.message || 'Unknown error'}`);
         }
     };
 

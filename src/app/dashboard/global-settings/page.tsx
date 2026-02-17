@@ -163,6 +163,27 @@ export default function GlobalSettingsPage() {
                 </button>
             </div>
 
+            <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-200 dark:border-amber-900/40 flex items-center justify-between">
+                <div>
+                    <h3 className="text-sm font-bold text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                        <ShieldAlert className="h-4 w-4" />
+                        Troubleshoot Data
+                    </h3>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">If items are missing, try clearing the local cache.</p>
+                </div>
+                <button
+                    onClick={async () => {
+                        const { clear } = await import('idb-keyval');
+                        await clear();
+                        showToast('success', 'Cache cleared. Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    }}
+                    className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold transition-colors dark:bg-amber-900/40 dark:hover:bg-amber-900/60 dark:text-amber-200"
+                >
+                    Clear Cache & Reload
+                </button>
+            </div>
+
             <div className="space-y-6">
                 <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
                     <div className="flex items-center gap-3 mb-6">
@@ -279,94 +300,98 @@ export default function GlobalSettingsPage() {
             />
 
             {/* Create/Edit Store Modal */}
-            {showCreateStoreModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">{editingStore ? 'Edit Store' : 'Create New Store'}</h3>
-                            <button onClick={() => setShowCreateStoreModal(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Store Name</label>
-                                <input
-                                    type="text"
-                                    value={newStoreData.name}
-                                    onChange={(e) => setNewStoreData({ ...newStoreData, name: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                    placeholder="e.g. Downtown Branch"
-                                />
+            {
+                showCreateStoreModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white">{editingStore ? 'Edit Store' : 'Create New Store'}</h3>
+                                <button onClick={() => setShowCreateStoreModal(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                                    <X className="h-5 w-5" />
+                                </button>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Location</label>
-                                <input
-                                    type="text"
-                                    value={newStoreData.location}
-                                    onChange={(e) => setNewStoreData({ ...newStoreData, location: e.target.value })}
-                                    className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                                    placeholder="e.g. Accra"
-                                />
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Store Name</label>
+                                    <input
+                                        type="text"
+                                        value={newStoreData.name}
+                                        onChange={(e) => setNewStoreData({ ...newStoreData, name: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        placeholder="e.g. Downtown Branch"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Location</label>
+                                    <input
+                                        type="text"
+                                        value={newStoreData.location}
+                                        onChange={(e) => setNewStoreData({ ...newStoreData, location: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                        placeholder="e.g. Accra"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleCreateOrUpdateStore}
+                                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    {editingStore ? 'Update Store' : 'Create Store'}
+                                </button>
                             </div>
-                            <button
-                                onClick={handleCreateOrUpdateStore}
-                                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
-                            >
-                                {editingStore ? 'Update Store' : 'Create Store'}
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Store Deletion OTP Modal */}
-            {otcSent && storeToDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800">
-                        <div className="flex flex-col items-center text-center mb-6">
-                            <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center mb-4">
-                                <ShieldAlert className="h-6 w-6 text-rose-600 dark:text-rose-500" />
-                            </div>
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Confirm Store Deletion</h3>
-                            <p className="text-sm text-slate-500 mt-2">
-                                We've sent a verification code to your phone. Enter it below to permanently delete <strong>{storeToDelete.name}</strong>.
-                            </p>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Verification Code</label>
-                                <input
-                                    type="text"
-                                    value={deletionOtcInput}
-                                    onChange={(e) => setDeletionOtcInput(e.target.value)}
-                                    placeholder="Enter 6-digit code"
-                                    className="w-full px-4 py-3 text-center text-lg tracking-widest rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none transition-all"
-                                    maxLength={6}
-                                />
+            {
+                otcSent && storeToDelete && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800">
+                            <div className="flex flex-col items-center text-center mb-6">
+                                <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center mb-4">
+                                    <ShieldAlert className="h-6 w-6 text-rose-600 dark:text-rose-500" />
+                                </div>
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Confirm Store Deletion</h3>
+                                <p className="text-sm text-slate-500 mt-2">
+                                    We've sent a verification code to your phone. Enter it below to permanently delete <strong>{storeToDelete.name}</strong>.
+                                </p>
                             </div>
 
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    onClick={() => { setOtcSent(false); setStoreToDelete(null); setDeletionOtcInput(''); }}
-                                    className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleVerifyAndDelete}
-                                    disabled={!deletionOtcInput || isDeleting}
-                                    className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isDeleting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                    {isDeleting ? 'Deleting...' : 'Delete Store'}
-                                </button>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Verification Code</label>
+                                    <input
+                                        type="text"
+                                        value={deletionOtcInput}
+                                        onChange={(e) => setDeletionOtcInput(e.target.value)}
+                                        placeholder="Enter 6-digit code"
+                                        className="w-full px-4 py-3 text-center text-lg tracking-widest rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none transition-all"
+                                        maxLength={6}
+                                    />
+                                </div>
+
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        onClick={() => { setOtcSent(false); setStoreToDelete(null); setDeletionOtcInput(''); }}
+                                        className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleVerifyAndDelete}
+                                        disabled={!deletionOtcInput || isDeleting}
+                                        className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {isDeleting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                        {isDeleting ? 'Deleting...' : 'Delete Store'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }

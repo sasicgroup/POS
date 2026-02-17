@@ -4,9 +4,10 @@ import React, { createContext, useContext, useState, useEffect, useRef, useMemo 
 import { supabase } from '@/lib/supabase';
 import { syncManager } from './sync-manager';
 import { useAuth } from './auth-context';
-import { sendLowStockAlert } from './sms';
-import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { sendLowStockAlert, sendNotification } from './sms';
+
 import { useToast } from '@/lib/toast-context';
+import { useDebouncedValue } from '@/lib/hooks/use-debounce';
 
 interface Product {
     id: any;
@@ -47,10 +48,12 @@ interface InventoryContextType {
     refreshProducts: () => Promise<void>;
     processSale: (saleData: any) => Promise<any>;
     addProduct: (product: any) => Promise<void>;
+    addProducts: (products: any[]) => Promise<void>;
     deleteProduct: (id: any) => Promise<void>;
+    deleteProducts: (ids: any[]) => Promise<void>;
     updateProduct: (product: any) => Promise<void>;
     cart: any[];
-    setCart: (cart: any[]) => void;
+    setCart: (cart: any[] | ((current: any[]) => any[])) => void;
     addToCart: (product: any) => void;
     removeFromCart: (id: any) => void;
     updateCartQuantity: (id: any, delta: number) => void;
@@ -62,10 +65,9 @@ interface InventoryContextType {
     setPageSize: (size: number) => void;
     totalCount: number;
     migrateImages: () => Promise<number | undefined>;
-    preloadCacheForOffline: () => Promise<void>;
-    cacheStatus: { isLoaded: boolean; productCount: number; lastUpdated: number | null };
     loyaltyConfig: any;
     refreshLoyaltyConfig: () => Promise<void>;
+    syncAllProductsToLoyalty: () => Promise<void>;
     installmentSettings: any;
     refreshInstallmentSettings: () => Promise<void>;
 }
@@ -81,7 +83,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [activeCategories, setActiveCategories] = useState<string[]>(['All']);
     // Pagination state
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
+    const [pageSize, setPageSize] = useState(20); // Reverted to 20 for scan-only mode
     const [totalCount, setTotalCount] = useState(0);
 
     // Initial Count Check
@@ -94,63 +96,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     // Cart State
     const [cart, setCart] = useState<any[]>([]);
 
-    // Cache state - Page based + IDB
-    const [pageCache, setPageCache] = useState<Record<number, { data: Product[], timestamp: number }>>({});
-    const [isCacheLoaded, setIsCacheLoaded] = useState(false);
-    const [cacheStatus, setCacheStatus] = useState({ isLoaded: false, productCount: 0, lastUpdated: null as number | null });
+    // Recently accessed products for quick access (no persistent cache)
+    const [recentlyAccessedProducts, setRecentlyAccessedProducts] = useState<Product[]>([]);
     const [loyaltyConfig, setLoyaltyConfig] = useState<any>(null);
     const [installmentSettings, setInstallmentSettings] = useState<any>(null);
-    // 15 minutes - balances freshness with offline resilience
-    const CACHE_TTL = 15 * 60 * 1000;
-
-    // Load Cache from IDB
-    useEffect(() => {
-        if (activeStore?.id) {
-            setIsCacheLoaded(false);
-            const key = `sms_inventory_cache_${activeStore.id}`;
-            idbGet(key).then((val) => {
-                if (val && typeof val === 'object') {
-                    setPageCache(val);
-                    // Update cache status
-                    const allProducts = Object.values(val).flatMap((page: any) => page.data || []);
-                    const timestamps = Object.values(val).map((page: any) => page.timestamp).filter(Boolean);
-                    const lastUpdated = timestamps.length > 0 ? Math.max(...timestamps) : null;
-                    setCacheStatus({
-                        isLoaded: allProducts.length > 0,
-                        productCount: allProducts.length,
-                        lastUpdated
-                    });
-                } else {
-                    setPageCache({});
-                    setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
-                }
-                setIsCacheLoaded(true);
-            }).catch(err => {
-                console.error("IDB Cache Load Error", err);
-                setPageCache({});
-                setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
-                setIsCacheLoaded(true);
-            });
-        } else {
-            setPageCache({});
-            setCacheStatus({ isLoaded: false, productCount: 0, lastUpdated: null });
-            setIsCacheLoaded(true);
-        }
-    }, [activeStore?.id]);
-
-    // Auto-preload cache on login (if cache is empty or stale)
-    useEffect(() => {
-        if (activeStore?.id && isCacheLoaded && user?.id) {
-            // Check if cache needs refresh
-            const needsPreload = !cacheStatus.isLoaded ||
-                (cacheStatus.lastUpdated && Date.now() - cacheStatus.lastUpdated > CACHE_TTL);
-
-            if (false) { // Disabled per user request (Egress optimization - Scan/Search only)
-                console.log('[Inventory] Auto-preloading cache for offline support...');
-                preloadCacheForOffline().catch(err => console.error('[Inventory] Auto-preload failed:', err));
-            }
-        }
-    }, [activeStore?.id, isCacheLoaded, user?.id]); // Only run when these change
 
     const refreshLoyaltyConfig = React.useCallback(async () => {
         if (!activeStore?.id) return;
@@ -165,6 +114,61 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             console.error("Error fetching loyalty config:", e);
         }
     }, [activeStore?.id]);
+
+    const syncAllProductsToLoyalty = React.useCallback(async () => {
+        if (!activeStore?.id) return;
+        try {
+            const { data: config } = await supabase
+                .from('loyalty_programs')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .single();
+
+            if (!config || !config.enabled) return;
+
+            // Update all products for this store
+            // earnable_points = floor(price * rate)
+            // points_value = points * redemption_rate
+            // estimated_profit = price - cost_price - points_value
+            const { error } = await supabase.rpc('sync_products_loyalty', {
+                p_store_id: activeStore.id,
+                p_points_rate: config.points_per_currency || 1,
+                p_redemption_rate: config.redemption_rate || 0.05
+            });
+
+            if (error) {
+                // Fallback for manual updates if RPC doesn't exist
+                console.warn("RPC sync failed, performing manual batch update:", error);
+                const { data: products } = await supabase
+                    .from('products')
+                    .select('id, price, cost_price')
+                    .eq('store_id', activeStore.id);
+
+                if (products) {
+                    const updates = products.map(p => {
+                        const price = parseFloat(p.price as any) || 0;
+                        const cost = parseFloat(p.cost_price as any) || 0;
+                        const points = Math.floor(price * (config.points_per_currency || 1));
+                        const val = points * (config.redemption_rate || 0.05);
+                        return {
+                            id: p.id,
+                            earnable_points: points,
+                            points_value: val,
+                            estimated_profit: price - cost - val
+                        };
+                    });
+
+                    for (const u of updates) {
+                        await supabase.from('products').update(u).eq('id', u.id);
+                    }
+                }
+            }
+            showToast('success', 'All products synchronized with current loyalty settings');
+        } catch (e) {
+            console.error("Sync error:", e);
+            showToast('error', 'Failed to synchronize products');
+        }
+    }, [activeStore?.id, showToast]);
 
     useEffect(() => {
         refreshLoyaltyConfig();
@@ -258,21 +262,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        // Cache Hit Check (Page Based)
-        if (pageCache[pageNum] && pageCache[pageNum].timestamp && (Date.now() - pageCache[pageNum].timestamp < CACHE_TTL)) {
-            // console.log(`[Inventory] Cache Hit Page ${pageNum}`);
-            setProducts(pageCache[pageNum].data);
-            setIsLoading(false);
-            return;
-        }
-
         // Prevent duplicate fetches
         if (isFetching.current) return;
 
         isFetching.current = true;
         setIsLoading(true);
 
-        const startTime = Date.now();
+        console.log(`[Inventory] Fetching fresh data from DB - Query: "${query}"`);
+
         const TIMEOUT_MS = 60000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -313,18 +310,15 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setProducts(mappedProducts);
                 setTotalCount(count || 0);
 
-                // Update Cache & Persist
-                setPageCache(prev => {
-                    const next = {
-                        ...prev,
-                        [pageNum]: {
-                            data: mappedProducts,
-                            timestamp: Date.now()
-                        }
-                    };
-                    idbSet(`sms_inventory_cache_${activeStore.id}`, next);
-                    return next;
-                });
+                // Add to recently accessed (no persistent cache)
+                if (mappedProducts.length > 0) {
+                    setRecentlyAccessedProducts(prev => {
+                        const newRecent = [...mappedProducts, ...prev];
+                        // Keep unique by ID, limit to 50 items
+                        const unique = Array.from(new Map(newRecent.map(p => [p.id, p])).values());
+                        return unique.slice(0, 50);
+                    });
+                }
 
                 setIsLoading(false);
             }
@@ -339,32 +333,26 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
-            // Fallback to Stale Cache if available
-            if (pageCache[pageNum] && pageCache[pageNum].data) {
-                console.warn('[Inventory] Network failed, using stale cache');
-                setProducts(pageCache[pageNum].data);
-                if (retryCount === 3) showToast('error', 'Offline: Showing cached data');
-            }
-
+            showToast('error', 'Failed to fetch products. Please check your connection.');
             setIsLoading(false);
         } finally {
             isFetching.current = false;
         }
-    }, [activeStore?.id, pageCache]);
+    }, [activeStore?.id, showToast]);
+
+    // Debounce search query to prevent excessive database calls
+    const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
 
     useEffect(() => {
-        // Wait for cache to load from IDB before proceeding
-        if (!isCacheLoaded) return;
-
         if (activeStore?.id) {
-            // Lazy Load Logic: Only fetch if searching
-            // We strip leading/trailing whitespace
-            const hasSearch = searchQuery && searchQuery.trim().length > 0;
+            // Real-time Search/Scan-Only Logic: Only fetch if searching
+            // Use debounced query to trigger fetch
+            const hasSearch = debouncedSearchQuery && debouncedSearchQuery.trim().length > 0;
 
             if (hasSearch) {
-                // If searching, fetch with query
-                fetchProducts(page, pageSize, searchQuery);
+                fetchProducts(page, pageSize, debouncedSearchQuery);
             } else {
+                // Clear products when not searching (search-only mode)
                 setProducts([]);
                 setIsLoading(false);
             }
@@ -372,7 +360,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             setProducts([]);
             setIsLoading(false);
         }
-    }, [activeStore?.id, page, pageSize, fetchProducts, searchQuery, pageCache, isCacheLoaded]);
+    }, [activeStore?.id, page, pageSize, fetchProducts, debouncedSearchQuery]);
 
 
     // Load Cart from LocalStorage on mount
@@ -458,67 +446,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 image: data.image || ''
             };
             setProducts(prev => prev.map(p => p.id === tempId ? mappedProduct : p));
-
-            // Refresh cache in background to keep offline data current
-            refreshCacheInBackground();
         }
     }, [activeStore?.id]);
 
-    // Helper: Refresh cache in background when inventory changes
-    const refreshCacheInBackground = React.useCallback(async () => {
-        if (!activeStore?.id) return;
 
-        console.log('[Inventory] Refreshing cache after inventory change...');
 
-        try {
-            // Fetch first 100 products (same as preload)
-            const { data, error } = await supabase
-                .from('products')
-                .select('id, name, category, price, stock, sku, image, cost_price, earnable_points, points_value, estimated_profit, status, video, store_id')
-                .eq('store_id', activeStore.id)
-                .limit(100);
 
-            if (error) {
-                console.error('[Inventory] Cache refresh error:', error);
-                return;
-            }
-
-            if (data && data.length > 0) {
-                const mappedProducts = data.map((p: any) => ({
-                    ...p,
-                    costPrice: p.cost_price || 0,
-                    earnablePoints: p.earnable_points || 0,
-                    pointsValue: p.points_value || 0,
-                    estimatedProfit: p.estimated_profit || 0,
-                    status: p.status || 'In Stock',
-                    video: p.video || '',
-                    image: p.image || ''
-                }));
-
-                // Update cache
-                const newCache = {
-                    1: {
-                        data: mappedProducts,
-                        timestamp: Date.now()
-                    }
-                };
-
-                setPageCache(newCache);
-                await idbSet(`sms_inventory_cache_${activeStore.id}`, newCache);
-
-                // Update cache status
-                setCacheStatus({
-                    isLoaded: true,
-                    productCount: mappedProducts.length,
-                    lastUpdated: Date.now()
-                });
-
-                console.log(`[Inventory] Cache refreshed with ${mappedProducts.length} products`);
-            }
-        } catch (err) {
-            console.error('[Inventory] Cache refresh failed:', err);
-        }
-    }, [activeStore?.id]);
 
 
     const getProductByBarcode = React.useCallback(async (barcode: string) => {
@@ -577,11 +510,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (error) {
             console.error("Error updating product:", error);
             fetchProducts();
-        } else {
-            // Refresh cache in background
-            refreshCacheInBackground();
         }
-    }, [activeStore?.id, fetchProducts, refreshCacheInBackground]);
+    }, [activeStore?.id, fetchProducts]);
 
     const deleteProduct = React.useCallback(async (id: any) => {
         // Optimistic delete
@@ -592,11 +522,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (error) {
             console.error("Error deleting product:", error);
             fetchProducts();
-        } else {
-            // Refresh cache in background
-            refreshCacheInBackground();
         }
-    }, [fetchProducts, refreshCacheInBackground]);
+    }, [fetchProducts]);
 
     const processSale = React.useCallback(async (saleData: any) => {
         if (!activeStore?.id) return null;
@@ -630,6 +557,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         // --- Fetch Loyalty Config ---
         let pointsEarned = 0;
         let loyaltyConfig = null;
+        let currentPoints = 0;
         if (customerId) {
             // Priority 1: Product specific points from the cart
             let totalProductPoints = 0;
@@ -650,7 +578,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 if (config && config.enabled) {
                     loyaltyConfig = config;
                     const rate = config.points_per_currency || 1;
-                    pointsEarned = Math.floor(saleData.totalAmount * rate);
+                    // Use subtotalAmount if provided, else fall back to totalAmount
+                    const baseAmount = saleData.subtotalAmount || saleData.totalAmount;
+                    pointsEarned = Math.floor(baseAmount * rate);
                 }
             }
         }
@@ -682,13 +612,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 console.log('App appears offline, queuing sale for sync...');
 
                 // Optimistic Success
+                const timestamp = Date.now();
                 await syncManager.enqueueRequest({
                     action: 'SALE_TRANSACTION',
                     payload: {
                         activeStoreId: activeStore.id,
                         saleData: { ...saleData, customerId }, // Pass the resolved/new customer ID
                         userId: safeEmployeeId,
-                        timestamp: Date.now()
+                        timestamp: timestamp
                     }
                 });
 
@@ -702,7 +633,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 }));
 
                 // Return a fake ID so UI proceeds
-                return `OFFLINE-${Date.now()}`;
+                return {
+                    saleId: `OFFLINE-${timestamp}`,
+                    pointsEarned,
+                    finalPoints: 0 // Cannot determine offline
+                };
             }
 
             return null;
@@ -724,7 +659,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             // Create Installment Record
             if (customerId) {
                 const balance = saleData.totalAmount - deposit;
-                const { error: instError } = await supabase.from('installments').insert({
+                const { data: instData, error: instError } = await supabase.from('installments').insert({
                     store_id: activeStore.id,
                     customer_id: customerId,
                     sale_id: sale.id,
@@ -732,10 +667,33 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                     amount_paid: deposit,
                     balance: balance,
                     status: balance <= 0 ? 'completed' : 'active',
-                    plan_type: 'installment',
                     next_payment_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // Default 30 days
-                });
-                if (instError) console.error("Installment creation failed", instError);
+                }).select().single();
+
+                if (instError) {
+                    console.error("Installment creation failed", instError.message || JSON.stringify(instError));
+                } else {
+                    // Record deposit in installment_payments for history
+                    if (deposit > 0 && instData) {
+                        await supabase.from('installment_payments').insert({
+                            installment_id: instData.id,
+                            amount: deposit,
+                            payment_method: 'initial_deposit',
+                            recorded_by: safeEmployeeId
+                        });
+                    }
+
+                    // Send SMS notification for initial installment
+                    const orderShortId = sale.id.slice(0, 8).toUpperCase();
+                    sendNotification('installment', {
+                        customerPhone: saleData.customer.phone,
+                        customerName: saleData.customer.name,
+                        storeId: activeStore.id,
+                        id: `Order #${orderShortId}`,
+                        amountPaid: deposit,
+                        amountLeft: balance
+                    }).catch(err => console.error('Failed to send installment SMS:', err));
+                }
             }
         } else if (saleData.totalAmount > 0) {
             await supabase.from('sale_payments').insert({
@@ -758,60 +716,81 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
             if (itemsError) console.error("Sale items insert failed", itemsError);
 
-            // 4. Update Stock (Local & DB)
-            // Optimistic update
-            setProducts(prev => prev.map(p => {
-                const item = saleData.items.find((i: any) => i.id === p.id);
-                if (item) {
-                    return { ...p, stock: p.stock - item.quantity };
-                }
-                return p;
-            }));
+            // 4. Update Stock (Batch Update)
+            const stockUpdates: { id: any; stock: number }[] = [];
+            const lowStockNotifications: any[] = [];
+            const itemsToAlert: { name: string; stock: number }[] = [];
 
-            // DB Update loop (Sequential to be safe)
-            for (const item of saleData.items) {
+            saleData.items.forEach((item: any) => {
                 const product = products.find(p => p.id === item.id);
                 if (product) {
                     const newStock = product.stock - item.quantity;
-                    await supabase.from('products')
-                        .update({ stock: newStock })
-                        .eq('id', item.id);
+                    stockUpdates.push({ id: item.id, stock: newStock });
 
-                    // Check for low stock and send SMS alert
+                    // Prepare low stock alerts
                     if (newStock <= 10) {
-                        // Create in-app notification
-                        await supabase.from('notifications').insert({
+                        lowStockNotifications.push({
                             store_id: activeStore.id,
                             type: 'low_stock',
                             title: 'Low Stock Alert',
                             message: `${product.name} is running low (${newStock} items left).`,
                             metadata: { product_id: product.id, stock: newStock }
                         });
-
-                        // Send SMS alert to store owner (async, non-blocking)
-                        sendLowStockAlert(
-                            { name: product.name, stock: newStock },
-                            activeStore.id,
-                            activeStore.phone || ''
-                        ).catch(err => console.error('Failed to send low stock SMS:', err));
+                        itemsToAlert.push({ name: product.name, stock: newStock });
                     }
                 }
+            });
+
+            // Perform Stock Updates
+            if (stockUpdates.length > 0) {
+                const results = await Promise.all(stockUpdates.map(u =>
+                    supabase.from('products').update({ stock: u.stock }).eq('id', u.id)
+                ));
+
+                const firstError = results.find(r => r.error)?.error;
+                if (firstError) {
+                    console.error("Batch stock update failed", firstError.message || JSON.stringify(firstError));
+                }
             }
+
+            // Perform Batch Notification Insert
+            if (lowStockNotifications.length > 0) {
+                const { error: notifError } = await supabase
+                    .from('notifications')
+                    .insert(lowStockNotifications);
+                if (notifError) console.error("Batch notification insert failed", notifError);
+
+                // Send SMS alerts (still individual calls but categorized)
+                itemsToAlert.forEach(item => {
+                    sendLowStockAlert(
+                        item,
+                        activeStore.id,
+                        activeStore.phone || ''
+                    ).catch(err => console.error('Failed to send low stock SMS:', err));
+                });
+            }
+
+            // Optimistic UI update
+            setProducts(prev => prev.map(p => {
+                const update = stockUpdates.find(u => u.id === p.id);
+                return update ? { ...p, stock: update.stock } : p;
+            }));
         }
 
 
         // 5. Update Customer Loyalty & Total Spent
+        let finalPoints = 0;
         if (customerId) {
             // We need to fetch current customer stats first to be safe, or use RPC decrement (safer)
             const { data: currentCust } = await supabase.from('customers').select('points, total_spent, total_visits').eq('id', customerId).single();
             if (currentCust) {
                 const redeemed = saleData.pointsRedeemed || 0;
-                const newPoints = Math.max(0, (currentCust.points || 0) + pointsEarned - redeemed);
+                finalPoints = Math.max(0, (currentCust.points || 0) + pointsEarned - redeemed);
                 const newTotalSpent = (currentCust.total_spent || 0) + saleData.totalAmount;
                 const newTotalVisits = (currentCust.total_visits || 0) + 1;
 
                 await supabase.from('customers').update({
-                    points: newPoints,
+                    points: finalPoints,
                     total_spent: newTotalSpent,
                     total_visits: newTotalVisits,
                     last_visit: new Date().toISOString()
@@ -841,11 +820,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             }
         }
 
-        // Refresh cache in background (stock changed)
-        refreshCacheInBackground();
-
-        return sale.id;
-    }, [activeStore?.id, user?.id, products, refreshCacheInBackground]);
+        return {
+            saleId: sale.id,
+            pointsEarned,
+            finalPoints
+        };
+    }, [activeStore?.id, user?.id, products]);
 
     const filteredProducts = products.filter(product => {
         const matchesSearch = (product.name && String(product.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -1015,57 +995,60 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (count !== null) setTotalCount(count);
     };
 
-    const preloadCacheForOffline = async () => {
-        if (!activeStore?.id) return;
+    const addProducts = React.useCallback(async (productsData: any[]) => {
+        if (!activeStore?.id || productsData.length === 0) return;
 
-        console.log('[Inventory] Preloading cache for offline use...');
+        const formatted = productsData.map(p => ({
+            store_id: activeStore.id,
+            name: p.name,
+            category: p.category,
+            price: p.price,
+            stock: p.stock,
+            sku: p.sku,
+            barcode: p.barcode || p.sku,
+            image: p.image || 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7',
+            video: p.video || '',
+            status: p.status || 'In Stock',
+            cost_price: p.costPrice || 0,
+            earnable_points: p.earnablePoints || 0,
+            points_value: p.pointsValue || 0,
+            estimated_profit: p.estimatedProfit || 0
+        }));
 
-        try {
-            // Fetch first 100 products (should cover most small businesses)
-            const { data, error } = await supabase
-                .from('products')
-                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id')
-                .eq('store_id', activeStore.id)
-                .limit(100);
+        const { error } = await supabase.from('products').insert(formatted);
 
-            if (error) {
-                console.error('[Inventory] Preload error:', error);
-                return;
-            }
-
-            if (data && data.length > 0) {
-                const mappedProducts = data.map((p: any) => ({
-                    ...p,
-                    costPrice: p.cost_price || 0,
-                    status: p.status || 'In Stock',
-                    video: p.video || '',
-                    image: p.image || ''
-                }));
-
-                // Store in cache (page 1)
-                const newCache = {
-                    1: {
-                        data: mappedProducts,
-                        timestamp: Date.now()
-                    }
-                };
-
-                setPageCache(newCache);
-                await idbSet(`sms_inventory_cache_${activeStore.id}`, newCache);
-
-                // Update cache status
-                setCacheStatus({
-                    isLoaded: true,
-                    productCount: mappedProducts.length,
-                    lastUpdated: Date.now()
-                });
-
-                console.log(`[Inventory] Cached ${mappedProducts.length} products for offline use`);
-            }
-        } catch (err) {
-            console.error('[Inventory] Preload failed:', err);
+        if (error) {
+            console.error("Error batch adding products:", error);
+            // Refetch to restore state
+            if (activeStore?.id) fetchProducts(page, pageSize, searchQuery);
+        } else {
+            // Refresh count and list if needed
+            setTotalCount(prev => prev + formatted.length);
+            fetchTotalCount();
+            if (searchQuery) fetchProducts(page, pageSize, searchQuery);
         }
-    };
+    }, [activeStore?.id, page, pageSize, searchQuery, fetchProducts, fetchTotalCount]);
+
+    const deleteProducts = React.useCallback(async (ids: any[]) => {
+        if (!activeStore?.id || !ids || ids.length === 0) return;
+
+        // Optimistic update
+        setProducts(prev => prev.filter(p => !ids.includes(p.id)));
+
+        const { error } = await supabase
+            .from('products')
+            .delete()
+            .in('id', ids);
+
+        if (error) {
+            console.error("Error batch deleting products:", error);
+            // Refetch to restore state
+            if (activeStore?.id) fetchProducts(page, pageSize, searchQuery);
+        } else {
+            setTotalCount(prev => Math.max(0, prev - ids.length));
+        }
+    }, [activeStore?.id, page, pageSize, searchQuery, fetchProducts]);
+
 
 
 
@@ -1091,7 +1074,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             refreshProducts: fetchProducts,
             processSale,
             addProduct,
+            addProducts,
             deleteProduct,
+            deleteProducts,
             updateProduct,
             cart,
             setCart,
@@ -1108,10 +1093,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             totalCount,
             migrateImages,
             getProductByBarcode,
-            preloadCacheForOffline,
-            cacheStatus,
             loyaltyConfig,
             refreshLoyaltyConfig,
+            syncAllProductsToLoyalty,
             installmentSettings,
             refreshInstallmentSettings
         }}>
