@@ -154,7 +154,8 @@ export default function InventoryPage() {
 
     const filteredProducts = products.filter(product => {
         const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            product.sku.toLowerCase().includes(searchQuery.toLowerCase());
+            product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (product.barcode && product.barcode.toLowerCase().includes(searchQuery.toLowerCase()));
         const matchesCategory = filterCategory === 'All' || product.category === filterCategory;
 
         let matchesStatus = true;
@@ -1095,6 +1096,9 @@ export default function InventoryPage() {
                                         </td>
                                         <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
                                             <div className="text-sm text-slate-900 dark:text-white">{product.sku}</div>
+                                            {product.barcode && product.barcode !== product.sku && (
+                                                <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">BC: {product.barcode}</div>
+                                            )}
                                             <div className="text-xs text-slate-500 dark:text-slate-400">{product.category}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">

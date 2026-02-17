@@ -6,6 +6,7 @@ import { syncManager } from './sync-manager';
 import { useAuth } from './auth-context';
 import { sendLowStockAlert } from './sms';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { useToast } from '@/lib/toast-context';
 
 interface Product {
     id: any;
@@ -14,6 +15,7 @@ interface Product {
     price: number;
     stock: number;
     sku: string;
+    barcode?: string;
     image: string;
     costPrice?: number;
     earnablePoints?: number;
@@ -72,6 +74,7 @@ const InventoryContext = createContext<InventoryContextType | undefined>(undefin
 
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const { activeStore, user } = useAuth();
+    const { showToast } = useToast();
     const [products, setProducts] = useState<Product[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -97,7 +100,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [cacheStatus, setCacheStatus] = useState({ isLoaded: false, productCount: 0, lastUpdated: null as number | null });
     const [loyaltyConfig, setLoyaltyConfig] = useState<any>(null);
     const [installmentSettings, setInstallmentSettings] = useState<any>(null);
-    const CACHE_TTL = 5 * 60 * 1000; // 5 minutes - near-realtime sync, still saves egress for repeat searches
+    // 15 minutes - balances freshness with offline resilience
+    const CACHE_TTL = 15 * 60 * 1000;
 
     // Load Cache from IDB
     useEffect(() => {
@@ -279,11 +283,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
             let queryBuilder = supabase
                 .from('products')
-                .select('id, name, category, price, stock, sku, image, cost_price, earnable_points, points_value, estimated_profit, status, video, store_id', { count: 'estimated' })
+                .select('id, name, category, price, stock, sku, barcode, image, cost_price, earnable_points, points_value, estimated_profit, status, video, store_id', { count: 'estimated' })
                 .eq('store_id', activeStore.id);
 
             if (query && query.trim()) {
-                queryBuilder = queryBuilder.or(`name.ilike.%${query}%,sku.ilike.%${query}%`);
+                queryBuilder = queryBuilder.or(`name.ilike.%${query}%,sku.ilike.%${query}%,barcode.ilike.%${query}%`);
             }
 
             const { data, error, count } = await queryBuilder
@@ -334,6 +338,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 setTimeout(() => fetchProducts(pageNum, pageSizeNum, query, retryCount + 1), 1000 * Math.pow(2, retryCount));
                 return;
             }
+
+            // Fallback to Stale Cache if available
+            if (pageCache[pageNum] && pageCache[pageNum].data) {
+                console.warn('[Inventory] Network failed, using stale cache');
+                setProducts(pageCache[pageNum].data);
+                if (retryCount === 3) showToast('error', 'Offline: Showing cached data');
+            }
+
             setIsLoading(false);
         } finally {
             isFetching.current = false;
@@ -419,6 +431,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             price: product.price,
             stock: product.stock,
             sku: product.sku,
+            barcode: product.barcode || product.sku, // Sync barcode with SKU if not provided
             image: optimizedImage, // Use URL
             video: product.video,
             status: product.status,
@@ -515,7 +528,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 .from('products')
                 .select('*')
                 .eq('store_id', activeStore.id)
-                .eq('sku', barcode)
+                .or(`sku.eq.${barcode},barcode.eq.${barcode}`)
                 .single();
 
             if (data) {
@@ -551,6 +564,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             price: product.price,
             stock: product.stock,
             sku: product.sku,
+            barcode: product.barcode || product.sku,
             image: optimizedImage,
             video: product.video,
             status: product.status,

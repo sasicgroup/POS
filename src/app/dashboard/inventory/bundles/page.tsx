@@ -79,9 +79,9 @@ export default function BundlesPage() {
 
         const { data } = await supabase
             .from('products')
-            .select('id, name, cost_price, stock')
+            .select('id, name, cost_price, stock, sku, barcode')
             .eq('store_id', activeStore.id)
-            .eq('sku', code) // Assuming SKU matches barcode
+            .or(`sku.eq.${code},barcode.eq.${code}`)
             .single();
 
         if (data) {
@@ -122,9 +122,9 @@ export default function BundlesPage() {
 
         const { data } = await supabase
             .from('products')
-            .select('id, name, cost_price, stock')
+            .select('id, name, cost_price, stock, sku, barcode')
             .eq('store_id', activeStore.id)
-            .ilike('name', `%${term}%`)
+            .or(`name.ilike.%${term}%,sku.ilike.%${term}%,barcode.ilike.%${term}%`)
             .limit(5);
 
         if (data) setSearchResults(data);

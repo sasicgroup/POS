@@ -380,16 +380,17 @@ export default function SalesPage() {
         // 1. Try Local Search first (fastest)
         let product = products.find(p => {
             const sku = p.sku ? String(p.sku).toLowerCase().trim() : '';
+            const barcode = p.barcode ? String(p.barcode).toLowerCase().trim() : '';
             const name = p.name ? String(p.name).toLowerCase() : '';
             const q = String(query).toLowerCase().trim();
-            return sku === q || (name && name.includes(q)) || (sku && sku.includes(q));
+            return sku === q || barcode === q || (name && name.includes(q)) || (sku && sku.includes(q)) || (barcode && barcode.includes(q));
         });
 
         // 2. If not found locally, fetch from DB (Lazy Load Support)
         if (!product) {
             const { data } = await supabase.from('products')
-                .select('id, name, category, price, stock, sku, image, cost_price, status, video, store_id')
-                .or(`sku.eq.${query},name.ilike.%${query}%`)
+                .select('id, name, category, price, stock, sku, barcode, image, cost_price, status, video, store_id')
+                .or(`sku.eq.${query},barcode.eq.${query},name.ilike.%${query}%`)
                 .eq('store_id', activeStore.id)
                 .limit(1)
                 .single();
@@ -776,7 +777,8 @@ export default function SalesPage() {
     const filteredProducts = products.filter(p =>
         (p.name && String(p.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
         (p.category && String(p.category).toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (p.sku && String(p.sku).toLowerCase().includes(searchQuery.toLowerCase()))
+        (p.sku && String(p.sku).toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (p.barcode && String(p.barcode).toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
 
@@ -986,7 +988,12 @@ export default function SalesPage() {
                                             </div>
                                             <div className="min-w-0">
                                                 <h3 className="text-sm font-semibold text-slate-900 truncate dark:text-slate-100">{product.name}</h3>
-                                                <p className="text-xs text-slate-500">{product.sku}</p>
+                                                <div className="flex flex-wrap gap-x-2">
+                                                    <p className="text-xs text-slate-500">{product.sku}</p>
+                                                    {product.barcode && product.barcode !== product.sku && (
+                                                        <p className="text-[10px] text-slate-400 font-mono">BC: {product.barcode}</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="hidden sm:block sm:col-span-3">
