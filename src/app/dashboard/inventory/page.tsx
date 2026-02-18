@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
-import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList, Upload, Download, FileSpreadsheet } from 'lucide-react';
+import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList, Upload, Download, FileSpreadsheet, Edit2, MoreVertical, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Check, Tag, Info, AlertTriangle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -31,6 +31,7 @@ export default function InventoryPage() {
         cart,
         setCart,
         migrateImages,
+        getAllProducts,
         getProductByBarcode,
         searchQuery,
         setSearchQuery,
@@ -69,6 +70,7 @@ export default function InventoryPage() {
     const [showAiAnalysis, setShowAiAnalysis] = useState(false);
     const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState<any | null>(null);
     const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+    const [isLoadingAll, setIsLoadingAll] = useState(false);
 
     const handleBarcodeExport = () => {
         const itemsToExport = selectedProducts.length > 0
@@ -805,18 +807,22 @@ export default function InventoryPage() {
                         <div className="flex-1 overflow-y-auto p-6 space-y-4">
                             <div className="flex flex-wrap gap-2 mb-4">
                                 <button
-                                    onClick={() => {
-                                        setBarcodeList(products);
+                                    disabled={isLoadingAll}
+                                    onClick={async () => {
+                                        setIsLoadingAll(true);
+                                        const allProducts = await getAllProducts();
+                                        setBarcodeList(allProducts);
                                         const newQtys = { ...barcodeQtys };
-                                        products.forEach(p => {
+                                        allProducts.forEach(p => {
                                             if (!newQtys[p.id]) newQtys[p.id] = 1;
                                         });
                                         setBarcodeQtys(newQtys);
                                         setBarcodePage(1);
+                                        setIsLoadingAll(false);
                                     }}
-                                    className="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors border border-indigo-100 dark:border-indigo-900/30"
+                                    className="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors border border-indigo-100 dark:border-indigo-900/30 disabled:opacity-50"
                                 >
-                                    Load All Inventory
+                                    {isLoadingAll ? 'Loading...' : 'Load All Inventory'}
                                 </button>
                                 <button
                                     onClick={() => {
@@ -1228,13 +1234,22 @@ export default function InventoryPage() {
                             {searchQuery ? `We couldn't find anything matching "${searchQuery}". Try a different term or scan a barcode.` : "Enter a product name, SKU, or scan a barcode to view inventory."}
                         </p>
                         {!searchQuery && (
-                            <button
-                                onClick={() => setIsScanning(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                            >
-                                <Scan className="h-4 w-4" />
-                                Scan Barcode
-                            </button>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <button
+                                    onClick={() => setIsScanning(true)}
+                                    className="flex items-center justify-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 font-bold"
+                                >
+                                    <Scan className="h-4 w-4" />
+                                    Scan Barcode
+                                </button>
+                                <button
+                                    onClick={() => getAllProducts(true)}
+                                    className="flex items-center justify-center gap-2 px-6 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-all font-bold"
+                                >
+                                    <Package className="h-4 w-4" />
+                                    Load All Inventory
+                                </button>
+                            </div>
                         )}
                     </div>
                 ) : (

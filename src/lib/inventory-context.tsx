@@ -65,6 +65,7 @@ interface InventoryContextType {
     setPageSize: (size: number) => void;
     totalCount: number;
     migrateImages: () => Promise<number | undefined>;
+    getAllProducts: (populateGlobalState?: boolean) => Promise<Product[]>;
     loyaltyConfig: any;
     refreshLoyaltyConfig: () => Promise<void>;
     syncAllProductsToLoyalty: () => Promise<void>;
@@ -100,6 +101,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [recentlyAccessedProducts, setRecentlyAccessedProducts] = useState<Product[]>([]);
     const [loyaltyConfig, setLoyaltyConfig] = useState<any>(null);
     const [installmentSettings, setInstallmentSettings] = useState<any>(null);
+    const [loadAllActive, setLoadAllActive] = useState(false);
 
     const refreshLoyaltyConfig = React.useCallback(async () => {
         if (!activeStore?.id) return;
@@ -350,17 +352,21 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             const hasSearch = debouncedSearchQuery && debouncedSearchQuery.trim().length > 0;
 
             if (hasSearch) {
+                // When searching, reset the "Load All" bypass if it was active
+                if (loadAllActive) setLoadAllActive(false);
                 fetchProducts(page, pageSize, debouncedSearchQuery);
-            } else {
-                // Clear products when not searching (search-only mode)
+            } else if (!loadAllActive) {
+                // Only clear if we are NOT in "Load All" mode and NOT searching
                 setProducts([]);
                 setIsLoading(false);
             }
+            // If loadAllActive is true and no search, we do nothing and keep the current product list
         } else {
             setProducts([]);
             setIsLoading(false);
+            setLoadAllActive(false);
         }
-    }, [activeStore?.id, page, pageSize, fetchProducts, debouncedSearchQuery]);
+    }, [activeStore?.id, page, pageSize, fetchProducts, debouncedSearchQuery, loadAllActive]);
 
 
     // Load Cart from LocalStorage on mount
@@ -995,6 +1001,44 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (count !== null) setTotalCount(count);
     };
 
+    const getAllProducts = React.useCallback(async (populateGlobalState = false) => {
+        if (!activeStore?.id) return [];
+        if (populateGlobalState) setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('products')
+                .select('id, name, category, price, stock, sku, barcode, image, cost_price, earnable_points, points_value, estimated_profit, status, video, store_id')
+                .eq('store_id', activeStore.id);
+
+            if (error) throw error;
+            if (data) {
+                const mapped = data.map((p: any) => ({
+                    ...p,
+                    costPrice: p.cost_price || 0,
+                    earnablePoints: p.earnable_points || 0,
+                    pointsValue: p.points_value || 0,
+                    estimatedProfit: p.estimated_profit || 0,
+                    status: p.status || 'In Stock',
+                    video: p.video || '',
+                    image: p.image || ''
+                }));
+
+                if (populateGlobalState) {
+                    setProducts(mapped);
+                    setTotalCount(mapped.length);
+                    setLoadAllActive(true);
+                    setIsLoading(false);
+                }
+                return mapped;
+            }
+        } catch (e) {
+            console.error("Error fetching all products:", e);
+            showToast('error', 'Failed to fetch all products');
+            if (populateGlobalState) setIsLoading(false);
+        }
+        return [];
+    }, [activeStore?.id, showToast]);
+
     const addProducts = React.useCallback(async (productsData: any[]) => {
         if (!activeStore?.id || productsData.length === 0) return;
 
@@ -1092,6 +1136,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             setPageSize,
             totalCount,
             migrateImages,
+            getAllProducts,
             getProductByBarcode,
             loyaltyConfig,
             refreshLoyaltyConfig,

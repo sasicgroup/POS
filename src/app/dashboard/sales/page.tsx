@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { loadSMSConfigFromDB, sendNotification } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator, Package } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
@@ -27,6 +27,7 @@ export default function SalesPage() {
         clearCart,
         searchQuery,
         setSearchQuery,
+        getAllProducts,
         loyaltyConfig: contextLoyaltyConfig,
         installmentSettings
     } = useInventory();
@@ -897,9 +898,27 @@ export default function SalesPage() {
                                 </div>
                             ))
                         ) : filteredProducts.length === 0 ? (
-                            <div className="text-center py-12">
-                                <p className="text-slate-400 dark:text-slate-500 text-lg">No products found</p>
-                                <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">Try adjusting your search</p>
+                            <div className="text-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-white/50 dark:bg-slate-900/50">
+                                <div className="h-16 w-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Search className="h-8 w-8 text-slate-400" />
+                                </div>
+                                <p className="text-slate-900 dark:text-white text-lg font-bold">
+                                    {searchQuery ? "No products found" : "Your POS is ready"}
+                                </p>
+                                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 max-w-xs mx-auto mb-6">
+                                    {searchQuery
+                                        ? `We couldn't find any products matching "${searchQuery}".`
+                                        : "Search for a product, scan a barcode, or load your entire inventory to start selling."}
+                                </p>
+                                {!searchQuery && (
+                                    <button
+                                        onClick={() => getAllProducts(true)}
+                                        className="inline-flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 font-bold"
+                                    >
+                                        <Package className="h-4 w-4" />
+                                        Load All Inventory
+                                    </button>
+                                )}
                             </div>
                         ) : (
                             filteredProducts.map(product => {
