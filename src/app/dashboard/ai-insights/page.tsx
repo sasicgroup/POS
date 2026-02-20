@@ -141,6 +141,32 @@ function AiInsightsContent() {
         }
     }, [activeStore]);
 
+    // Real-time subscription for sales updates
+    useEffect(() => {
+        if (!activeStore?.id) return;
+
+        const channel = supabase
+            .channel('ai-insights-sales')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'sales',
+                    filter: `store_id=eq.${activeStore.id}`
+                },
+                (payload) => {
+                    console.log('Sales change detected, refreshing insights:', payload);
+                    fetchInsights();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [activeStore?.id]);
+
     const fetchInsights = async () => {
         setIsLoading(true);
         try {
@@ -443,9 +469,29 @@ function AiInsightsContent() {
             setCashFlow(Math.round(projectedRev30 - estimatedRestockCost));
 
             // --- 26. Automated End-of-Day Insights ---
+            // Calculate actual top seller from sale_items data
+            const productSales = new Map<string, number>();
+            sales.forEach(s => {
+                // @ts-ignore
+                s.sale_items?.forEach((item: any) => {
+                    const currentQty = productSales.get(item.product_name) || 0;
+                    productSales.set(item.product_name, currentQty + (item.quantity || 0));
+                });
+            });
+
+            // Find product with highest sales quantity
+            let topSellerName = 'N/A';
+            let maxQty = 0;
+            productSales.forEach((qty, name) => {
+                if (qty > maxQty) {
+                    maxQty = qty;
+                    topSellerName = name;
+                }
+            });
+
             const totalSalesToday = sales.filter(s => s.created_at.startsWith(today.toISOString().split('T')[0]))
-                .reduce((a, b) => a + b.total, 0);
-            setDailySummary(`Today's sales reached GHS ${totalSalesToday.toLocaleString()}. ${churnRisk.length > 0 ? `Alert: ${churnRisk.length} loyal customers are drifting away.` : ''} Top seller was ${products[0]?.name}.`);
+                .reduce((a, b) => a + (Number(b.total) || 0), 0);
+            setDailySummary(`Today's sales reached GHS ${totalSalesToday.toLocaleString()}. ${churnRisk.length > 0 ? `Alert: ${churnRisk.length} loyal customers are drifting away.` : ''} Top seller was ${topSellerName}.`);
 
 
         } catch (e) {
