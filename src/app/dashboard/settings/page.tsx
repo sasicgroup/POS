@@ -40,6 +40,14 @@ export default function SettingsPage() {
     const [receiptSuffix, setReceiptSuffix] = useState('');
     const [storePhone, setStorePhone] = useState('');
 
+    // Payment toggles (cash, momo, installment, susupay)
+    const [paymentSettings, setPaymentSettings] = useState<{ cash: boolean; momo: boolean; installment: boolean; susu: boolean }>({
+        cash: true,
+        momo: true,
+        installment: true,
+        susu: false
+    });
+
     // General Settings
     const [taxEnabled, setTaxEnabled] = useState(true);
     const [taxType, setTaxType] = useState('percentage');
@@ -114,6 +122,17 @@ export default function SettingsPage() {
                 setTaxEnabled(activeStore.taxSettings.enabled);
                 setTaxType(activeStore.taxSettings.type);
                 setTaxValue(activeStore.taxSettings.value);
+            }
+
+            // load payment method toggles
+            if (activeStore.paymentSettings?.methods) {
+                const m = activeStore.paymentSettings.methods;
+                setPaymentSettings({
+                    cash: m.cash ?? true,
+                    momo: m.momo ?? true,
+                    installment: m.installment ?? true,
+                    susu: m.susu ?? false
+                });
             }
         }
         // Load Global Branding
@@ -283,6 +302,7 @@ export default function SettingsPage() {
                         color: activeStore.branding?.color,
                         logoUrl: activeStore.branding?.logoUrl
                     },
+                    paymentSettings: { methods: paymentSettings },
                     businessTypes: availableBusinessTypes,
                     categories: customCategories
                 });
@@ -677,6 +697,7 @@ export default function SettingsPage() {
         ...(hasPermission('manage_employees') ? [{ id: 'users', label: 'Team Members', description: 'Manage staff access', icon: Users }] : []),
 
         ...(hasPermission('manage_inventory') ? [{ id: 'barcodes', label: 'Barcodes', description: 'Generate & export', icon: Barcode }] : []),
+        ...(hasPermission('manage_settings') ? [{ id: 'payments', label: 'Payments', description: 'Enable/disable payment methods', icon: CreditCard }] : []),
         ...(hasPermission('manage_settings') ? [{ id: 'sms', label: 'SMS Config', description: 'Gateway settings', icon: MessageSquare }] : []),
         ...(hasPermission('manage_settings') ? [{ id: 'pwa', label: 'PWA Settings', description: 'App installation', icon: Smartphone }] : []),
     ];
@@ -1078,6 +1099,33 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        )
+                    }
+
+                    {/* PAYMENTS */}
+                    {
+                        activeTab === 'payments' && hasPermission('manage_settings') && (
+                            <div className="space-y-6">
+                                <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm max-w-2xl">
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Methods</h2>
+                                    <div className="space-y-4">
+                                        {['cash', 'momo', 'installment', 'susu'].map((method) => (
+                                            <div key={method} className="flex items-center justify-between">
+                                                <span className="capitalize">{method === 'susu' ? 'SusuPay' : method.charAt(0).toUpperCase() + method.slice(1)}</span>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(paymentSettings as any)[method]}
+                                                        onChange={(e) => setPaymentSettings(prev => ({ ...prev, [method]: e.target.checked }))}
+                                                        className="sr-only peer"
+                                                    />
+                                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
                             </div>
                         )
                     }

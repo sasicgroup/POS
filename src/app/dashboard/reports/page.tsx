@@ -59,7 +59,17 @@ export default function ReportsPage() {
 
             if (products && salesItems) {
                 const soldProductIds = new Set(salesItems.map(i => i.product_id));
-                const dead = products.filter(p => !soldProductIds.has(p.id));
+                const now = new Date();
+                
+                // Dead stock: Products listed more than 90 days ago that haven't sold in the last 90 days
+                const dead = products.filter(p => {
+                    const productCreatedAt = new Date(p.created_at);
+                    const daysSinceListed = Math.floor((now.getTime() - productCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
+                    const hasSoldRecently = soldProductIds.has(p.id);
+                    
+                    // Dead stock if listed more than 90 days ago AND hasn't sold in last 90 days
+                    return daysSinceListed > 90 && !hasSoldRecently;
+                });
                 setDeadStockData(dead);
             }
         } catch (e) {

@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { loadSMSConfigFromDB, sendNotification } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator, Package } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator, Package, DollarSign } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
@@ -96,7 +96,8 @@ export default function SalesPage() {
 
     const [showCheckoutSuccess, setShowCheckoutSuccess] = useState(false);
     const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | 'installment' | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | 'installment' | 'susu' | null>(null);
+    const [enabledPayments, setEnabledPayments] = useState<{cash:boolean; momo:boolean; installment:boolean; susu:boolean}>({ cash: true, momo: true, installment: true, susu: false });
     const [depositAmount, setDepositAmount] = useState('');
     const [showMobileCart, setShowMobileCart] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -134,6 +135,17 @@ export default function SalesPage() {
             }
         };
         loadLoyalty();
+
+        // Load enabled payment methods from store settings
+        if (activeStore?.paymentSettings?.methods) {
+            const m = activeStore.paymentSettings.methods;
+            setEnabledPayments({
+                cash: m.cash ?? true,
+                momo: m.momo ?? true,
+                installment: m.installment ?? true,
+                susu: m.susu ?? false
+            });
+        }
     }, [activeStore]);
 
     // --- Parked Orders Logic ---
@@ -1320,24 +1332,38 @@ export default function SalesPage() {
                                     <Calculator className="h-4 w-4" />
                                 </button>
                             </div>
-                            <button
-                                onClick={() => setPaymentMethod('cash')}
-                                className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'cash' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
-                            >
-                                <Banknote className={`h-6 w-6 ${paymentMethod === 'cash' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> Cash
-                            </button>
-                            <button
-                                onClick={() => setPaymentMethod('momo')}
-                                className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'momo' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
-                            >
-                                <Smartphone className={`h-6 w-6 ${paymentMethod === 'momo' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> MoMo
-                            </button>
-                            <button
-                                onClick={() => setPaymentMethod('installment')}
-                                className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'installment' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
-                            >
-                                <CreditCard className={`h-6 w-6 ${paymentMethod === 'installment' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> Installment
-                            </button>
+                            {enabledPayments.cash && (
+                                <button
+                                    onClick={() => setPaymentMethod('cash')}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'cash' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                                >
+                                    <Banknote className={`h-6 w-6 ${paymentMethod === 'cash' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> Cash
+                                </button>
+                            )}
+                            {enabledPayments.momo && (
+                                <button
+                                    onClick={() => setPaymentMethod('momo')}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'momo' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                                >
+                                    <Smartphone className={`h-6 w-6 ${paymentMethod === 'momo' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> MoMo
+                                </button>
+                            )}
+                            {enabledPayments.installment && (
+                                <button
+                                    onClick={() => setPaymentMethod('installment')}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'installment' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                                >
+                                    <CreditCard className={`h-6 w-6 ${paymentMethod === 'installment' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> Installment
+                                </button>
+                            )}
+                            {enabledPayments.susu && (
+                                <button
+                                    onClick={() => setPaymentMethod('susu')}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-3 text-sm font-medium transition-all ${paymentMethod === 'susu' ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                                >
+                                    <DollarSign className={`h-6 w-6 ${paymentMethod === 'susu' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} /> SusuPay
+                                </button>
+                            )}
                         </div>
 
                         {paymentMethod === 'installment' && (

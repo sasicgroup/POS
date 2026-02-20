@@ -144,6 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(is_
 -- 15. Add payment_settings to stores table for Hubtel integration
 ALTER TABLE public.stores 
 ADD COLUMN IF NOT EXISTS payment_settings jsonb DEFAULT '{
+    "methods": { "cash": true, "momo": true, "installment": true, "susu": false },
     "default_provider": "hubtel",
     "hubtel": {
         "enabled": false,
@@ -156,6 +157,18 @@ ADD COLUMN IF NOT EXISTS payment_settings jsonb DEFAULT '{
         "secret_key": ""
     }
 }'::jsonb;
+
+-- 15.1. Ensure existing stores have a methods object and include susu toggle
+UPDATE public.stores
+SET payment_settings = 
+    CASE
+        WHEN payment_settings ? 'methods' THEN
+            jsonb_set(payment_settings, '{methods,susu}', 'false'::jsonb, true)
+        ELSE
+            payment_settings || '{"methods": {"cash": true, "momo": true, "installment": true, "susu": false}}'::jsonb
+    END
+WHERE payment_settings IS NOT NULL;
+
 
 -- 16. Create Loyalty Programs Table
 CREATE TABLE IF NOT EXISTS public.loyalty_programs (

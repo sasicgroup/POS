@@ -45,6 +45,17 @@ export default function LoyaltyPage() {
     const [productSearch, setProductSearch] = useState('');
     const [showProductDropdown, setShowProductDropdown] = useState(false);
 
+    // Customer Search Dropdown State
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [customerList, setCustomerList] = useState<any[]>([]);
+    const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+
+    // Manage Points State
+    const [resetCustomer, setResetCustomer] = useState<any>(null);
+    const [resetPointsAmount, setResetPointsAmount] = useState('');
+    const [isResettingPoints, setIsResettingPoints] = useState(false);
+    const [resetSuccessMsg, setResetSuccessMsg] = useState('');
+
     const handleSearch = async () => {
         if (!activeStore?.id || !phone) return;
         setIsLoadingRedemption(true);
@@ -70,6 +81,67 @@ export default function LoyaltyPage() {
             setErrorMsg('Error fetching customer');
         } finally {
             setIsLoadingRedemption(false);
+        }
+    };
+
+    // Search customers by name
+    const handleCustomerNameSearch = async (searchTerm: string) => {
+        if (!activeStore?.id || !searchTerm.trim()) {
+            setCustomerList([]);
+            return;
+        }
+
+        try {
+            const { data } = await supabase
+                .from('customers')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
+                .limit(10);
+
+            if (data) setCustomerList(data);
+        } catch (e) {
+            console.error(e);
+            setCustomerList([]);
+        }
+    };
+
+    // Handle point reset
+    const handleResetPoints = async () => {
+        if (!activeStore?.id || !resetCustomer || !resetPointsAmount) return;
+
+        setIsResettingPoints(true);
+        try {
+            const newPoints = (resetCustomer.points || 0) - parseInt(resetPointsAmount);
+            if (newPoints < 0) {
+                setResetSuccessMsg('');
+                throw new Error('Cannot reset more points than customer has');
+            }
+
+            const { error } = await supabase
+                .from('customers')
+                .update({ points: newPoints })
+                .eq('id', resetCustomer.id);
+
+            if (error) throw error;
+
+            // Log the reset
+            await supabase.from('loyalty_logs').insert({
+                store_id: activeStore.id,
+                customer_id: resetCustomer.id,
+                points: -parseInt(resetPointsAmount),
+                type: 'adjustment',
+                description: 'Points reset by admin'
+            });
+
+            setResetSuccessMsg(`Reset ${resetPointsAmount} points for ${resetCustomer.name}. New balance: ${newPoints}`);
+            setResetCustomer({ ...resetCustomer, points: newPoints });
+            setResetPointsAmount('');
+        } catch (e: any) {
+            setResetSuccessMsg('');
+            showToast('error', e.message || 'Failed to reset points');
+        } finally {
+            setIsResettingPoints(false);
         }
     };
 
@@ -444,6 +516,17 @@ export default function LoyaltyPage() {
                         <Users className={`mr-2 h-5 w-5 ${activeTab === 'tiers' ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'}`} />
                         Tiers & Benefits
                     </button>
+                    <button
+                        onClick={() => setActiveTab('manage-points')}
+                        className={`group flex items-center border-b-2 py-4 px-1 text-sm font-medium
+                                ${activeTab === 'manage-points'
+                                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                                : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'}
+                            `}
+                    >
+                        <RefreshCcw className={`mr-2 h-5 w-5 ${activeTab === 'manage-points' ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'}`} />
+                        Manage Points
+                    </button>
                 </nav>
             </div>
 
@@ -611,25 +694,90 @@ export default function LoyaltyPage() {
                         {/* Search Section */}
                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm h-fit">
                             <h2 className="text-lg font-semibold mb-4 text-slate-900 dark:text-white">Find Customer</h2>
-                            <div className="flex gap-2 mb-4">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                                    <input
-                                        type="tel"
-                                        placeholder="Enter phone number"
-                                        className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                        value={phone}
-                                        onChange={(e) => setPhone(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                    />
+                            <div className="space-y-4">
+                                {/* Name/Phone Searchable Dropdown */}
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search by Name or Phone</label>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Enter name or phone"
+                                            className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                            value={customer ? `${customer.name} (${customer.phone})` : customerSearch}
+                                            onChange={(e) => {
+                                                setCustomerSearch(e.target.value);
+                                                setCustomer(null);
+                                                handleCustomerNameSearch(e.target.value);
+                                                setShowCustomerDropdown(true);
+                                            }}
+                                            onFocus={() => setShowCustomerDropdown(true)}
+                                        />
+                                        {customer && (
+                                            <button
+                                                onClick={() => {
+                                                    setCustomer(null);
+                                                    setCustomerSearch('');
+                                                    setShowCustomerDropdown(false);
+                                                }}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Dropdown */}
+                                    {showCustomerDropdown && !customer && customerSearch && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            {customerList.length > 0 ? (
+                                                customerList.map((cust) => (
+                                                    <button
+                                                        key={cust.id}
+                                                        onClick={() => {
+                                                            setCustomer(cust);
+                                                            setShowCustomerDropdown(false);
+                                                            setCustomerSearch('');
+                                                        }}
+                                                        className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-700 last:border-b-0"
+                                                    >
+                                                        <div>
+                                                            <div className="font-medium text-slate-900 dark:text-white">{cust.name}</div>
+                                                            <div className="text-xs text-slate-500">{cust.phone}</div>
+                                                        </div>
+                                                        <div className="text-xs text-indigo-600 font-semibold">{cust.points || 0} pts</div>
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="px-3 py-2 text-sm text-slate-500">No customers found</div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
-                                <button
-                                    onClick={handleSearch}
-                                    disabled={isLoadingRedemption}
-                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
-                                >
-                                    {isLoadingRedemption ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
-                                </button>
+
+                                {/* Or search by phone */}
+                                <div className="text-xs text-slate-500 text-center py-2">or</div>
+
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                        <input
+                                            type="tel"
+                                            placeholder="Enter phone number"
+                                            className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={handleSearch}
+                                        disabled={isLoadingRedemption}
+                                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
+                                    >
+                                        {isLoadingRedemption ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
+                                    </button>
+                                </div>
                             </div>
 
                             {errorMsg && (
@@ -766,6 +914,136 @@ export default function LoyaltyPage() {
                     </div>
                 )
             }
+
+            {activeTab === 'manage-points' && (
+                <div className="grid gap-6 md:grid-cols-2">
+                    {/* Customer Search Section */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm h-fit">
+                        <h2 className="text-lg font-semibold mb-4 text-slate-900 dark:text-white">Find Customer</h2>
+                        <div className="space-y-4">
+                            {/* Name/Phone Searchable Dropdown */}
+                            <div className="relative">
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search by Name or Phone</label>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Enter name or phone"
+                                        className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                        value={resetCustomer ? `${resetCustomer.name} (${resetCustomer.phone})` : customerSearch}
+                                        onChange={(e) => {
+                                            setCustomerSearch(e.target.value);
+                                            setResetCustomer(null);
+                                            handleCustomerNameSearch(e.target.value);
+                                            setShowCustomerDropdown(true);
+                                        }}
+                                        onFocus={() => setShowCustomerDropdown(true)}
+                                    />
+                                    {resetCustomer && (
+                                        <button
+                                            onClick={() => {
+                                                setResetCustomer(null);
+                                                setCustomerSearch('');
+                                                setShowCustomerDropdown(false);
+                                                setResetPointsAmount('');
+                                                setResetSuccessMsg('');
+                                            }}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Dropdown */}
+                                {showCustomerDropdown && !resetCustomer && customerSearch && (
+                                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                        {customerList.length > 0 ? (
+                                            customerList.map((cust) => (
+                                                <button
+                                                    key={cust.id}
+                                                    onClick={() => {
+                                                        setResetCustomer(cust);
+                                                        setShowCustomerDropdown(false);
+                                                        setCustomerSearch('');
+                                                    }}
+                                                    className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex justify-between items-center text-sm border-b border-slate-100 dark:border-slate-700 last:border-b-0"
+                                                >
+                                                    <div>
+                                                        <div className="font-medium text-slate-900 dark:text-white">{cust.name}</div>
+                                                        <div className="text-xs text-slate-500">{cust.phone}</div>
+                                                    </div>
+                                                    <div className="text-xs text-indigo-600 font-semibold">{cust.points || 0} pts</div>
+                                                </button>
+                                            ))
+                                        ) : (
+                                            <div className="px-3 py-2 text-sm text-slate-500">No customers found</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Point Reset Section */}
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden h-fit">
+                        {!resetCustomer ? (
+                            <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 dark:bg-slate-900/50 backdrop-blur-sm z-10 transition-all">
+                                <p className="text-slate-400 text-sm font-medium">Search for a customer to reset points</p>
+                            </div>
+                        ) : null}
+
+                        <div className="mb-6">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">{resetCustomer?.name}</h2>
+                            <p className="text-slate-500 text-sm">{resetCustomer?.phone}</p>
+                            <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-900/50 flex justify-between items-center">
+                                <span className="text-indigo-700 dark:text-indigo-300 font-medium text-sm">Current Balance</span>
+                                <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{resetCustomer?.points || 0} pts</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Points to Reset</label>
+                                <input
+                                    type="number"
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                    placeholder="0"
+                                    value={resetPointsAmount}
+                                    onChange={(e) => setResetPointsAmount(e.target.value)}
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {resetPointsAmount && resetCustomer
+                                        ? `New balance will be: ${Math.max(0, (resetCustomer.points || 0) - parseInt(resetPointsAmount))} pts`
+                                        : 'Enter amount to see new balance'}
+                                </p>
+                            </div>
+
+                            <button
+                                onClick={handleResetPoints}
+                                disabled={isResettingPoints || !resetPointsAmount || !resetCustomer}
+                                className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-lg shadow-orange-500/30 transition-all disabled:opacity-50 disabled:shadow-none text-sm"
+                            >
+                                {isResettingPoints ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Resetting...
+                                    </span>
+                                ) : (
+                                    'Reset Points'
+                                )}
+                            </button>
+                        </div>
+
+                        {resetSuccessMsg && (
+                            <div className="mt-4 p-3 bg-green-50 text-green-600 rounded-lg text-sm flex items-center gap-2 animate-in fade-in">
+                                <CheckCircle className="h-4 w-4" />
+                                {resetSuccessMsg}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {
                 activeTab === 'settings' && (

@@ -37,6 +37,18 @@ export interface Store {
     categories?: string[];
     sort_order?: number;
     master_password?: string;
+    // toggles and provider info for available payment methods
+    paymentSettings?: {
+        methods?: {
+            cash?: boolean;
+            momo?: boolean;
+            installment?: boolean;
+            susu?: boolean;
+        };
+        default_provider?: string;
+        hubtel?: any;
+        paystack?: any;
+    };
 }
 
 
@@ -193,7 +205,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         businessTypes: s.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
                         categories: s.categories || [],
                         sort_order: s.sort_order || 0,
-                        master_password: s.master_password
+                        master_password: s.master_password,
+                        paymentSettings: s.payment_settings || { methods: { cash: true, momo: true, installment: true, susu: false } }
                     }));
                     setStores(mappedStores);
 
@@ -893,6 +906,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 dbUpdates.categories = settings.categories;
                 // do not delete if key is same
             }
+            if (settings.paymentSettings) {
+                dbUpdates.payment_settings = settings.paymentSettings;
+                delete dbUpdates.paymentSettings;
+            }
 
             const { error } = await supabase.from('stores').update(dbUpdates).eq('id', activeStore.id);
 
@@ -949,7 +966,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 branding: data.branding,
                 lastTransactionNumber: data.last_transaction_number || 0,
                 businessTypes: data.business_types || ["Retail Store", "Pharmacy", "Restaurant", "Electronics", "Grocery", "Fashion", "Other"],
-                categories: data.categories || []
+                categories: data.categories || [],
+                paymentSettings: data.payment_settings || { methods: { cash: true, momo: true, installment: true, susu: false } }
             };
 
             setStores(prev => prev.map(s => s.id === tempId ? mappedStore : s));

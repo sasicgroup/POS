@@ -106,8 +106,10 @@ const handleUpdateProfile = async () => {
 
 ---
 
-### B. Settings - Payments Tab (Hubtel Configuration)
+### B. Settings - Payments Tab (Hubtel Configuration + Method Toggles)
 **Location:** `src/app/dashboard/settings/page.tsx`
+
+The payments tab now does double duty: it lets you configure the Hubtel MoMo integration **and** toggle which of the four supported payment methods are available in the POS (cash, MoMo, installment and the new SusuPay option). Make sure you extend the store's `payment_settings` JSON to include a `methods` object with boolean flags.
 
 **Add state:**
 ```tsx
