@@ -14,7 +14,7 @@ import {
     Edit2, Trash2, Layout, Eye, EyeOff, Archive, RotateCcw,
     Barcode, QrCode, RefreshCw, ShieldAlert, Key, Palette, Image,
     Type, DollarSign, Percent, Store, Check, Plus, Search, ChevronRight,
-    CreditCard, Smartphone, Download, Globe,
+    CreditCard, Smartphone, Download, Globe, ListTodo,
     Activity, ShieldCheck, MessageSquare, Menu, Bell, User, LogOut, Moon, Sun, X, ChevronDown,
     Cloud, CloudOff, RefreshCw as RefreshIcon
 } from 'lucide-react';
@@ -148,6 +148,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
         { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
         { name: 'Invoices', href: '/dashboard/invoices', icon: FileText, permission: 'access_pos' },
+        { name: 'Tasks & Notes', href: '/dashboard/tasks', icon: ListTodo, permission: 'view_dashboard' },
         { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock, permission: 'view_sales_history' },
         { name: 'Installments', href: '/dashboard/installments', icon: CreditCard, permission: 'access_pos' },
         { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'view_analytics' },

@@ -191,7 +191,7 @@ export default function SalesHistoryPage() {
                 }
             }
 
-            // 2. Loyalty Points Reversal
+            // 2. Loyalty Points & Total Spent Reversal
             if (saleToDelete.customer_id) {
                 const pointsToRevoke = saleToDelete.points_earned || Math.floor(saleToDelete.total_amount);
 
@@ -209,6 +209,43 @@ export default function SalesHistoryPage() {
                         type: 'revoked',
                         description: `Transaction #${saleId.toString().slice(0, 8)} deleted (Stock restored)`
                     });
+                }
+
+                // Decrement Total Spent
+                const { data: customerData } = await supabase
+                    .from('customers')
+                    .select('total_spent')
+                    .eq('id', saleToDelete.customer_id)
+                    .single();
+
+                if (customerData) {
+                    const newTotalSpent = Math.max(0, (customerData.total_spent || 0) - saleToDelete.total_amount);
+                    await supabase.from('customers').update({ total_spent: newTotalSpent }).eq('id', saleToDelete.customer_id);
+                }
+
+                // Reverse Referral Bonus (if any)
+                const { data: refLog } = await supabase
+                    .from('referral_logs')
+                    .select('*')
+                    .eq('sale_id', saleId)
+                    .maybeSingle();
+
+                if (refLog) {
+                    // Revoke the points from the referrer safely
+                    await supabase.rpc('decrement_points', {
+                        row_id: refLog.referrer_id,
+                        amount: refLog.reward_points
+                    });
+
+                    await supabase.from('loyalty_logs').insert({
+                        store_id: activeStore?.id,
+                        customer_id: refLog.referrer_id,
+                        points: -refLog.reward_points,
+                        type: 'revoked',
+                        description: `Referral bonus reversed (Transaction deleted)`
+                    });
+
+                    await supabase.from('referral_logs').delete().eq('id', refLog.id);
                 }
             }
 

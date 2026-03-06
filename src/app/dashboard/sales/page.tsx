@@ -97,7 +97,7 @@ export default function SalesPage() {
     const [showCheckoutSuccess, setShowCheckoutSuccess] = useState(false);
     const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | 'installment' | 'susu' | null>(null);
-    const [enabledPayments, setEnabledPayments] = useState<{cash:boolean; momo:boolean; installment:boolean; susu:boolean}>({ cash: true, momo: true, installment: true, susu: false });
+    const [enabledPayments, setEnabledPayments] = useState<{ cash: boolean; momo: boolean; installment: boolean; susu: boolean }>({ cash: true, momo: true, installment: true, susu: false });
     const [depositAmount, setDepositAmount] = useState('');
     const [showMobileCart, setShowMobileCart] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -664,6 +664,44 @@ export default function SalesPage() {
                     .single();
 
                 if (freshCust) {
+                    // Referral Program Logic (5% of grand total)
+                    if (freshCust.referred_by && grandTotal > 0) {
+                        const referralReward = Math.floor(grandTotal * 0.05); // 5% in points
+                        if (referralReward > 0) {
+                            const { data: referrer } = await supabase
+                                .from('customers')
+                                .select('points')
+                                .eq('id', freshCust.referred_by)
+                                .maybeSingle();
+
+                            if (referrer) {
+                                // Add points to referrer
+                                await supabase
+                                    .from('customers')
+                                    .update({ points: (referrer.points || 0) + referralReward })
+                                    .eq('id', freshCust.referred_by);
+
+                                // Log the referral reward silently
+                                await supabase.from('referral_logs').insert({
+                                    store_id: activeStore.id,
+                                    referrer_id: freshCust.referred_by,
+                                    referred_id: freshCust.id,
+                                    sale_id: saleId,
+                                    reward_points: referralReward
+                                });
+
+                                // Show in their history
+                                await supabase.from('loyalty_logs').insert({
+                                    store_id: activeStore.id,
+                                    customer_id: freshCust.referred_by,
+                                    points: referralReward,
+                                    type: 'earned',
+                                    description: `Referral bonus (5%) from friend's purchase`
+                                });
+                            }
+                        }
+                    }
+
                     setLoyaltyPoints(finalPoints);
                     setExistingCustomer({
                         ...freshCust,

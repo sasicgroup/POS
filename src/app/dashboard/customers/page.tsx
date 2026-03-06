@@ -17,6 +17,7 @@ interface Customer {
     points: number;
     last_visit: string;
     location?: string; // Optional if not in DB schema yet
+    referred_by?: string | null;
 }
 
 import { useAuth } from '@/lib/auth-context';
@@ -33,7 +34,7 @@ export default function CustomersPage() {
 
     // Add Customer State
     const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
-    const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
+    const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', referred_by_phone: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Edit State
@@ -245,12 +246,31 @@ export default function CustomersPage() {
         if (!activeStore?.id) return;
         setIsSubmitting(true);
 
+        let referredById = null;
+
+        // Lookup referrer by phone
+        if (newCustomer.referred_by_phone?.trim()) {
+            const { data: referrerData } = await supabase
+                .from('customers')
+                .select('id')
+                .eq('store_id', activeStore.id)
+                .eq('phone', newCustomer.referred_by_phone?.trim())
+                .maybeSingle();
+
+            if (referrerData) {
+                referredById = referrerData.id;
+            } else {
+                showToast('warning', "Referrer phone not found. Customer saved without referral.");
+            }
+        }
+
         const { data, error } = await supabase.from('customers').insert({
             store_id: activeStore.id,
             name: newCustomer.name,
             phone: newCustomer.phone,
             total_spent: 0,
-            points: 0
+            points: 0,
+            referred_by: referredById
         }).select().single();
 
         if (error) {
@@ -259,7 +279,8 @@ export default function CustomersPage() {
         } else if (data) {
             setCustomers(prev => [data, ...prev]);
             setIsAddCustomerOpen(false);
-            setNewCustomer({ name: '', phone: '' });
+            setNewCustomer({ name: '', phone: '', referred_by_phone: '' });
+            showToast('success', "Customer added successfully.");
         }
         setIsSubmitting(false);
     };
@@ -607,6 +628,16 @@ export default function CustomersPage() {
                                         onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                                         className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                                         placeholder="Enter phone number"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Referred By (Friend's Phone Number)</label>
+                                    <input
+                                        type="tel"
+                                        value={newCustomer.referred_by_phone || ''}
+                                        onChange={(e) => setNewCustomer({ ...newCustomer, referred_by_phone: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                        placeholder="Optional (e.g. 0244123456)"
                                     />
                                 </div>
 
