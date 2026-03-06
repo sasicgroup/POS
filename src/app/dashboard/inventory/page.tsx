@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { useToast } from '@/lib/toast-context';
-import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList, Upload, Download, FileSpreadsheet, Edit2, MoreVertical, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Check, Tag, Info, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList, Upload, Download, FileSpreadsheet, Edit2, MoreVertical, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Check, Tag, Info, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -12,7 +12,7 @@ import { getOptimizedImageUrl } from '@/lib/utils/image-utils';
 import JsBarcode from 'jsbarcode';
 
 export default function InventoryPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, hasPermission } = useAuth();
     const {
         products,
         isLoading,
@@ -223,6 +223,17 @@ export default function InventoryPage() {
     const [isScanning, setIsScanning] = useState(false);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+
+    if (!activeStore) return null;
+    if (!hasPermission('view_inventory')) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to view the inventory. Please contact your administrator.</p>
+            </div>
+        );
+    }
 
     // Image Compression Utility
     const compressImage = (file: File): Promise<string> => {

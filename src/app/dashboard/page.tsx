@@ -10,7 +10,8 @@ import {
     ArrowUpRight,
     ArrowDownRight,
     Package,
-    Clock
+    Clock,
+    ShieldAlert
 } from 'lucide-react';
 import {
     BarChart,
@@ -34,7 +35,9 @@ export default function DashboardPage() {
     });
     const [recentOrders, setRecentOrders] = useState<any[]>([]);
 
-    const [dateRange, setDateRange] = useState('7d'); // 1d, 7d, 1m, 3m, 6m, 1y
+    const [dateRange, setDateRange] = useState('7d'); // 1d, 7d, 1m, 3m, 6m, 1y, this_year, custom
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
 
     const [salesData, setSalesData] = useState<any[]>([]);
 
@@ -42,11 +45,11 @@ export default function DashboardPage() {
         if (activeStore) {
             fetchDashboardData();
         }
-    }, [activeStore]);
+    }, [activeStore, dateRange, customStartDate, customEndDate]);
 
     const fetchDashboardData = async () => {
         // Fetch Sales & Revenue (Total)
-        const { data: sales } = await supabase.from('sales').select('*').eq('store_id', activeStore?.id);
+        const { data: sales } = await supabase.from('sales').select('*').eq('store_id', activeStore?.id).neq('status', 'Refunded');
         const totalRevenue = sales?.reduce((acc, curr) => acc + (curr.total_amount || 0), 0) || 0;
         const totalOrders = sales?.length || 0;
 
@@ -185,6 +188,121 @@ export default function DashboardPage() {
             console.log('[Dashboard] 1m chart data:', result);
             return result;
         }
+        else if (dateRange === 'this_year') {
+            // This Year Monthly
+            const currentYear = now.getFullYear();
+            const months: { key: string; label: string; value: number }[] = [];
+
+            for (let i = 0; i <= now.getMonth(); i++) {
+                const d = new Date(currentYear, i, 1);
+                const key = `${currentYear}-${i}`;
+                months.push({
+                    key: key,
+                    label: d.toLocaleDateString('en-US', { month: 'short' }),
+                    value: 0
+                });
+            }
+
+            salesData.forEach(sale => {
+                const d = new Date(sale.created_at);
+                if (d.getFullYear() === currentYear) {
+                    const key = `${d.getFullYear()}-${d.getMonth()}`;
+                    const target = months.find(m => m.key === key);
+                    if (target) {
+                        target.value += (Number(sale.total_amount) || 0);
+                    }
+                }
+            });
+
+            return months.map(m => ({ label: m.label, value: m.value }));
+        }
+        else if (dateRange === 'custom' && customStartDate && customEndDate) {
+            // Custom Range - determine grouping (daily if <= 60 days, monthly if more)
+            const start = new Date(customStartDate);
+            const end = new Date(customEndDate);
+            const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+            if (diffDays <= 60) {
+                // Daily grouping
+                const days: { dateStr: string; label: string; value: number }[] = [];
+                for (let i = 0; i <= diffDays; i++) {
+                    const d = new Date(start);
+                    d.setDate(start.getDate() + i);
+                    const midnight = getMidnight(d);
+                    days.push({
+                        dateStr: midnight.toISOString().split('T')[0],
+                        label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                        value: 0
+                    });
+                }
+
+                salesData.forEach(sale => {
+                    const saleDate = new Date(sale.created_at);
+                    const saleDateStr = getMidnight(saleDate).toISOString().split('T')[0];
+                    const target = days.find(d => d.dateStr === saleDateStr);
+                    if (target) {
+                        target.value += (Number(sale.total_amount) || 0);
+                    }
+                });
+
+                return days.map(d => ({ label: d.label, value: d.value }));
+            } else {
+                // Monthly grouping
+                const months: { key: string; label: string; value: number }[] = [];
+                let curr = new Date(start.getFullYear(), start.getMonth(), 1);
+                while (curr <= end) {
+                    const key = `${curr.getFullYear()}-${curr.getMonth()}`;
+                    months.push({
+                        key: key,
+                        label: curr.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                        value: 0
+                    });
+                    curr.setMonth(curr.getMonth() + 1);
+                }
+
+                salesData.forEach(sale => {
+                    const d = new Date(sale.created_at);
+                    const key = `${d.getFullYear()}-${d.getMonth()}`;
+                    const target = months.find(m => m.key === key);
+                    if (target) {
+                        target.value += (Number(sale.total_amount) || 0);
+                    }
+                });
+
+                return months.map(m => ({ label: m.label, value: m.value }));
+            }
+        }
+        else if (dateRange === 'all') {
+            // All Time - Group by Month
+            const months: { key: string; label: string; value: number }[] = [];
+
+            // Find earliest sale
+            if (salesData.length === 0) return [];
+            const sorted = [...salesData].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            const firstDate = new Date(sorted[0].created_at);
+
+            let curr = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
+            while (curr <= now) {
+                const key = `${curr.getFullYear()}-${curr.getMonth()}`;
+                months.push({
+                    key: key,
+                    label: curr.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                    value: 0
+                });
+                curr.setMonth(curr.getMonth() + 1);
+            }
+
+            salesData.forEach(sale => {
+                const d = new Date(sale.created_at);
+                const key = `${d.getFullYear()}-${d.getMonth()}`;
+                const target = months.find(m => m.key === key);
+                if (target) {
+                    target.value += (Number(sale.total_amount) || 0);
+                }
+            });
+
+            return months.map(m => ({ label: m.label, value: m.value }));
+        }
         else {
             // Monthly View (3m, 6m, 1y)
             const monthCount = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : 12;
@@ -233,6 +351,24 @@ export default function DashboardPage() {
             </p>
         </div>
     );
+
+    const { hasPermission } = useAuth();
+    if (!hasPermission('view_dashboard')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view the Dashboard. Please contact your administrator if you believe this is an error.
+                </p>
+                <Link href="/dashboard/inventory" className="text-indigo-600 hover:text-indigo-700 font-medium">
+                    Go to Inventory
+                </Link>
+            </div>
+        );
+    }
 
     const cards = [
         {
@@ -323,9 +459,30 @@ export default function DashboardPage() {
                             <option value="1m">Last 30 Days</option>
                             <option value="3m">Last 3 Months</option>
                             <option value="6m">Last 6 Months</option>
-                            <option value="1y">Last Year</option>
+                            <option value="1y">Last Year (12m)</option>
+                            <option value="this_year">This Year</option>
+                            <option value="all">All Time</option>
+                            <option value="custom">Custom Range</option>
                         </select>
                     </div>
+
+                    {dateRange === 'custom' && (
+                        <div className="mb-4 flex items-center justify-end gap-2 animate-in slide-in-from-right-2 duration-300">
+                            <input
+                                type="date"
+                                value={customStartDate}
+                                onChange={(e) => setCustomStartDate(e.target.value)}
+                                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                            />
+                            <span className="text-xs text-slate-400">to</span>
+                            <input
+                                type="date"
+                                value={customEndDate}
+                                onChange={(e) => setCustomEndDate(e.target.value)}
+                                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                            />
+                        </div>
+                    )}
 
                     <div className="h-80 w-full mt-4">
                         {chartData.length > 0 && chartData.some(d => d.value > 0) ? (

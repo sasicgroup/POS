@@ -23,7 +23,19 @@ import {
     Scan,
     Settings as SettingsIcon,
     Save,
-    Users
+    Users,
+    Activity,
+    ShieldCheck,
+    Menu,
+    Bell,
+    LogOut,
+    Moon,
+    Sun,
+    ChevronDown,
+    Cloud,
+    CloudOff,
+    RefreshCw as RefreshIcon,
+    ShieldAlert
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useState, useEffect, useRef } from 'react';
@@ -55,8 +67,23 @@ interface Payment {
 }
 
 export default function InstallmentsPage() {
-    const { activeStore, user } = useAuth();
+    const { activeStore, user, hasPermission } = useAuth();
     const { showToast } = useToast();
+
+    if (!activeStore) return null;
+    if (!hasPermission('manage_installments')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to manage installments.
+                </p>
+            </div>
+        );
+    }
 
     const [installments, setInstallments] = useState<Installment[]>([]);
     const [allCustomers, setAllCustomers] = useState<any[]>([]);

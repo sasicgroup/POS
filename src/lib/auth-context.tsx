@@ -57,20 +57,72 @@ export interface Store {
 export const DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     owner: { all: true },
     manager: {
-        view_dashboard: true, view_analytics: true, view_inventory: true,
-        add_product: true, edit_product: true, delete_product: false,
-        adjust_stock: true, access_pos: true, process_returns: true,
-        give_discount: true, view_sales_history: true, view_customers: true,
-        manage_customers: true, view_employees: true, manage_employees: false,
-        access_settings: false, view_roles: false, manage_roles: false
+        view_dashboard: false,
+        access_tasks: true,
+        view_analytics: false,
+        view_inventory: true,
+        add_product: true,
+        edit_product: true,
+        delete_product: false,
+        adjust_stock: true,
+        access_pos: true,
+        process_sales: true,
+        view_sales_history: true,
+        manage_invoices: true,
+        manage_installments: true,
+        process_returns: true,
+        give_discount: true,
+        view_customers: true,
+        manage_customers: true,
+        access_loyalty: true,
+        access_referrals: true,
+        access_communication: true,
+        send_messages: true,
+        access_expenses: true,
+        view_financials: true,
+        access_reports: true,
+        access_ai: false,
+        access_ai_insights: false,
+        access_logs: false,
+        view_employees: true,
+        manage_employees: false,
+        access_settings: false,
+        view_roles: false,
+        manage_roles: false
     },
     staff: {
-        view_dashboard: true, view_analytics: false, view_inventory: true,
-        add_product: false, edit_product: false, delete_product: false,
-        adjust_stock: false, access_pos: true, process_returns: false,
-        give_discount: false, view_sales_history: false, view_customers: true,
-        manage_customers: true, view_employees: false, manage_employees: false,
-        access_settings: false, view_roles: false, manage_roles: false
+        view_dashboard: false, // Changed from true to false by default for security
+        access_tasks: true,
+        view_analytics: false,
+        view_inventory: true,
+        add_product: false,
+        edit_product: false,
+        delete_product: false,
+        adjust_stock: false,
+        access_pos: true,
+        process_sales: true,
+        view_sales_history: false,
+        manage_invoices: false,
+        manage_installments: true,
+        process_returns: false,
+        give_discount: false,
+        view_customers: true,
+        manage_customers: true,
+        access_loyalty: false,
+        access_referrals: false,
+        access_communication: true,
+        send_messages: true,
+        access_expenses: false,
+        view_financials: false,
+        access_reports: false,
+        access_ai: false,
+        access_ai_insights: false,
+        access_logs: false,
+        view_employees: false,
+        manage_employees: false,
+        access_settings: false,
+        view_roles: false,
+        manage_roles: false
     }
 };
 
@@ -176,9 +228,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                     if (accessData) accessIds = accessData.map(a => a.store_id);
 
-                    // 2. Also check if they are "home" based in a store
-                    const { data: freshEmp } = await supabase.from('employees').select('store_id').eq('id', currentUser.id).single();
-                    if (freshEmp?.store_id) accessIds.push(freshEmp.store_id);
+                    // 2. Strict Access: Removed the 'store_id' fallback from employees table
+                    // to ensure only explicit assignments in 'employee_access' are honored.
+                    // This fixes the issue of employees seeing details of a store they weren't assigned to.
                 }
 
                 // Fetch Stores
@@ -215,10 +267,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const lastActive = mappedStores.find((s: any) => s.id === storedStoreId);
                     const finalStore = lastActive || mappedStores[0];
                     setActiveStore(finalStore);
+
                     if (finalStore?.id) {
                         // Don't await this, let it load in background so we don't block Dashboard
                         loadSMSConfigFromDB(finalStore.id).catch(err => console.warn("Failed to load SMS config", err));
                     }
+                } else {
+                    // Important: Clear state if no stores are found for this user
+                    setStores([]);
+                    setActiveStore(null);
+                    localStorage.removeItem('sms_active_store_id');
                 }
             } catch (error) {
                 console.error("Auth init failed", error);
@@ -252,8 +310,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const { data: accessData } = await supabase.from('employee_access').select('store_id').eq('employee_id', loggedUser.id);
             if (accessData) accessIds = accessData.map(a => a.store_id);
 
-            const { data: freshEmp } = await supabase.from('employees').select('store_id').eq('id', loggedUser.id).single();
-            if (freshEmp?.store_id) accessIds.push(freshEmp.store_id);
+            // Strict Access: Only stores in employee_access are allowed
         }
 
         if (accessIds.length > 0) {
@@ -284,6 +341,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Background load for SMS config on login
                 loadSMSConfigFromDB(mappedStores[0].id).catch(err => console.error(err));
             }
+        } else {
+            // Important: Clear state if no stores are found
+            setStores([]); // Clear previous user stores
+            setActiveStore(null);
+            localStorage.removeItem('sms_active_store_id');
         }
 
         setUser(loggedUser);
@@ -948,7 +1010,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const createStore = async (name: string, location: string) => {
-        // ... existing implementation
+        if (user?.role !== 'owner') return;
         const tempId = 'temp-' + Date.now();
         const newStore: Store = { id: tempId, name, location, currency: 'GHS' };
         setStores(prev => [...prev, newStore]);
@@ -993,15 +1055,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const hasPermission = (permission: string) => {
         if (!user) return false;
+
+        // 1. Super-admin (Primary Account) bypasses all
+        if (user.id === 'owner-1') return true;
+
+        // 2. Strict Access: Deny granular permissions if no active store selected
+        if (!activeStore) return false;
+
+        // 3. User is an Owner of THIS store - bypass granular permission checks
         if (user.role === 'owner') return true;
 
-        // Get permissions from store settings or defaults
-        const currentPermissions = activeStore?.rolePermissions || DEFAULT_PERMISSIONS;
+        // 4. Get permissions from store config
+        const currentPermissions = activeStore.rolePermissions || DEFAULT_PERMISSIONS;
+        const role = user.role || 'staff';
+        const roleData = currentPermissions[role] || (DEFAULT_PERMISSIONS as any)[role] || {};
 
-        // If role doesn't exist in config, default to false
-        if (!currentPermissions[user.role]) return false;
-
-        return currentPermissions[user.role][permission] === true;
+        return roleData[permission] === true;
     };
 
     const updateRolePermissions = async (role: string, permissions: Record<string, boolean>) => {

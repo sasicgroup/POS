@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useInventory } from '@/lib/inventory-context';
 import { loadSMSConfigFromDB, sendNotification } from '@/lib/sms';
 import { useToast } from '@/lib/toast-context';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator, Package, DollarSign } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Smartphone, Receipt, RotateCcw, Scan, Camera, Tag, CheckSquare, Square, X, Users, Edit2, AlertTriangle, Loader2, Clock, PauseCircle, Calculator, Package, DollarSign, ShieldAlert } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '@/lib/supabase';
@@ -13,7 +13,7 @@ import { playBeep as playBeepSound, playSuccess as playSuccessSound, playError a
 import { getOptimizedImageUrl } from '@/lib/utils/image-utils';
 
 export default function SalesPage() {
-    const { activeStore, user, updateStoreSettings } = useAuth();
+    const { activeStore, user, updateStoreSettings, hasPermission } = useAuth();
     const {
         products,
         isLoading,
@@ -98,6 +98,17 @@ export default function SalesPage() {
     const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | 'installment' | 'susu' | null>(null);
     const [enabledPayments, setEnabledPayments] = useState<{ cash: boolean; momo: boolean; installment: boolean; susu: boolean }>({ cash: true, momo: true, installment: true, susu: false });
+
+    if (!activeStore) return null;
+    if (!hasPermission('process_sales')) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to access the Point of Sale. Please contact your administrator.</p>
+            </div>
+        );
+    }
     const [depositAmount, setDepositAmount] = useState('');
     const [showMobileCart, setShowMobileCart] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);

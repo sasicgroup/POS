@@ -15,13 +15,14 @@ import {
     DollarSign,
     MoreHorizontal,
     TrendingUp,
-    Sparkles
+    Sparkles,
+    ShieldAlert
 } from 'lucide-react';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function IncomeExpensesPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, hasPermission } = useAuth();
     const { showToast } = useToast();
     const [expenses, setExpenses] = useState<any[]>([]);
     const [sales, setSales] = useState<any[]>([]);
@@ -199,6 +200,16 @@ export default function IncomeExpensesPage() {
         setIsAddModalOpen(true);
     };
 
+    if (!activeStore) return null;
+    if (!hasPermission('view_financials')) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to view income and expenses. Please contact your administrator.</p>
+            </div>
+        );
+    }
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

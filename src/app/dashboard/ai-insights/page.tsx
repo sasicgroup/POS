@@ -18,7 +18,8 @@ import {
     BarChart3,
     Calendar,
     ArrowDownRight,
-    RefreshCcw
+    RefreshCcw,
+    ShieldAlert
 } from 'lucide-react';
 import { useToast } from '@/lib/toast-context';
 import { useState, useEffect, Suspense } from 'react';
@@ -77,7 +78,7 @@ interface RestockItem {
 }
 
 function AiInsightsContent() {
-    const { activeStore } = useAuth();
+    const { activeStore, hasPermission } = useAuth();
     const { updateProduct } = useInventory();
     const { showToast } = useToast();
     const router = useRouter();
@@ -170,7 +171,16 @@ function AiInsightsContent() {
     const fetchInsights = async () => {
         setIsLoading(true);
         try {
-            if (!activeStore?.id) return;
+            if (!activeStore) return null;
+            if (!hasPermission('access_ai_insights')) {
+                return (
+                    <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                        <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                        <p className="text-slate-500 max-w-sm">You do not have the required permissions to access AI business intelligence. Please contact your administrator.</p>
+                    </div>
+                );
+            }
 
             // 1. Parallel Data Fetching
             const [productsRes, salesRes, customersRes] = await Promise.all([
@@ -187,22 +197,22 @@ function AiInsightsContent() {
             // Get sales items from last 90 days to determine recent sales
             const ninetyDaysAgo = new Date();
             ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-            
+
             const { data: salesItems } = await supabase
                 .from('sale_items')
                 .select('product_id')
                 .gte('created_at', ninetyDaysAgo.toISOString());
-            
+
             const soldProductIds = new Set(salesItems?.map(i => i.product_id) || []);
             const now = new Date();
-            
+
             const potentialDeadStock: DeadStockItem[] = products
                 .filter(p => p.stock > 0)
                 .map(p => {
                     const productCreatedAt = new Date(p.created_at);
                     const daysSinceListed = Math.floor((now.getTime() - productCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
                     const hasSoldRecently = soldProductIds.has(p.id);
-                    
+
                     // Dead stock if listed more than 90 days ago AND hasn't sold in last 90 days
                     return {
                         product: p,
@@ -413,13 +423,13 @@ function AiInsightsContent() {
             // Analyze actual sales payment methods from the database
             const paymentCounts = new Map<string, number>();
             let totalSalesCount = 0;
-            
+
             sales.forEach(s => {
                 const method = s.payment_method || 'cash';
                 paymentCounts.set(method, (paymentCounts.get(method) || 0) + 1);
                 totalSalesCount++;
             });
-            
+
             // Convert to percentages for the 4 payment methods
             const paymentPercentages: { method: string; percentage: number }[] = [];
             if (totalSalesCount > 0) {
@@ -432,14 +442,14 @@ function AiInsightsContent() {
                     'installment_deposit': 'Installment',
                     'initial_deposit': 'Installment'
                 };
-                
+
                 // Calculate percentages for each payment method
                 paymentCounts.forEach((count, method) => {
                     const displayName = methodNames[method] || method;
                     const percentage = Math.round((count / totalSalesCount) * 100);
                     paymentPercentages.push({ method: displayName, percentage });
                 });
-                
+
                 // Sort by percentage descending
                 paymentPercentages.sort((a, b) => b.percentage - a.percentage);
             } else {
@@ -451,7 +461,7 @@ function AiInsightsContent() {
                     { method: 'Susu', percentage: 0 }
                 );
             }
-            
+
             setPaymentTrends(paymentPercentages);
 
             // --- 21. Discount Effectiveness ---

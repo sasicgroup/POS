@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
-import { Search, Filter, RefreshCw, User, Shield } from 'lucide-react';
+import { Search, Filter, RefreshCw, User, Shield, ShieldAlert } from 'lucide-react';
 
 export default function ActivityLogsPage() {
-    const { activeStore, user } = useAuth();
+    const { activeStore, user, hasPermission } = useAuth();
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [filterUser, setFilterUser] = useState('');
@@ -61,12 +61,17 @@ export default function ActivityLogsPage() {
         return matchesUser && matchesAction;
     });
 
-    if (!user || (user.role !== 'owner' && user.role !== 'manager')) {
+    if (!activeStore) return null;
+    if (!hasPermission('access_logs')) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
-                <Shield className="h-16 w-16 text-slate-300 mb-4" />
-                <h2 className="text-xl font-bold text-slate-800 dark:text-white">Access Restricted</h2>
-                <p className="text-slate-500 mt-2">Only Managers and Admins can view activity logs.</p>
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view activity logs.
+                </p>
             </div>
         );
     }

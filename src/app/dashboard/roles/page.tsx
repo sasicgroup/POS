@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/lib/toast-context';
 
 export default function RolesPage() {
-    const { activeStore, user, updateRolePermissions } = useAuth();
+    const { activeStore, user, updateRolePermissions, updateStoreSettings } = useAuth();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'permissions' | 'access'>('permissions');
 
@@ -88,12 +88,58 @@ export default function RolesPage() {
 
     // ... Keep Permissions Logic ...
     const PERMISSIONS = [
-        { module: 'Dashboard', actions: [{ id: 'view_dashboard', label: 'View Dashboard' }, { id: 'view_analytics', label: 'View Analytics & Reports' }] },
-        { module: 'Inventory', actions: [{ id: 'view_inventory', label: 'View Inventory' }, { id: 'add_product', label: 'Add Products' }, { id: 'edit_product', label: 'Edit Products' }, { id: 'delete_product', label: 'Delete Products' }, { id: 'adjust_stock', label: 'Adjust Stock Levels' }] },
-        { module: 'Sales (POS)', actions: [{ id: 'access_pos', label: 'Access POS' }, { id: 'process_returns', label: 'Process Returns' }, { id: 'give_discount', label: 'Give Discounts' }, { id: 'view_sales_history', label: 'View Sales History' }] },
-        { module: 'Customers', actions: [{ id: 'view_customers', label: 'View Customers' }, { id: 'manage_customers', label: 'Add/Edit/Delete Customers' }] },
-        { module: 'Employees', actions: [{ id: 'view_employees', label: 'View Employees' }, { id: 'manage_employees', label: 'Manage Employees & Roles' }] },
-        { module: 'Settings', actions: [{ id: 'access_settings', label: 'Access Store Settings' }, { id: 'view_roles', label: 'View Roles' }, { id: 'manage_roles', label: 'Manage Roles' }] }
+        {
+            module: 'Dashboard', actions: [
+                { id: 'view_dashboard', label: 'View Dashboard' },
+                { id: 'access_tasks', label: 'Tasks & Notes' }
+            ]
+        },
+        {
+            module: 'Inventory', actions: [
+                { id: 'view_inventory', label: 'View Inventory' },
+                { id: 'add_product', label: 'Add Products' },
+                { id: 'edit_product', label: 'Edit Products' },
+                { id: 'delete_product', label: 'Delete Products' },
+                { id: 'adjust_stock', label: 'Adjust Stock Levels' }
+            ]
+        },
+        {
+            module: 'Sales (POS)', actions: [
+                { id: 'process_sales', label: 'Process Sales (POS)' },
+                { id: 'view_sales_history', label: 'View Sales History' },
+                { id: 'manage_invoices', label: 'Manage Invoices' },
+                { id: 'manage_installments', label: 'Manage Installments' },
+                { id: 'process_returns', label: 'Process Returns' },
+                { id: 'give_discount', label: 'Give Discounts' }
+            ]
+        },
+        {
+            module: 'Customers', actions: [
+                { id: 'view_customers', label: 'View Customers' },
+                { id: 'manage_customers', label: 'Manage Customers' },
+                { id: 'access_loyalty', label: 'Loyalty Program' },
+                { id: 'access_referrals', label: 'Referral Program' },
+                { id: 'send_messages', label: 'Send Messages (SMS/WA)' }
+            ]
+        },
+        {
+            module: 'Analytics & Financials', actions: [
+                { id: 'view_analytics', label: 'View Analytics' },
+                { id: 'view_financials', label: 'Income & Expenses' },
+                { id: 'access_reports', label: 'Financial Reports' },
+                { id: 'access_ai_insights', label: 'AI Insights' },
+                { id: 'access_logs', label: 'Activity Logs' }
+            ]
+        },
+        {
+            module: 'Team & Admin', actions: [
+                { id: 'view_employees', label: 'View Employees' },
+                { id: 'manage_employees', label: 'Manage Employees' },
+                { id: 'access_settings', label: 'Access Store Settings' },
+                { id: 'view_roles', label: 'View Roles' },
+                { id: 'manage_roles', label: 'Manage Roles' }
+            ]
+        }
     ];
 
     const handlePermissionToggle = (role: string, permissionId: string) => {
@@ -110,26 +156,18 @@ export default function RolesPage() {
     };
 
     const handleSavePermissions = async () => {
-        if (!updateRolePermissions) return; // Guard
+        if (!activeStore?.id || !updateStoreSettings) return;
 
-        let success = true;
-
-        // Save Active Role First (Optimization)
-        const updated = await updateRolePermissions(activeRoleSelector, rolePermissions[activeRoleSelector]);
-        if (!updated) success = false;
-
-        // Optionally save others if changed? For now single save based on active view is safest or loop all.
-        // Let's loop all except owner
-        const rolesToSave = Object.keys(rolePermissions).filter(r => r !== 'owner' && r !== activeRoleSelector);
-        for (const role of rolesToSave) {
-            const ok = await updateRolePermissions(role, rolePermissions[role]);
-            if (!ok) success = false;
-        }
+        // Save everything at once to prevent race conditions
+        const { success, error } = await updateStoreSettings({
+            rolePermissions: rolePermissions
+        });
 
         if (success) {
             showToast('success', 'Permissions saved successfully');
         } else {
-            showToast('error', 'Failed to save permissions. Ensure you have the latest database schema.');
+            console.error(error);
+            showToast('error', 'Failed to save permissions');
         }
     };
 

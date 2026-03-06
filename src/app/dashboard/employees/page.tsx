@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { Plus, Search, MoreVertical, Shield, User as UserIcon, X, Edit2, Trash2, BarChart3, TrendingUp, Award, Calendar } from 'lucide-react';
+import { Plus, Search, MoreVertical, Shield, User as UserIcon, X, Edit2, Trash2, BarChart3, TrendingUp, Award, Calendar, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
@@ -30,6 +30,13 @@ const startOfMonth = (date: Date) => {
     return d;
 };
 
+const startOfYear = (date: Date) => {
+    const d = new Date(date);
+    d.setMonth(0, 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
 interface Employee {
     id: any;
     name: string;
@@ -52,6 +59,21 @@ interface Employee {
 export default function EmployeesPage() {
     const { activeStore, unlockAccount, hasPermission } = useAuth();
     const { showToast } = useToast();
+
+    if (!activeStore) return null;
+    if (!hasPermission('view_employees')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view or manage employees.
+                </p>
+            </div>
+        );
+    }
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [deleteConfirmId, setDeleteConfirmId] = useState<any>(null);
@@ -69,7 +91,9 @@ export default function EmployeesPage() {
     // Performance Stats State
     const [activeTab, setActiveTab] = useState<'team' | 'performance'>('team');
     const [perfStats, setPerfStats] = useState<any[]>([]);
-    const [perfTimeframe, setPerfTimeframe] = useState('month'); // today, week, month
+    const [perfTimeframe, setPerfTimeframe] = useState('month'); // today, week, month, year, custom
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
 
     useEffect(() => {
         if (activeStore?.id) fetchEmployees();
@@ -79,9 +103,13 @@ export default function EmployeesPage() {
     useEffect(() => {
         if (activeStore?.id) {
             fetchEmployees();
-            if (activeTab === 'performance') fetchPerformance();
+            if (activeTab === 'performance') {
+                if (perfTimeframe !== 'custom' || (customStartDate && customEndDate)) {
+                    fetchPerformance();
+                }
+            }
         }
-    }, [activeStore?.id, activeTab, perfTimeframe]);
+    }, [activeStore?.id, activeTab, perfTimeframe, customStartDate, customEndDate]);
 
     const fetchEmployees = async () => {
         if (!activeStore?.id) return;
@@ -106,7 +134,8 @@ export default function EmployeesPage() {
                 created_at,
                 employees (name, avatar, role)
             `)
-            .eq('store_id', activeStore.id);
+            .eq('store_id', activeStore.id)
+            .neq('status', 'Refunded');
 
         // Apply basic date filter at DB level to reduce load
         const now = new Date();
@@ -116,6 +145,18 @@ export default function EmployeesPage() {
             query = query.gte('created_at', startOfWeek(now).toISOString());
         } else if (perfTimeframe === 'month') {
             query = query.gte('created_at', startOfMonth(now).toISOString());
+        } else if (perfTimeframe === 'year') {
+            query = query.gte('created_at', startOfYear(now).toISOString());
+        } else if (perfTimeframe === 'last_year') {
+            const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
+            const lastYearEnd = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+            query = query.gte('created_at', lastYearStart.toISOString())
+                .lte('created_at', lastYearEnd.toISOString());
+        } else if (perfTimeframe === 'all') {
+            // No filter
+        } else if (perfTimeframe === 'custom' && customStartDate && customEndDate) {
+            query = query.gte('created_at', new Date(customStartDate).toISOString())
+                .lte('created_at', new Date(customEndDate + 'T23:59:59').toISOString());
         }
 
         const { data: sales, error } = await query;
@@ -444,7 +485,28 @@ export default function EmployeesPage() {
                                 <option value="today">Today</option>
                                 <option value="week">This Week</option>
                                 <option value="month">This Month</option>
+                                <option value="year">This Year</option>
+                                <option value="last_year">Last Year</option>
+                                <option value="all">All Time</option>
+                                <option value="custom">Custom Range</option>
                             </select>
+                            {perfTimeframe === 'custom' && (
+                                <div className="flex items-center gap-2 animate-in slide-in-from-right-2 duration-300">
+                                    <input
+                                        type="date"
+                                        value={customStartDate}
+                                        onChange={(e) => setCustomStartDate(e.target.value)}
+                                        className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none dark:bg-slate-800 dark:border-slate-700"
+                                    />
+                                    <span className="text-xs text-slate-400">to</span>
+                                    <input
+                                        type="date"
+                                        value={customEndDate}
+                                        onChange={(e) => setCustomEndDate(e.target.value)}
+                                        className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 outline-none dark:bg-slate-800 dark:border-slate-700"
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -595,7 +657,6 @@ export default function EmployeesPage() {
                                     >
                                         <option value="staff">Staff</option>
                                         <option value="manager">Manager</option>
-                                        <option value="owner">Owner</option>
                                     </select>
                                 </div>
                                 <div>

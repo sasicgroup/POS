@@ -5,7 +5,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
     LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts';
-import { Calendar, TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star, Download, FileText, FileSpreadsheet, ChevronDown } from 'lucide-react';
+import { Calendar, TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star, Download, FileText, FileSpreadsheet, ChevronDown, ShieldAlert } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -16,6 +16,21 @@ export default function ReportsPage() {
     const [activeTab, setActiveTab] = useState('financials');
     const [loading, setLoading] = useState(true);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+
+    if (!activeStore) return null;
+    if (!hasPermission('access_reports')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view store reports.
+                </p>
+            </div>
+        );
+    }
 
     // Financial Data State
     const [hourlySalesData, setHourlySalesData] = useState<any[]>([]);
@@ -60,13 +75,13 @@ export default function ReportsPage() {
             if (products && salesItems) {
                 const soldProductIds = new Set(salesItems.map(i => i.product_id));
                 const now = new Date();
-                
+
                 // Dead stock: Products listed more than 90 days ago that haven't sold in the last 90 days
                 const dead = products.filter(p => {
                     const productCreatedAt = new Date(p.created_at);
                     const daysSinceListed = Math.floor((now.getTime() - productCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
                     const hasSoldRecently = soldProductIds.has(p.id);
-                    
+
                     // Dead stock if listed more than 90 days ago AND hasn't sold in last 90 days
                     return daysSinceListed > 90 && !hasSoldRecently;
                 });
@@ -208,14 +223,10 @@ export default function ReportsPage() {
     if (!activeStore) return null;
     if (!hasPermission('view_analytics')) {
         return (
-            <div className="flex h-[50vh] flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-300">
-                <div className="rounded-full bg-slate-100 p-4 mb-4 dark:bg-slate-800">
-                    <TrendingUp className="h-8 w-8 text-slate-400" />
-                </div>
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Access Denied</h2>
-                <p className="max-w-xs text-sm text-slate-500 dark:text-slate-400 mt-2">
-                    You do not have permission to view analytics and reports.
-                </p>
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to view analytics and reports. Please contact your administrator.</p>
             </div>
         );
     }

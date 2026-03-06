@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-import { Search, Calendar, Filter, ArrowUpRight, ArrowDownRight, Printer, Eye, X, FileText, ChevronDown, Download, Phone, User as UserIcon, Package, Trash2, Undo2 } from 'lucide-react';
+import { Search, Calendar, Filter, ArrowUpRight, ArrowDownRight, Printer, Eye, X, FileText, ChevronDown, Download, Phone, User as UserIcon, Package, Trash2, Undo2, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -16,8 +16,10 @@ interface Sale {
     payment_method: string;
     status: string;
     created_at: string;
-    customers?: { name: string } | null;
-    employees?: { name: string } | null;
+    customer_id?: string | null;
+    employee_id?: string | null;
+    customers?: { id: string, name: string } | null;
+    employees?: { id: string, name: string } | null;
     receipt_number?: string;
     points_earned?: number;
     points_redeemed?: number;
@@ -27,8 +29,23 @@ interface Sale {
 }
 
 export default function SalesHistoryPage() {
-    const { activeStore, user } = useAuth();
+    const { activeStore, user, hasPermission } = useAuth();
     const { showToast } = useToast();
+
+    if (!activeStore) return null;
+    if (!hasPermission('view_sales_history')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view sales history.
+                </p>
+            </div>
+        );
+    }
     const [sales, setSales] = useState<Sale[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -42,7 +59,9 @@ export default function SalesHistoryPage() {
 
     // Filter State
     const [showFilterMenu, setShowFilterMenu] = useState(false);
-    const [dateFilter, setDateFilter] = useState('all'); // all, today, week, month
+    const [dateFilter, setDateFilter] = useState('all'); // all, today, week, month, year, custom
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
 
     // Refund State
     const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
@@ -110,6 +129,20 @@ export default function SalesHistoryPage() {
 
             // 3. Update Sale Status
             await supabase.from('sales').update({ status: 'Refunded' }).eq('id', selectedSale.id);
+
+            // 4. Update Customer Total Spent
+            if (selectedSale.customer_id) {
+                const { data: customerData } = await supabase
+                    .from('customers')
+                    .select('total_spent')
+                    .eq('id', selectedSale.customer_id)
+                    .single();
+
+                if (customerData) {
+                    const newTotalSpent = Math.max(0, (customerData.total_spent || 0) - refundAmount);
+                    await supabase.from('customers').update({ total_spent: newTotalSpent }).eq('id', selectedSale.customer_id);
+                }
+            }
 
             showToast('success', `Refund processed: GHS ${refundAmount.toFixed(2)}`);
             setIsRefundModalOpen(false);
@@ -323,6 +356,14 @@ export default function SalesHistoryPage() {
         if (dateFilter === '3m') return d >= subMonths(3);
         if (dateFilter === '6m') return d >= subMonths(6);
         if (dateFilter === '1y') return d >= subMonths(12);
+        if (dateFilter === 'year') return d.getFullYear() === now.getFullYear();
+        if (dateFilter === 'custom' && customStartDate && customEndDate) {
+            const start = new Date(customStartDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(customEndDate);
+            end.setHours(23, 59, 59, 999);
+            return d >= start && d <= end;
+        }
 
         return true;
     };
@@ -355,7 +396,7 @@ export default function SalesHistoryPage() {
                         <>
                             <div className="fixed inset-0 z-10" onClick={() => setShowFilterMenu(false)} />
                             <div className="absolute top-12 right-0 z-20 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-                                {['all', '1d', '7d', '1m', '3m', '6m', '1y'].map((filter) => (
+                                {['all', '1d', '7d', '1m', '3m', '6m', '1y', 'year', 'custom'].map((filter) => (
                                     <button
                                         key={filter}
                                         onClick={() => { setDateFilter(filter); setShowFilterMenu(false); }}
@@ -367,7 +408,9 @@ export default function SalesHistoryPage() {
                                                     filter === '7d' ? 'Last 7 Days' :
                                                         filter === '1m' ? 'Last 30 Days' :
                                                             filter === '3m' ? 'Last 3 Months' :
-                                                                filter === '6m' ? 'Last 6 Months' : 'Last Year'}
+                                                                filter === '6m' ? 'Last 6 Months' :
+                                                                    filter === '1y' ? 'Last Year' :
+                                                                        filter === 'year' ? 'This Year' : 'Custom Range'}
                                         </span>
                                         {dateFilter === filter && <div className="h-1.5 w-1.5 rounded-full bg-current" />}
                                     </button>
@@ -384,6 +427,29 @@ export default function SalesHistoryPage() {
                     </button>
                 </div>
             </div>
+
+            {dateFilter === 'custom' && (
+                <div className="flex items-center justify-end gap-3 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-500">From:</label>
+                        <input
+                            type="date"
+                            value={customStartDate}
+                            onChange={(e) => setCustomStartDate(e.target.value)}
+                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 outline-none dark:bg-slate-900 dark:border-slate-800 dark:text-white"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-500">To:</label>
+                        <input
+                            type="date"
+                            value={customEndDate}
+                            onChange={(e) => setCustomEndDate(e.target.value)}
+                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 outline-none dark:bg-slate-900 dark:border-slate-800 dark:text-white"
+                        />
+                    </div>
+                </div>
+            )}
 
             <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <Search className="h-5 w-5 text-slate-400" />

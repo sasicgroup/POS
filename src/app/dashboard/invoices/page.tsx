@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { useInventory } from '@/lib/inventory-context';
 import { useAuth } from '@/lib/auth-context';
-import { Plus, Trash2, Download, Printer, FileText, Search, User, Calendar, CreditCard } from 'lucide-react';
+import { Plus, Trash2, Download, Printer, FileText, Search, User, Calendar, CreditCard, ShieldAlert } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useToast } from '@/lib/toast-context';
@@ -17,9 +17,24 @@ interface jsPDFWithAutoTable extends jsPDF {
 }
 
 export default function InvoiceGenerator() {
-    const { user, activeStore } = useAuth();
+    const { user, activeStore, hasPermission } = useAuth();
     const { products } = useInventory();
     const { showToast } = useToast();
+
+    if (!activeStore) return null;
+    if (!hasPermission('manage_invoices')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to manage or generate invoices.
+                </p>
+            </div>
+        );
+    }
 
     // Invoice Meta
     const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);

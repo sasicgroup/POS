@@ -16,14 +16,15 @@ import {
     Search,
     Bell,
     Clock,
-    AlertTriangle
+    AlertTriangle,
+    ShieldAlert
 } from 'lucide-react';
 import { sendNotification, getSMSConfig, updateSMSConfig, type SMSConfig, getSMSBalance, sendDirectMessage, loadSMSConfigFromDB, getSMSHistory } from '@/lib/sms';
 import { supabase } from '@/lib/supabase';
 import { useEffect } from 'react';
 
 export default function CommunicationPage() {
-    const { activeStore, user } = useAuth();
+    const { activeStore, user, hasPermission } = useAuth();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'compose' | 'templates' | 'automations' | 'history'>('compose');
     const [selectedChannel, setSelectedChannel] = useState<'sms' | 'whatsapp'>('sms');
@@ -147,6 +148,15 @@ export default function CommunicationPage() {
     const placeholders = ['{Name}', '{StoreName}', '{Points}', '{LastVisit}', '{Staff}', '{Receipt}'];
 
     if (!activeStore) return null;
+    if (!hasPermission('send_messages')) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to send broadcasts or manage communications. Please contact your administrator.</p>
+            </div>
+        );
+    }
 
     const insertPlaceholder = (ph: string) => {
         setMessageContent(prev => prev + ' ' + ph + ' ');

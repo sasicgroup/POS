@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { Plus, Search, CheckSquare, StickyNote, Calendar, User, Flag, CheckCircle, Circle, Trash2, Edit2, X, Clock, Pin, Palette } from 'lucide-react';
+import { Plus, Search, CheckSquare, StickyNote, Calendar, User, Flag, CheckCircle, Circle, Trash2, Edit2, X, Clock, Pin, Palette, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
@@ -34,8 +34,23 @@ interface Note {
 const colors = ['#ffffff', '#fecaca', '#fde047', '#bbf7d0', '#bfdbfe', '#e9d5ff'];
 
 export default function TasksNotesPage() {
-    const { activeStore, user } = useAuth();
+    const { activeStore, user, hasPermission } = useAuth();
     const { showToast } = useToast();
+
+    if (!activeStore) return null;
+    if (!hasPermission('access_tasks')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to access tasks and notes.
+                </p>
+            </div>
+        );
+    }
 
     const [activeTab, setActiveTab] = useState<'tasks' | 'notes'>('tasks');
     const [tasks, setTasks] = useState<Task[]>([]);

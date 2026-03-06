@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Plus, User, Phone, ShoppingBag, Calendar, ArrowUpRight, MoreHorizontal, Mail, MapPin, Pencil, Check, X } from 'lucide-react';
+import { Search, Plus, User, Phone, ShoppingBag, Calendar, ArrowUpRight, MoreHorizontal, Mail, MapPin, Pencil, Check, X, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -74,6 +74,7 @@ export default function CustomersPage() {
                 )
             `)
             .eq('customer_id', customerId)
+            .neq('status', 'Refunded')
             .order('created_at', { ascending: false });
 
         if (sales) setCustomerHistory(sales);
@@ -98,6 +99,8 @@ export default function CustomersPage() {
         setEditPhone('');
         setEditPoints(0);
     }, [selectedCustomer]);
+
+    const { hasPermission } = useAuth();
 
     const handleUpdateName = async () => {
         if (!selectedCustomer || !activeStore?.id || !editName.trim()) return;
@@ -289,6 +292,32 @@ export default function CustomersPage() {
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.phone && c.phone.includes(searchQuery))
     );
+
+    if (!activeStore) return (
+        <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+            <div className="bg-indigo-50 p-6 rounded-full dark:bg-slate-800 mb-6">
+                <ShoppingBag className="w-12 h-12 text-indigo-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Store Selected</h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                Please select a store from the dropdown menu in the header to view customers.
+            </p>
+        </div>
+    );
+
+    if (!hasPermission('view_customers')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view or manage customers.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">

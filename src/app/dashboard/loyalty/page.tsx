@@ -17,7 +17,8 @@ import {
     AlertCircle,
     CheckCircle,
     Loader2,
-    History as HistoryIcon // Rename to avoid DOM conflict
+    History as HistoryIcon, // Rename to avoid DOM conflict
+    ShieldAlert
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useState, useEffect } from 'react';
@@ -26,9 +27,35 @@ import { useInventory } from '@/lib/inventory-context';
 import { RefreshCcw } from 'lucide-react';
 
 export default function LoyaltyPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, hasPermission } = useAuth();
     const { refreshLoyaltyConfig, syncAllProductsToLoyalty, loyaltyConfig } = useInventory();
     const [activeTab, setActiveTab] = useState('overview');
+
+    if (!activeStore) return (
+        <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+            <div className="bg-indigo-50 p-6 rounded-full dark:bg-slate-800 mb-6">
+                <Award className="w-12 h-12 text-indigo-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Store Selected</h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                Please select a store from the dropdown menu in the header to view loyalty settings.
+            </p>
+        </div>
+    );
+
+    if (!hasPermission('access_loyalty')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to access the Loyalty Program.
+                </p>
+            </div>
+        );
+    }
 
     // --- Redemption Logic State ---
     const [phone, setPhone] = useState('');
@@ -289,7 +316,7 @@ export default function LoyaltyPage() {
                     pointsPerCurrency: settingsData.points_per_currency,
                     redemptionRate: settingsData.redemption_rate,
                     minRedemptionPoints: settingsData.min_points_to_redeem,
-                    expiryMonths: settingsData.expiry_months || 12
+                    expiryMonths: settingsData.expiry_months ?? 12
                 });
             } else if (!settingsData && !settingsError) {
                 // Initialize if missing
@@ -297,7 +324,9 @@ export default function LoyaltyPage() {
                     store_id: activeStore.id,
                     points_per_currency: 1,
                     redemption_rate: 0.05,
-                    min_points_to_redeem: 100
+                    min_points_to_redeem: 100,
+                    expiry_months: 12,
+                    enabled: true
                 });
             }
 

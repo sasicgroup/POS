@@ -146,20 +146,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const navigation = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
         { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
-        { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
-        { name: 'Invoices', href: '/dashboard/invoices', icon: FileText, permission: 'access_pos' },
-        { name: 'Tasks & Notes', href: '/dashboard/tasks', icon: ListTodo, permission: 'view_dashboard' },
+        { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'process_sales' },
+        { name: 'Invoices', href: '/dashboard/invoices', icon: FileText, permission: 'manage_invoices' },
+        { name: 'Tasks & Notes', href: '/dashboard/tasks', icon: ListTodo, permission: 'access_tasks' },
         { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock, permission: 'view_sales_history' },
-        { name: 'Installments', href: '/dashboard/installments', icon: CreditCard, permission: 'access_pos' },
-        { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'view_analytics' },
-        { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award, permission: 'manage_customers' },
+        { name: 'Installments', href: '/dashboard/installments', icon: CreditCard, permission: 'manage_installments' },
+        { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'access_ai_insights' },
+        { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award, permission: 'access_loyalty' },
         { name: 'Customers', href: '/dashboard/customers', icon: Users, permission: 'view_customers' },
-        { name: 'Employees', href: '/dashboard/employees', icon: CreditCard, permission: 'view_employees' },
-        { name: 'Income / Expenses', href: '/dashboard/income-expenses', icon: Receipt, permission: 'view_analytics' },
-        { name: 'Reports', href: '/dashboard/reports', icon: TrendingUp, permission: 'view_analytics' },
-        { name: 'Activity Logs', href: '/dashboard/logs', icon: Activity, permission: 'view_analytics' },
+        { name: 'Employees', href: '/dashboard/employees', icon: Users, permission: 'view_employees' },
+        { name: 'Income / Expenses', href: '/dashboard/income-expenses', icon: Receipt, permission: 'view_financials' },
+        { name: 'Reports', href: '/dashboard/reports', icon: TrendingUp, permission: 'access_reports' },
+        { name: 'Activity Logs', href: '/dashboard/logs', icon: Activity, permission: 'access_logs' },
         { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck, permission: 'view_roles' },
-        { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare, permission: 'manage_customers' },
+        { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare, permission: 'send_messages' },
         { name: 'HQ Dashboard', href: '/dashboard/hq', icon: Globe, permission: 'owner_only' },
         { name: 'Global Settings', href: '/dashboard/global-settings', icon: Globe, permission: 'owner_only' },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
@@ -335,16 +335,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                             </div>
                                         </button>
                                     ))}
-                                    <div className="my-1 border-t border-slate-100 dark:border-slate-800"></div>
-                                    <button
-                                        onClick={() => {
-                                            setIsStoreMenuOpen(false);
-                                            setIsAddStoreModalOpen(true);
-                                        }}
-                                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30"
-                                    >
-                                        + Add New Store
-                                    </button>
+                                    {user.role === 'owner' && (
+                                        <>
+                                            <div className="my-1 border-t border-slate-100 dark:border-slate-800"></div>
+                                            <button
+                                                onClick={() => {
+                                                    setIsStoreMenuOpen(false);
+                                                    setIsAddStoreModalOpen(true);
+                                                }}
+                                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30"
+                                            >
+                                                + Add New Store
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </>
                         )}
@@ -428,12 +432,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             {/* Mobile Bottom Navigation */}
             <div className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 px-1 dark:border-slate-800 dark:bg-slate-950/95 lg:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] pb-safe">
                 {[
-                    { name: 'Home', href: '/dashboard', icon: LayoutDashboard },
-                    { name: 'Inventory', href: '/dashboard/inventory', icon: Package },
-                    { name: 'Sales', href: '/dashboard/sales', icon: ShoppingBag },
-                    { name: 'Customers', href: '/dashboard/customers', icon: Users },
-                    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                ].map((item) => {
+                    { name: 'Home', href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
+                    { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
+                    { name: 'Sales', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
+                    { name: 'Customers', href: '/dashboard/customers', icon: Users, permission: 'view_customers' },
+                    { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
+                ].filter(item => {
+                    if (item.permission === 'owner_only') return user.role === 'owner';
+                    return !item.permission || hasPermission(item.permission);
+                }).map((item) => {
                     const isActive = pathname === item.href;
                     return (
                         <Link
@@ -449,8 +456,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Add New Store Modal */}
-            {/* Add New Store Modal */}
-            {isAddStoreModalOpen && (
+            {isAddStoreModalOpen && user.role === 'owner' && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
                     <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-slate-900 animate-in zoom-in-95 duration-200">
                         <div className="flex items-center justify-between mb-6">
