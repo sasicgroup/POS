@@ -294,7 +294,22 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
         await loadBusinesses();
     };
 
-    const startViewAs = (business: Business, mode: 'read_only' | 'full_access') => {
+    const startViewAs = async (business: Business, mode: 'read_only' | 'full_access') => {
+        // Fetch the owner employee of this business
+        const { data: owner } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('business_id', business.id)
+            .eq('role', 'owner')
+            .is('deleted_at', null)
+            .maybeSingle();
+
+        if (!owner) {
+            alert('No owner account found for this business. Please create one first.');
+            return;
+        }
+
+        // 1. Set the viewas session
         const session: ViewAsSession = {
             business_id: business.id,
             business_name: business.name,
@@ -303,13 +318,31 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
         };
         setViewAsSession(session);
         localStorage.setItem('sms_viewas_session', JSON.stringify(session));
-        // Redirect to the business's dashboard
-        window.location.href = `/dashboard?viewas=${business.id}`;
+
+        // 2. Inject the owner as a temporary sms_user (so auth-context loads their stores)
+        const tempUser = {
+            id: owner.id,
+            name: owner.name,
+            username: owner.username,
+            role: owner.role,
+            pin: owner.pin,
+            phone: owner.phone,
+            otp_enabled: false,
+        };
+        localStorage.setItem('sms_user', JSON.stringify(tempUser));
+        localStorage.setItem('sms_business_id', business.id);
+        localStorage.removeItem('sms_active_store_id'); // Force fresh store load
+
+        // 3. Navigate to dashboard
+        window.location.href = '/dashboard';
     };
 
     const exitViewAs = () => {
         setViewAsSession(null);
         localStorage.removeItem('sms_viewas_session');
+        localStorage.removeItem('sms_user');           // Remove temp owner session
+        localStorage.removeItem('sms_active_store_id');
+        localStorage.removeItem('sms_business_id');
         window.location.href = '/super-admin/dashboard';
     };
 

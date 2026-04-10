@@ -239,7 +239,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     if (userStores) validStores = userStores;
                 } else {
                     if (currentUser.id === 'owner-1' || currentUser.role === 'owner') {
-                        const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+                        // Filter by business_id if available (supports view-as and multi-tenant isolation)
+                        const businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
+                        let query = supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+                        if (businessId) query = (query as any).eq('business_id', businessId);
+                        const { data: all } = await query;
                         if (all) validStores = all;
                     }
                 }
@@ -317,7 +321,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
             if (userStores) validStores = userStores;
         } else if (loggedUser.id === 'owner-1' || loggedUser.role === 'owner') {
-            const { data: all } = await supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+            // Filter by business_id if available (supports view-as and multi-tenant isolation)
+            const businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
+            let query = supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+            if (businessId) query = (query as any).eq('business_id', businessId);
+            const { data: all } = await query;
             if (all) validStores = all;
         }
 
