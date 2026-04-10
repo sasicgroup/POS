@@ -98,26 +98,13 @@ export default function SalesPage() {
     const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo' | 'installment' | 'susu' | null>(null);
     const [enabledPayments, setEnabledPayments] = useState<{ cash: boolean; momo: boolean; installment: boolean; susu: boolean }>({ cash: true, momo: true, installment: true, susu: false });
-
-    if (!activeStore) return null;
-    if (!hasPermission('process_sales')) {
-        return (
-            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
-                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
-                <p className="text-slate-500 max-w-sm">You do not have the required permissions to access the Point of Sale. Please contact your administrator.</p>
-            </div>
-        );
-    }
+    
+    // All state declarations MUST be before early returns (Rules of Hooks)
     const [depositAmount, setDepositAmount] = useState('');
     const [showMobileCart, setShowMobileCart] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
 
-
-
-
-
-    // Scanner Logic - must be declared before early return
+    // Scanner Logic
     const [cameraError, setCameraError] = useState('');
     const scannerRef = useRef<Html5Qrcode | null>(null);
     const [registerId, setRegisterId] = useState('Main-01');
@@ -127,6 +114,13 @@ export default function SalesPage() {
     const [tempRegisterId, setTempRegisterId] = useState('');
     const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
+    // Parked Orders Logic
+    const [parkedOrders, setParkedOrders] = useState<any[]>([]);
+    const [isParkedModalOpen, setIsParkedModalOpen] = useState(false);
+
+
+
+    // useEffect hooks - all state is now defined above
     useEffect(() => {
         const storedRegister = localStorage.getItem('sms_register_id');
         if (storedRegister) setRegisterId(storedRegister);
@@ -159,10 +153,8 @@ export default function SalesPage() {
         }
     }, [activeStore]);
 
-    // --- Parked Orders Logic ---
-    const [parkedOrders, setParkedOrders] = useState<any[]>([]);
-    const [isParkedModalOpen, setIsParkedModalOpen] = useState(false);
 
+    // Parked orders helper function and effects
     const fetchParkedOrders = async () => {
         if (!activeStore) return;
         const { data } = await supabase
@@ -352,10 +344,6 @@ export default function SalesPage() {
             setDepositAmount('');
         }
     }, [paymentMethod, installmentSettings, grandTotal]);
-
-
-    // Early return AFTER all hooks
-    if (!activeStore) return null;
 
     // Audio Logic replaced with Web Audio API Utility
     const playBeep = () => {
@@ -796,6 +784,17 @@ export default function SalesPage() {
 
 
     // ... (keep existing scanner/modal logic)
+
+    if (!activeStore) return null;
+    if (!hasPermission('process_sales')) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to access the Point of Sale. Please contact your administrator.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="h-[calc(100vh-10rem)] sm:h-[calc(100vh-11rem)] lg:h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-bottom-4 duration-500 relative flex flex-col lg:flex-row gap-2 sm:gap-4 lg:gap-6 overflow-hidden">

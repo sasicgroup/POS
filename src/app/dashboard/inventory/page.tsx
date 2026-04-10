@@ -223,17 +223,20 @@ export default function InventoryPage() {
     const [isScanning, setIsScanning] = useState(false);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+    
+    // State declarations MUST be before early returns (Rules of Hooks)
+    const [aiInsights, setAiInsights] = useState<{ reorderCandidates: any[], totalValue: number, lowStockCount: number }>({ reorderCandidates: [], totalValue: 0, lowStockCount: 0 });
+    const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+    
+    // Scanner and editing states - BEFORE useRefs
+    const [cameraError, setCameraError] = useState('');
+    const [editingId, setEditingId] = useState<any | null>(null);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: number, name: string } | null>(null);
 
-    if (!activeStore) return null;
-    if (!hasPermission('view_inventory')) {
-        return (
-            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
-                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
-                <p className="text-slate-500 max-w-sm">You do not have the required permissions to view the inventory. Please contact your administrator.</p>
-            </div>
-        );
-    }
+    // All useRef hooks must be declared AFTER all useState hooks
+    const observer = useRef<IntersectionObserver | null>(null);
+    const loadMoreRef = useRef<HTMLDivElement | null>(null);
+    const scannerRef = useRef<Html5Qrcode | null>(null);
 
     // Image Compression Utility
     const compressImage = (file: File): Promise<string> => {
@@ -276,15 +279,8 @@ export default function InventoryPage() {
             reader.onerror = reject;
         });
     };
-    const [aiInsights, setAiInsights] = useState<{ reorderCandidates: any[], totalValue: number, lowStockCount: number }>({ reorderCandidates: [], totalValue: 0, lowStockCount: 0 });
-
-    // Patch: Ensure scanner stops if component unmounts
-    useEffect(() => {
-        return () => {
-            // Cleanup global scanner if needed, though ref cleanup covers mostly
-        }
-    }, []);
-
+    
+    // Helper functions and effects follow
     const getEmbedUrl = (url: string) => {
         if (!url) return '';
         // Handle YouTube
@@ -340,9 +336,7 @@ export default function InventoryPage() {
         return 0; // Keeping original order (usually insertion order)
     });
 
-    // Pagination/Lazy Loading
-    const observer = useRef<IntersectionObserver | null>(null);
-    const loadMoreRef = useRef<HTMLDivElement | null>(null);
+    // useEffect for Pagination/Lazy Loading
     useEffect(() => {
         if (!loadMoreRef.current) return;
         if (observer.current) observer.current.disconnect();
@@ -369,8 +363,6 @@ export default function InventoryPage() {
         }
     };
 
-
-    const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
 
     const handleBulkDelete = () => {
         if (selectedProducts.length === 0) return;
@@ -451,11 +443,7 @@ export default function InventoryPage() {
         printWindow.focus();
     };
 
-    // Scanner Logic
-    // Scanner Logic
-    const [cameraError, setCameraError] = useState('');
-    const scannerRef = useRef<Html5Qrcode | null>(null);
-
+    // Scanner useEffect
     useEffect(() => {
         if (isScanning) {
             setCameraError('');
@@ -559,9 +547,6 @@ export default function InventoryPage() {
             showToast('info', 'Product not found. Create a new one with this SKU.');
         }
     };
-
-    const [editingId, setEditingId] = useState<any | null>(null);
-    const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: number, name: string } | null>(null);
 
     // Dynamic loyalty point calculation when price or config changes
     useEffect(() => {
@@ -704,6 +689,15 @@ export default function InventoryPage() {
     };
 
     if (!activeStore) return null;
+    if (!hasPermission('view_inventory')) {
+        return (
+            <div className="flex h-[80vh] items-center justify-center flex-col gap-4 text-center p-4">
+                <ShieldAlert className="h-16 w-16 text-slate-300 dark:text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Access Denied</h2>
+                <p className="text-slate-500 max-w-sm">You do not have the required permissions to view the inventory. Please contact your administrator.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">

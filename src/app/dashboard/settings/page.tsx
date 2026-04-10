@@ -24,29 +24,9 @@ export default function SettingsPage() {
     const { businessTypes, activeCategories, customCategories, toggleBusinessType, addCustomCategory, removeCustomCategory, availableBusinessTypes, addCustomBusinessType, updateBusinessType, deleteBusinessType, updateCustomCategory } = useInventory();
 
     const searchParams = useSearchParams();
+    
+    // **ALL HOOKS MUST BE DECLARED BEFORE EARLY RETURNS**
     const [activeTab, setActiveTab] = useState('general');
-
-    if (!hasPermission('access_settings')) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
-                    <ShieldAlert className="w-12 h-12 text-rose-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                    You do not have permission to view or manage store settings.
-                </p>
-            </div>
-        );
-    }
-
-    useEffect(() => {
-        const tab = searchParams.get('tab');
-        if (tab) {
-            setActiveTab(tab);
-        }
-    }, [searchParams]);
-
     const [smsConfig, setSmsConfig] = useState<SMSConfig | null>(null);
     const [storeName, setStoreName] = useState('');
     const [storeLocation, setStoreLocation] = useState('');
@@ -122,6 +102,14 @@ export default function SettingsPage() {
 
     // Auth & Deletion
     const { updateStoreStatus, requestStoreDeletionOTC, verifyStoreDeletionOTC, deleteStore, stores, createStore } = useAuth();
+
+    // ALL useEffect hooks must also be BEFORE early returns
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab) {
+            setActiveTab(tab);
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         setSmsConfig(getSMSConfig());
@@ -213,6 +201,21 @@ export default function SettingsPage() {
             loadPWASettings();
         }
     }, [activeTab, activeStore?.id]);
+
+    // EARLY RETURN AFTER ALL HOOKS
+    if (!hasPermission('access_settings')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view or manage store settings.
+                </p>
+            </div>
+        );
+    }
 
     // Save PWA Settings to Database
     const handleSavePWASettings = async () => {
