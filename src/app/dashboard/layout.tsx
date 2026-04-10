@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
+import { useSuperAdmin } from '@/lib/super-admin-context';
 import { InventoryProvider, useInventory } from '@/lib/inventory-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense, useRef } from 'react';
@@ -16,7 +17,7 @@ import {
     Type, DollarSign, Percent, Store, Check, Plus, Search, ChevronRight,
     CreditCard, Smartphone, Download, Globe, ListTodo,
     Activity, ShieldCheck, MessageSquare, Menu, Bell, User, LogOut, Moon, Sun, X, ChevronDown,
-    Cloud, CloudOff, RefreshCw as RefreshIcon
+    Cloud, CloudOff, RefreshCw as RefreshIcon, AlertTriangle
 } from 'lucide-react';
 import { useSyncStatus } from '@/lib/use-sync-status';
 
@@ -79,6 +80,7 @@ function SyncStatusBadge() {
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, logout, activeStore, stores, switchStore, createStore, hasPermission, globalSettings } = useAuth();
     const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+    const { viewAsSession, exitViewAs } = useSuperAdmin();
 
     // Automatically track page visits
     useActivityTracker();
@@ -171,10 +173,33 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     });
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
             <Suspense fallback={null}>
                 <StoreUrlHandler />
             </Suspense>
+
+            {/* View-As Banner (Super Admin impersonation) */}
+            {viewAsSession && (
+                <div className="sticky top-0 z-[200] flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-sm font-medium text-amber-950 shadow-lg">
+                    <div className="flex items-center gap-2">
+                        <Eye className="h-4 w-4 flex-shrink-0" />
+                        <span>
+                            👁 Viewing as <strong>{viewAsSession.business_name}</strong>
+                            {viewAsSession.mode === 'read_only' && ' — Read Only Mode'}
+                            {viewAsSession.mode === 'full_access' && ' — Full Access Mode'}
+                        </span>
+                    </div>
+                    <button
+                        onClick={exitViewAs}
+                        className="flex items-center gap-1.5 rounded-full bg-amber-800/20 hover:bg-amber-800/40 px-3 py-1 text-xs font-semibold transition-colors"
+                    >
+                        <X className="h-3 w-3" /> Exit View-As
+                    </button>
+                </div>
+            )}
+
+
+            <div className="flex flex-1">
 
             {/* Archived Store Warning Overlay */}
             {activeStore?.status === 'archived' && (
@@ -518,6 +543,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     </div>
                 </div>
             )}
+            </div>  {/* close flex flex-1 */}
         </div>
     );
 }
