@@ -26,7 +26,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
-    const { activeStore, isLoading } = useAuth();
+    const { activeStore, isLoading, hasPermission } = useAuth();
     const [stats, setStats] = useState({
         revenue: 0,
         orders: 0,
@@ -338,6 +338,7 @@ export default function DashboardPage() {
     console.log('[Dashboard] chartData length:', chartData.length);
     console.log('[Dashboard] Max value in chart:', chartData.length > 0 ? Math.max(...chartData.map(d => d.value)) : 0);
 
+    // Early returns AFTER all hooks
     if (isLoading) return <div className="p-8 text-center text-slate-500 animate-pulse">Loading dashboard...</div>;
 
     if (!activeStore) return (
@@ -352,7 +353,6 @@ export default function DashboardPage() {
         </div>
     );
 
-    const { hasPermission } = useAuth();
     if (!hasPermission('view_dashboard')) {
         return (
             <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">

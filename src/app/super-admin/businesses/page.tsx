@@ -155,24 +155,24 @@ export default function BusinessesPage() {
                                                 <code className="text-xs text-slate-500 bg-white/5 px-2 py-1 rounded">/{biz.slug}/login</code>
                                             </td>
                                             <td className="px-6 py-4 text-right">
-                                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex items-center justify-end gap-1">
                                                     <button
                                                         onClick={() => startViewAs(biz, 'read_only')}
-                                                        title="View as (read-only)"
+                                                        title="View as this business (read-only)"
                                                         className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
                                                     >
                                                         <Eye className="h-4 w-4" />
                                                     </button>
                                                     <Link
                                                         href={`/super-admin/businesses/${biz.id}`}
-                                                        title="Manage"
+                                                        title="Manage business"
                                                         className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all"
                                                     >
                                                         <Edit className="h-4 w-4" />
                                                     </Link>
                                                     <button
                                                         onClick={() => toggleBusinessActive(biz.id, !biz.is_active)}
-                                                        title={biz.is_active ? 'Suspend' : 'Reactivate'}
+                                                        title={biz.is_active ? 'Suspend this business' : 'Reactivate this business'}
                                                         className={`p-1.5 rounded-lg transition-all ${biz.is_active
                                                             ? 'text-slate-400 hover:text-red-400 hover:bg-red-500/10'
                                                             : 'text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10'
