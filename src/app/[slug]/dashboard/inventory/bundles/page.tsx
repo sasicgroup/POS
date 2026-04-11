@@ -4,14 +4,17 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Package, Plus, Search, Trash2, X, Save, ArrowLeft, Info, Camera } from 'lucide-react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { useToast } from '@/lib/toast-context';
 import { Html5Qrcode } from 'html5-qrcode';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function BundlesPage() {
-    const { activeStore } = useAuth();
+    const { activeStore, hasPermission } = useAuth();
     const { showToast } = useToast();
+    const params = useParams() as { slug: string };
+    const { slug } = params;
     const [bundles, setBundles] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -220,7 +223,7 @@ export default function BundlesPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                        <Link href="/dashboard/inventory" className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
+                        <Link href={`/${slug}/dashboard/inventory`} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
                             <ArrowLeft className="h-6 w-6" />
                         </Link>
                         Product Bundles (Kits)

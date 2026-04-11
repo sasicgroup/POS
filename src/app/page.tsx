@@ -1,383 +1,166 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { Store, Lock, ArrowRight, User } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-export default function LoginPage() {
-    const { login, verifyOTP, resendOTP, verifyMasterpass } = useAuth();
-    const router = useRouter();
-
-    // Form State
-    const [step, setStep] = useState<'credentials' | 'choice' | 'otp' | 'masterpass'>('credentials');
-    const [username, setUsername] = useState('');
-    const [pin, setPin] = useState('');
-    const [otp, setOtp] = useState('');
-    const [masterpass, setMasterpass] = useState('');
-    const [availableMethods, setAvailableMethods] = useState<string[]>([]);
-    const [selectedMethod, setSelectedMethod] = useState<'sms' | 'masterpass' | null>(null);
-
-    // UI State
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [resendCooldown, setResendCooldown] = useState(0);
-    const [branding, setBranding] = useState<{ name?: string, logoUrl?: string, color?: string } | null>(null);
+export default function PublicHomepage() {
+    const [content, setContent] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchBranding = async () => {
-            try {
-                // 1. Try Global Settings First (Prioritize this as requested)
-                const { data: globalData } = await supabase.from('global_settings').select('*').single();
-
-                if (globalData) {
-                    setBranding({
-                        name: globalData.app_name || 'SASIC STORES',
-                        logoUrl: globalData.app_logo,
-                        color: globalData.primary_color || '#4f46e5'
-                    });
-                } else {
-                    // Fallback: Fetch the first store's branding (Single Tenant Assumption)
-                    const { data } = await supabase.from('stores').select('name, branding').limit(1).maybeSingle();
-                    if (data) {
-                        setBranding({
-                            name: data.branding?.name || data.name,
-                            logoUrl: data.branding?.logoUrl,
-                            color: data.branding?.color
-                        });
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to fetch branding", e);
+        const fetchContent = async () => {
+            const { data } = await supabase.from('global_settings').select('homepage_content').maybeSingle();
+            if (data?.homepage_content) {
+                setContent(data.homepage_content);
             }
+            setLoading(false);
         };
-        fetchBranding();
+        fetchContent();
     }, []);
 
-    const handleCredentialsSubmit = async (e: React.FormEvent) => {
-        // ... (existing submit logic)
-        e.preventDefault();
-        setLoading(true);
-        setError('');
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-950">
+                <div className="animate-pulse text-slate-400">Loading...</div>
+            </div>
+        );
+    }
 
-        try {
-            const result = await login(username, pin);
+    if (!content) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-950">
+                <div className="text-slate-400">No homepage content generated yet. Super Admin should run setup.</div>
+            </div>
+        );
+    }
 
-            if (result.success) {
-                if (result.status === 'CHOICE_REQUIRED') {
-                    setAvailableMethods(result.availableMethods || []);
-                    setStep('choice');
-                } else if (result.status === 'OTP_REQUIRED') {
-                    setStep('otp');
-                } else if (result.status === 'MASTERPASS_REQUIRED') {
-                    setStep('masterpass');
-                } else {
-                    router.push('/dashboard');
-                }
-            } else {
-                setError(result.message || 'Login failed');
-            }
-        } catch (err) {
-            console.error(err);
-            setError('System error during login.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // ... (existing handleOtpSubmit and handleResendOTP)
-    const handleOtpSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-        try {
-            const success = await verifyOTP(username, otp);
-            if (success) router.push('/dashboard');
-            else { setError('Invalid or expired OTP code.'); setLoading(false); }
-        } catch (err) { setError('Verification failed.'); setLoading(false); }
-    };
-
-    const handleMasterpassSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-        try {
-            const success = await verifyMasterpass(username, masterpass);
-            if (success) router.push('/dashboard');
-            else { setError('Invalid Master Password.'); setLoading(false); }
-        } catch (err) { setError('Verification failed.'); setLoading(false); }
-    };
-
-    const handleResendOTP = async () => {
-        if (resendCooldown > 0) return;
-        setLoading(true);
-        try {
-            await resendOTP(username);
-            setResendCooldown(30);
-            // ... (rest of cooldown logic, simplified for brevity in replacement if needed, but safe to keep original if I target correctly)
-            // Wait, I should try to keep the original logic intact.
-            // I'll stick to updating imports and the top part, and the render part.
-        } catch (e) { setError('Failed to resend OTP.'); } finally { setLoading(false); }
-    };
-
-    const handleMethodSelect = async (method: 'sms' | 'masterpass') => {
-        setSelectedMethod(method);
-        setLoading(true);
-        setError('');
-
-        try {
-            if (method === 'sms') {
-                // Trigger SMS OTP sending
-                const success = await resendOTP(username);
-                if (success) {
-                    setStep('otp');
-                } else {
-                    setError('Failed to send OTP. Please try again.');
-                }
-            } else if (method === 'masterpass') {
-                setStep('masterpass');
-            }
-        } catch (err) {
-            setError('Failed to proceed. Please try again.');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { primary_color, accent_color } = content;
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-            <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                <div className="p-8">
-                    <div className="mb-6 flex justify-center">
-                        <div
-                            className="rounded-full p-4 shadow-lg overflow-hidden flex items-center justify-center h-20 w-20"
-                            style={{ backgroundColor: branding?.color ? `${branding.color}15` : '#e0e7ff' }} // indigo-100 is #e0e7ff
-                        >
-                            {branding?.logoUrl ? (
-                                <img src={branding.logoUrl} alt="Logo" className="h-full w-full object-contain" />
-                            ) : (
-                                step === 'otp' ?
-                                    <Lock className="h-10 w-10" style={{ color: branding?.color || '#4f46e5' }} /> :
-                                    <Store className="h-10 w-10" style={{ color: branding?.color || '#4f46e5' }} />
-                            )}
+        <div className="min-h-screen bg-[#0f172a] text-slate-300 font-sans selection:bg-indigo-500/30">
+            {/* Nav */}
+            <nav className="border-b border-white/5 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+                <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+                    <div className="font-bold text-xl text-white flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: primary_color }}>
+                            {content.company_name.charAt(0).toUpperCase()}
                         </div>
+                        {content.company_name}
                     </div>
-
-                    <h2 className="mb-2 text-center text-3xl font-bold tracking-tight text-slate-900">
-                        {step === 'choice' ? 'Choose Verification Method' : step === 'otp' ? 'Security Check' : step === 'masterpass' ? 'Master Password' : (branding?.name || 'Store Access')}
-                    </h2>
-                    <p className="mb-8 text-center text-slate-500">
-                        {step === 'choice' ? 'Select how you want to verify your identity' : step === 'otp' ? 'Enter the code sent to your phone' : step === 'masterpass' ? 'Enter your master password' : 'Enter your credentials to continue'}
-                    </p>
-
-                    {step === 'credentials' ? (
-                        <form onSubmit={handleCredentialsSubmit} className="space-y-6">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="mb-1 block text-sm font-medium text-slate-700">Username</label>
-                                    <div className="relative">
-                                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                                        <input
-                                            type="text"
-                                            value={username}
-                                            onChange={(e) => {
-                                                setUsername(e.target.value);
-                                                setError('');
-                                            }}
-                                            className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-slate-900 placeholder-slate-400 shadow-sm transition-all focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none"
-                                            placeholder="Enter username"
-                                            required
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-sm font-medium text-slate-700">Security PIN</label>
-                                    <input
-                                        type="password"
-                                        value={pin}
-                                        onChange={(e) => {
-                                            const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                                            setPin(val);
-                                            setError('');
-                                        }}
-                                        className="block w-full text-center text-2xl tracking-[0.5em] rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900 placeholder-slate-400 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none font-mono"
-                                        placeholder="••••"
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            {error && (
-                                <p className="text-center text-sm text-red-600 font-medium animate-pulse bg-red-50 p-2 rounded-lg border border-red-200">{error}</p>
-                            )}
-
-                            <button
-                                type="submit"
-                                disabled={loading || pin.length < 4 || !username}
-                                className="group relative flex w-full items-center justify-center overflow-hidden rounded-xl bg-indigo-600 p-3 font-semibold text-white shadow-lg transition-all hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                                {loading ? 'Verifying...' : (
-                                    <span className="flex items-center gap-2">
-                                        Login <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                    </span>
-                                )}
-                            </button>
-                        </form>
-                    ) : step === 'choice' ? (
-                        <div className="space-y-4">
-                            {availableMethods.includes('sms') && (
-                                <button
-                                    type="button"
-                                    onClick={() => handleMethodSelect('sms')}
-                                    disabled={loading}
-                                    className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors">
-                                            <svg className="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                            </svg>
-                                        </div>
-                                        <div className="text-left">
-                                            <div className="font-semibold text-slate-900">SMS OTP</div>
-                                            <div className="text-sm text-slate-500">Receive code via text message</div>
-                                        </div>
-                                    </div>
-                                    <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
-                                </button>
-                            )}
-
-                            {availableMethods.includes('masterpass') && (
-                                <button
-                                    type="button"
-                                    onClick={() => handleMethodSelect('masterpass')}
-                                    disabled={loading}
-                                    className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition-colors">
-                                            <Lock className="h-6 w-6 text-indigo-600" />
-                                        </div>
-                                        <div className="text-left">
-                                            <div className="font-semibold text-slate-900">Master Password</div>
-                                            <div className="text-sm text-slate-500">Use your personal password</div>
-                                        </div>
-                                    </div>
-                                    <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
-                                </button>
-                            )}
-
-                            {error && (
-                                <p className="text-center text-sm text-red-600 font-medium animate-pulse bg-red-50 p-2 rounded-lg border border-red-200">{error}</p>
-                            )}
-
-                            <div className="flex justify-center items-center text-sm pt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setStep('credentials')}
-                                    className="text-slate-500 hover:text-indigo-600 underline"
-                                >
-                                    Back to Login
-                                </button>
-                            </div>
-                        </div>
-                    ) : step === 'masterpass' ? (
-                        <form onSubmit={handleMasterpassSubmit} className="space-y-6">
-                            <div>
-                                <label className="mb-1 block text-sm font-medium text-slate-700 text-center">Store Master Password</label>
-                                <input
-                                    type="password"
-                                    value={masterpass}
-                                    onChange={(e) => {
-                                        setMasterpass(e.target.value);
-                                        setError('');
-                                    }}
-                                    className="block w-full text-center text-xl rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900 placeholder-slate-300 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none font-mono"
-                                    placeholder="Enter password"
-                                    autoFocus
-                                    required
-                                />
-                                {error && (
-                                    <p className="mt-2 text-center text-sm text-red-600 font-medium animate-pulse">{error}</p>
-                                )}
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={loading || !masterpass}
-                                className="w-full rounded-xl bg-indigo-600 p-3 font-semibold text-white shadow-lg transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-70"
-                            >
-                                {loading ? 'Verifying...' : 'Verify Password'}
-                            </button>
-
-                            <div className="flex justify-center items-center text-sm">
-                                <button
-                                    type="button"
-                                    onClick={() => setStep('credentials')}
-                                    className="text-slate-500 hover:text-indigo-600 underline"
-                                >
-                                    Back to Login
-                                </button>
-                            </div>
-                        </form>
-                    ) : (
-                        <form onSubmit={handleOtpSubmit} className="space-y-6">
-                            <div>
-                                <label className="mb-1 block text-sm font-medium text-slate-700 text-center">One-Time Password</label>
-                                <input
-                                    type="text"
-                                    value={otp}
-                                    onChange={(e) => {
-                                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                                        setOtp(val);
-                                        setError('');
-                                    }}
-                                    className="block w-full text-center text-3xl tracking-[0.5em] rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900 placeholder-slate-300 shadow-sm focus:border-indigo-500 focus:bg-white focus:ring focus:ring-indigo-200 outline-none font-mono"
-                                    placeholder="••••••"
-                                    autoFocus
-                                    required
-                                />
-                                {error && (
-                                    <p className="mt-2 text-center text-sm text-red-600 font-medium animate-pulse">{error}</p>
-                                )}
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={loading || otp.length < 6}
-                                className="w-full rounded-xl bg-indigo-600 p-3 font-semibold text-white shadow-lg transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-70"
-                            >
-                                {loading ? 'Verifying...' : 'Verify Code'}
-                            </button>
-
-                            <div className="flex justify-between items-center text-sm">
-                                <button
-                                    type="button"
-                                    onClick={() => setStep('credentials')}
-                                    className="text-slate-500 hover:text-indigo-600 underline"
-                                >
-                                    Back to Login
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={resendCooldown > 0 || loading}
-                                    onClick={handleResendOTP}
-                                    className="text-slate-500 hover:text-indigo-600 disabled:opacity-50"
-                                >
-                                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
-                                </button>
-                            </div>
-                        </form>
-                    )}
-
-                    <div className="mt-8 pt-6 border-t border-slate-100">
-                        <p className="text-center text-xs text-slate-400">
-                            Powered by <a href="https://sasicgroup.com/sasicbusiness" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-medium">Sasic Business</a>
-                        </p>
+                    <div className="flex gap-4">
+                        <Link href="/super-admin/login" className="text-sm text-slate-400 hover:text-white transition-colors py-2 px-3">
+                            Super Admin
+                        </Link>
+                        {/* We don't have a single /login anymore. Users must use their specific /[slug]/login */}
                     </div>
                 </div>
-            </div>
-        </div >
+            </nav>
+
+            {/* Hero */}
+            <section className="py-24 px-6 relative overflow-hidden">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full blur-[120px] opacity-20 pointer-events-none" style={{ backgroundColor: primary_color }} />
+                <div className="max-w-3xl mx-auto text-center relative z-10">
+                    <div className="inline-block px-3 py-1 rounded-full border mb-6 text-sm font-semibold" style={{ color: primary_color, borderColor: `${primary_color}40`, backgroundColor: `${primary_color}15` }}>
+                        {content.hero_tag}
+                    </div>
+                    <h1 className="text-5xl sm:text-6xl font-black text-white leading-[1.1] tracking-tight mb-6">
+                        {content.hero_title}
+                    </h1>
+                    <p className="text-lg text-slate-400 mb-10 max-w-2xl mx-auto">
+                        {content.hero_subtitle}
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <button className="px-8 py-4 rounded-xl text-white font-bold text-sm shadow-xl hover:scale-105 transition-all" style={{ background: `linear-gradient(135deg, ${primary_color}, ${accent_color})`, boxShadow: `0 10px 30px ${primary_color}40` }}>
+                            {content.hero_cta_label}
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            {/* Features */}
+            <section className="py-24 px-6 bg-slate-900 border-y border-white/5">
+                <div className="max-w-6xl mx-auto">
+                    <div className="text-center mb-16">
+                        <h2 className="text-3xl font-bold text-white mb-4">Everything You Need</h2>
+                        <p className="text-slate-400 max-w-xl mx-auto">A complete toolkit for running your entire operation, wrapped in a beautiful interface.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {(content.features || []).map((f: any, i: number) => (
+                            <div key={i} className="bg-[#0f172a] border border-white/5 p-8 rounded-3xl hover:border-white/10 transition-colors group">
+                                <span className="text-4xl mb-6 block drop-shadow-xl group-hover:scale-110 transition-transform origin-bottom-left">{f.icon}</span>
+                                <h3 className="text-lg font-bold text-white mb-2">{f.title}</h3>
+                                <p className="text-sm text-slate-400 leading-relaxed">{f.description}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Pricing */}
+            <section className="py-24 px-6">
+                <div className="max-w-6xl mx-auto">
+                    <div className="text-center mb-16">
+                        <h2 className="text-3xl font-bold text-white mb-4">Simple, Transparent Pricing</h2>
+                        <p className="text-slate-400 max-w-xl mx-auto">Choose the plan that fits your business. No hidden fees or surprises.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+                        {(content.pricing || []).map((p: any, i: number) => (
+                            <div key={i} className={`rounded-3xl p-8 relative ${p.highlighted ? 'bg-slate-800 border-2 py-12' : 'bg-white/[0.02] border border-white/5'}`} style={{ borderColor: p.highlighted ? primary_color : undefined }}>
+                                {p.highlighted && (
+                                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-white text-xs font-bold" style={{ backgroundColor: primary_color }}>
+                                        Most Popular
+                                    </div>
+                                )}
+                                <h3 className="text-xl font-bold text-white mb-2">{p.name}</h3>
+                                <div className="mb-6">
+                                    <span className="text-4xl font-black text-white">{p.price}</span>
+                                    <span className="text-slate-500 ml-2 text-sm">{p.period}</span>
+                                </div>
+                                <ul className="space-y-4 mb-8">
+                                    {(p.features || []).map((feat: string, j: number) => (
+                                        <li key={j} className="flex items-start gap-3 text-sm text-slate-300">
+                                            <span className="text-emerald-400 mt-0.5">✓</span>
+                                            {feat}
+                                        </li>
+                                    ))}
+                                </ul>
+                                <button className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.highlighted ? 'text-white' : 'bg-white/5 text-white hover:bg-white/10'}`} style={{ background: p.highlighted ? `linear-gradient(135deg, ${primary_color}, ${accent_color})` : undefined }}>
+                                    {content.hero_cta_label}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Contact Footer */}
+            <footer className="bg-slate-900 border-t border-white/5 pt-16 pb-8 px-6">
+                <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
+                    <div>
+                        <div className="font-bold text-xl text-white flex items-center gap-2 mb-4">
+                            <div className="h-8 w-8 rounded-lg flex items-center justify-center shadow-lg" style={{ backgroundColor: primary_color }}>
+                                {content.company_name.charAt(0).toUpperCase()}
+                            </div>
+                            {content.company_name}
+                        </div>
+                        <p className="text-slate-400 mb-6 max-w-sm">{content.tagline}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-8">
+                        <div>
+                            <h4 className="text-white font-bold mb-4">Contact Us</h4>
+                            <ul className="space-y-3 text-sm text-slate-400">
+                                <li>📞 {content.contact_phone}</li>
+                                <li>✉️ {content.contact_email}</li>
+                                {content.contact_whatsapp && <li>💬 WhatsApp: {content.contact_whatsapp}</li>}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div className="max-w-6xl mx-auto text-center border-t border-white/5 pt-8 text-sm text-slate-500">
+                    {content.footer_text}
+                </div>
+            </footer>
+        </div>
     );
 }

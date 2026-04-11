@@ -1,13 +1,18 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
+import { useSuperAdmin } from '@/lib/super-admin-context';
+import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Store, Users, DollarSign, TrendingUp, ArrowRight, Activity, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function HQDashboardPage() {
-    const { user, stores } = useAuth();
+    const { user, stores, switchStore, activeStore } = useAuth();
+    const { businesses } = useSuperAdmin();
+    const params = useParams() as { slug: string };
+    const { slug } = params;
     const [isLoading, setIsLoading] = useState(true);
     const [stats, setStats] = useState({
         totalRevenue: 0,
@@ -207,7 +212,7 @@ export default function HQDashboardPage() {
                                         GHS {store.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <Link href={`/dashboard?storeId=${store.id}`} className="text-indigo-600 hover:text-indigo-800 font-medium text-xs inline-flex items-center gap-1">
+                                        <Link href={`/${slug}/dashboard?storeId=${store.id}`} className="text-indigo-600 hover:text-indigo-800 font-medium text-xs inline-flex items-center gap-1">
                                             Switch View <ArrowRight className="h-3 w-3" />
                                         </Link>
                                     </td>

@@ -334,7 +334,7 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
         localStorage.removeItem('sms_active_store_id'); // Force fresh store load
 
         // 3. Navigate to dashboard
-        window.location.href = '/dashboard';
+        window.location.href = `/${business.slug}/dashboard`;
     };
 
     const exitViewAs = () => {

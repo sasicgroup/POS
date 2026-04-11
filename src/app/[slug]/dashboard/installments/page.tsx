@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useState, useEffect, useRef } from 'react';
+import { useParams } from 'next/navigation';
 
 interface Installment {
     id: string;
@@ -69,6 +70,8 @@ interface Payment {
 export default function InstallmentsPage() {
     const { activeStore, user, hasPermission } = useAuth();
     const { showToast } = useToast();
+    const params = useParams() as { slug: string };
+    const { slug } = params;
 
     if (!activeStore) return null;
     if (!hasPermission('manage_installments')) {
@@ -658,7 +661,7 @@ export default function InstallmentsPage() {
                                                         <button
                                                             onClick={() => {
                                                                 showToast('info', 'Customer selected. Use POS to start new installment.');
-                                                                window.location.href = '/dashboard/sales';
+                                                                window.location.href = `/${slug}/dashboard/sales`;
                                                             }}
                                                             className="text-xs font-black text-indigo-600 hover:text-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 transition-all active:scale-[0.98]"
                                                         >
@@ -813,7 +816,7 @@ export default function InstallmentsPage() {
                                                         handleSelectInstallment(hasInstallment);
                                                     } else {
                                                         showToast('info', 'Redirecting to POS...');
-                                                        window.location.href = '/dashboard/sales';
+                                                        window.location.href = `/${slug}/dashboard/sales`;
                                                     }
                                                 }}
                                                 className="h-10 w-10 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center border border-slate-100 dark:border-slate-700"

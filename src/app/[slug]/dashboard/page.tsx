@@ -21,12 +21,15 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer
-} from 'recharts';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
     const { activeStore, isLoading, hasPermission } = useAuth();
+    const params = useParams() as { slug: string };
+    const { slug } = params;
+
     const [stats, setStats] = useState({
         revenue: 0,
         orders: 0,
@@ -363,7 +366,7 @@ export default function DashboardPage() {
                 <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
                     You do not have permission to view the Dashboard. Please contact your administrator if you believe this is an error.
                 </p>
-                <Link href="/dashboard/inventory" className="text-indigo-600 hover:text-indigo-700 font-medium">
+                <Link href={`/${slug}/dashboard/inventory`} className="text-indigo-600 hover:text-indigo-700 font-medium">
                     Go to Inventory
                 </Link>
             </div>
@@ -531,7 +534,7 @@ export default function DashboardPage() {
                 <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                     <div className="mb-6 flex items-center justify-between">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Recent Orders</h3>
-                        <Link href="/dashboard/sales/history" className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">View All</Link>
+                        <Link href={`/${slug}/dashboard/sales/history`} className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">View All</Link>
                     </div>
 
                     <div className="space-y-6">
@@ -562,7 +565,7 @@ export default function DashboardPage() {
                         )}
                     </div>
 
-                    <Link href="/dashboard/sales/history" className="mt-6 w-full rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 flex items-center justify-center gap-2">
+                    <Link href={`/${slug}/dashboard/sales/history`} className="mt-6 w-full rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 flex items-center justify-center gap-2">
                         <Clock className="w-4 h-4" /> View Transactions History
                     </Link>
                 </div>

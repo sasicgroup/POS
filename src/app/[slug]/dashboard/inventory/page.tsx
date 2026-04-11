@@ -6,6 +6,7 @@ import { useToast } from '@/lib/toast-context';
 import { Search, Filter, Plus, MoreHorizontal, Sparkles, Scan, Trash2, Printer, Barcode, CheckSquare, Square, X, Edit, Video, Camera, ShoppingCart, Package, ClipboardList, Upload, Download, FileSpreadsheet, Edit2, MoreVertical, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Check, Tag, Info, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { Html5Qrcode } from 'html5-qrcode';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { getOptimizedImageUrl } from '@/lib/utils/image-utils';
@@ -13,6 +14,8 @@ import JsBarcode from 'jsbarcode';
 
 export default function InventoryPage() {
     const { activeStore, hasPermission } = useAuth();
+    const params = useParams() as { slug: string };
+    const { slug } = params;
     const {
         products,
         isLoading,
@@ -707,10 +710,10 @@ export default function InventoryPage() {
                     <p className="text-sm text-slate-500 dark:text-slate-400">Manage products for <span className="font-semibold text-indigo-600">{activeStore.name}</span></p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 w-full lg:w-auto lg:flex lg:items-center">
-                    <Link href="/dashboard/inventory/bundles" className="order-2 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <Link href={`/${slug}/dashboard/inventory/bundles`} className="order-2 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         <Package className="h-4 w-4" /> Bundles
                     </Link>
-                    <Link href="/dashboard/inventory/stocktake" className="order-4 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <Link href={`/${slug}/dashboard/inventory/stocktake`} className="order-4 lg:order-none flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         <ClipboardList className="h-4 w-4" /> Stocktake
                     </Link>
 

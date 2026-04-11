@@ -164,7 +164,7 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
         };
         localStorage.setItem('sms_user', JSON.stringify(userObj));
         localStorage.setItem('sms_business_id', business.id);
-        router.push('/dashboard');
+        router.push(`/${slug}/dashboard`);
     };
 
     const handleOTPVerify = async (e: React.FormEvent) => {

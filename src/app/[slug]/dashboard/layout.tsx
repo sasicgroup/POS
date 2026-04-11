@@ -6,7 +6,7 @@ import { InventoryProvider, useInventory } from '@/lib/inventory-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useParams } from 'next/navigation';
 import {
     LayoutDashboard,
     ShoppingBag,
@@ -87,6 +87,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     const router = useRouter();
     const pathname = usePathname();
+    const params = useParams() as { slug: string };
+    const { slug } = params;
 
     // Refs for click outside detection
     const storeMenuRef = useRef<HTMLDivElement>(null);
@@ -146,25 +148,25 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     if (!user) return null;
 
     const navigation = [
-        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
-        { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
-        { name: 'Sales / POS', href: '/dashboard/sales', icon: ShoppingBag, permission: 'process_sales' },
-        { name: 'Invoices', href: '/dashboard/invoices', icon: FileText, permission: 'manage_invoices' },
-        { name: 'Tasks & Notes', href: '/dashboard/tasks', icon: ListTodo, permission: 'access_tasks' },
-        { name: 'Sales History', href: '/dashboard/sales/history', icon: CalendarClock, permission: 'view_sales_history' },
-        { name: 'Installments', href: '/dashboard/installments', icon: CreditCard, permission: 'manage_installments' },
-        { name: 'AI Insights', href: '/dashboard/ai-insights', icon: Sparkles, permission: 'access_ai_insights' },
-        { name: 'Loyalty Program', href: '/dashboard/loyalty', icon: Award, permission: 'access_loyalty' },
-        { name: 'Customers', href: '/dashboard/customers', icon: Users, permission: 'view_customers' },
-        { name: 'Employees', href: '/dashboard/employees', icon: Users, permission: 'view_employees' },
-        { name: 'Income / Expenses', href: '/dashboard/income-expenses', icon: Receipt, permission: 'view_financials' },
-        { name: 'Reports', href: '/dashboard/reports', icon: TrendingUp, permission: 'access_reports' },
-        { name: 'Activity Logs', href: '/dashboard/logs', icon: Activity, permission: 'access_logs' },
-        { name: 'Roles & Permissions', href: '/dashboard/roles', icon: ShieldCheck, permission: 'view_roles' },
-        { name: 'SMS / WhatsApp', href: '/dashboard/communication', icon: MessageSquare, permission: 'send_messages' },
-        { name: 'HQ Dashboard', href: '/dashboard/hq', icon: Globe, permission: 'owner_only' },
-        { name: 'Global Settings', href: '/dashboard/global-settings', icon: Globe, permission: 'owner_only' },
-        { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
+        { name: 'Dashboard', href: `/${slug}/dashboard`, icon: LayoutDashboard, permission: 'view_dashboard' },
+        { name: 'Inventory', href: `/${slug}/dashboard/inventory`, icon: Package, permission: 'view_inventory' },
+        { name: 'Sales / POS', href: `/${slug}/dashboard/sales`, icon: ShoppingBag, permission: 'process_sales' },
+        { name: 'Invoices', href: `/${slug}/dashboard/invoices`, icon: FileText, permission: 'manage_invoices' },
+        { name: 'Tasks & Notes', href: `/${slug}/dashboard/tasks`, icon: ListTodo, permission: 'access_tasks' },
+        { name: 'Sales History', href: `/${slug}/dashboard/sales/history`, icon: CalendarClock, permission: 'view_sales_history' },
+        { name: 'Installments', href: `/${slug}/dashboard/installments`, icon: CreditCard, permission: 'manage_installments' },
+        { name: 'AI Insights', href: `/${slug}/dashboard/ai-insights`, icon: Sparkles, permission: 'access_ai_insights' },
+        { name: 'Loyalty Program', href: `/${slug}/dashboard/loyalty`, icon: Award, permission: 'access_loyalty' },
+        { name: 'Customers', href: `/${slug}/dashboard/customers`, icon: Users, permission: 'view_customers' },
+        { name: 'Employees', href: `/${slug}/dashboard/employees`, icon: Users, permission: 'view_employees' },
+        { name: 'Income / Expenses', href: `/${slug}/dashboard/income-expenses`, icon: Receipt, permission: 'view_financials' },
+        { name: 'Reports', href: `/${slug}/dashboard/reports`, icon: TrendingUp, permission: 'access_reports' },
+        { name: 'Activity Logs', href: `/${slug}/dashboard/logs`, icon: Activity, permission: 'access_logs' },
+        { name: 'Roles & Permissions', href: `/${slug}/dashboard/roles`, icon: ShieldCheck, permission: 'view_roles' },
+        { name: 'SMS / WhatsApp', href: `/${slug}/dashboard/communication`, icon: MessageSquare, permission: 'send_messages' },
+        { name: 'HQ Dashboard', href: `/${slug}/dashboard/hq`, icon: Globe, permission: 'owner_only' },
+        { name: 'Global Settings', href: `/${slug}/dashboard/global-settings`, icon: Globe, permission: 'owner_only' },
+        { name: 'Settings', href: `/${slug}/dashboard/settings`, icon: Settings, permission: 'access_settings' },
     ];
 
     const filteredNavigation = navigation.filter(item => {
@@ -217,7 +219,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         <div className="flex flex-col gap-3">
                             {user.role === 'owner' && (
                                 <Link
-                                    href="/dashboard/global-settings"
+                                    href={`/${slug}/dashboard/global-settings`}
                                     className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2"
                                 >
                                     <Settings className="h-5 w-5" />
@@ -434,7 +436,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                         </div>
                                         <div className="p-2 border-t border-slate-100 dark:border-slate-800 text-center">
                                             <Link
-                                                href="/dashboard/communication"
+                                                href={`/${slug}/dashboard/communication`}
                                                 className="text-xs font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-400 block py-1"
                                                 onClick={() => setIsNotificationsOpen(false)}
                                             >
@@ -457,11 +459,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             {/* Mobile Bottom Navigation */}
             <div className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 px-1 dark:border-slate-800 dark:bg-slate-950/95 lg:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] pb-safe">
                 {[
-                    { name: 'Home', href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
-                    { name: 'Inventory', href: '/dashboard/inventory', icon: Package, permission: 'view_inventory' },
-                    { name: 'Sales', href: '/dashboard/sales', icon: ShoppingBag, permission: 'access_pos' },
-                    { name: 'Customers', href: '/dashboard/customers', icon: Users, permission: 'view_customers' },
-                    { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'access_settings' },
+                    { name: 'Home', href: `/${slug}/dashboard`, icon: LayoutDashboard, permission: 'view_dashboard' },
+                    { name: 'Inventory', href: `/${slug}/dashboard/inventory`, icon: Package, permission: 'view_inventory' },
+                    { name: 'Sales', href: `/${slug}/dashboard/sales`, icon: ShoppingBag, permission: 'access_pos' },
+                    { name: 'Customers', href: `/${slug}/dashboard/customers`, icon: Users, permission: 'view_customers' },
+                    { name: 'Settings', href: `/${slug}/dashboard/settings`, icon: Settings, permission: 'access_settings' },
                 ].filter(item => {
                     if (item.permission === 'owner_only') return user.role === 'owner';
                     return !item.permission || hasPermission(item.permission);
