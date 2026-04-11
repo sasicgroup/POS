@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSuperAdmin } from '@/lib/super-admin-context';
 import Link from 'next/link';
-import { ShieldCheck, LayoutDashboard, Building2, LogOut, Settings, ChevronRight, MessageSquare } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, Building2, LogOut, Settings, ChevronRight, MessageSquare, BarChart2, Globe, Bell, FileText } from 'lucide-react';
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
     const { superAdmin, logout, isLoading } = useSuperAdmin();
@@ -31,7 +31,9 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
     const navItems = [
         { label: 'Dashboard', href: '/super-admin/dashboard', icon: LayoutDashboard },
         { label: 'Businesses', href: '/super-admin/businesses', icon: Building2 },
+        { label: 'Reports', href: '/super-admin/reports', icon: BarChart2 },
         { label: 'SMS & Notifications', href: '/super-admin/sms', icon: MessageSquare },
+        { label: 'Homepage Editor', href: '/super-admin/homepage', icon: Globe },
         { label: 'Settings', href: '/super-admin/settings', icon: Settings },
     ];
 

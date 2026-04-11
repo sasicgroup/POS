@@ -16,6 +16,9 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
     const [step, setStep] = useState<'credentials' | 'otp' | 'masterpass' | 'choice'>('credentials');
     const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
+    const [otp, setOtp] = useState('');
+    const [masterpass, setMasterpass] = useState('');
+    const [employee, setEmployee] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [availableMethods, setAvailableMethods] = useState<string[]>([]);
@@ -133,6 +136,7 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
                 if (employee.master_password) methods.push('masterpass');
                 if (methods.length > 0) {
                     setAvailableMethods(methods);
+                    setEmployee(employee);
                     setStep('choice');
                     setLoading(false);
                     return;
@@ -140,24 +144,89 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
             }
 
             // Success - store user in localStorage and redirect
-            const userObj = {
-                id: employee.id,
-                name: employee.name,
-                username: employee.username,
-                role: employee.role,
-                pin: employee.pin,
-                phone: employee.phone,
-                otp_enabled: employee.otp_enabled,
-            };
-
-            localStorage.setItem('sms_user', JSON.stringify(userObj));
-            localStorage.setItem('sms_business_id', business.id);
-            router.push('/dashboard');
+            completeLogin(employee);
         } catch (err: any) {
             setError(err.message || 'Login failed');
         } finally {
             setLoading(false);
         }
+    };
+
+    const completeLogin = (emp: any) => {
+        const userObj = {
+            id: emp.id,
+            name: emp.name,
+            username: emp.username,
+            role: emp.role,
+            pin: emp.pin,
+            phone: emp.phone,
+            otp_enabled: emp.otp_enabled,
+        };
+        localStorage.setItem('sms_user', JSON.stringify(userObj));
+        localStorage.setItem('sms_business_id', business.id);
+        router.push('/dashboard');
+    };
+
+    const handleOTPVerify = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!employee) return;
+        setLoading(true);
+        setError('');
+        // Get the stored OTP from DB
+        const { data } = await supabase
+            .from('employee_otp_codes')
+            .select('*')
+            .eq('employee_id', employee.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (!data || data.code !== otp) {
+            setError('Invalid OTP code. Please try again.');
+            setLoading(false);
+            return;
+        }
+        const expiry = new Date(data.expires_at);
+        if (new Date() > expiry) {
+            setError('OTP has expired. Please go back and request a new one.');
+            setLoading(false);
+            return;
+        }
+        setLoading(false);
+        completeLogin(employee);
+    };
+
+    const handleMasterPassVerify = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!employee) return;
+        setLoading(true);
+        setError('');
+        if (masterpass !== employee.master_password) {
+            setError('Incorrect master password.');
+            setLoading(false);
+            return;
+        }
+        setLoading(false);
+        completeLogin(employee);
+    };
+
+    const handleSendOTP = async () => {
+        if (!employee?.phone) return;
+        setLoading(true);
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+        await supabase.from('employee_otp_codes').insert({
+            employee_id: employee.id,
+            code,
+            expires_at: expires,
+        });
+        // Send SMS
+        await fetch('/api/auth/send-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: employee.phone, message: `Your verification code is ${code}. Valid for 5 minutes.` })
+        });
+        setLoading(false);
     };
 
     // ── Loading / Error States ──────────────────────────────────────────────
@@ -267,11 +336,11 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
                         <div className="space-y-3">
                             <p className="text-slate-400 text-sm text-center mb-4">Choose verification method</p>
                             {availableMethods.includes('sms') && (
-                                <button onClick={() => setStep('otp')} className="w-full flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm transition-all">
+                                <button onClick={() => { setStep('otp'); handleSendOTP(); }} className="w-full flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm transition-all">
                                     <span className="text-lg">📱</span>
                                     <div className="text-left">
                                         <div className="font-medium">SMS OTP</div>
-                                        <div className="text-xs text-slate-400">Receive a code via text</div>
+                                        <div className="text-xs text-slate-400">We'll send a code to {employee?.phone?.slice(0, 4)}****</div>
                                     </div>
                                 </button>
                             )}
@@ -280,14 +349,85 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
                                     <span className="text-lg">🔑</span>
                                     <div className="text-left">
                                         <div className="font-medium">Master Password</div>
-                                        <div className="text-xs text-slate-400">Use your secure password</div>
+                                        <div className="text-xs text-slate-400">Use your secure master password</div>
                                     </div>
                                 </button>
                             )}
-                            <button onClick={() => setStep('credentials')} className="w-full text-center text-slate-500 text-sm hover:text-slate-300 pt-2">
-                                ← Back
+                            <button onClick={() => setStep('credentials')} className="w-full text-center text-slate-500 text-sm hover:text-slate-300 pt-2 transition-colors">
+                                ← Back to login
                             </button>
                         </div>
+                    )}
+
+                    {step === 'otp' && (
+                        <form onSubmit={handleOTPVerify} className="space-y-4">
+                            <div className="text-center mb-2">
+                                <div className="h-12 w-12 rounded-full bg-indigo-500/20 flex items-center justify-center mx-auto mb-3">
+                                    <span className="text-xl">📱</span>
+                                </div>
+                                <p className="text-sm text-slate-300">Enter the 6-digit code sent to your phone</p>
+                                <p className="text-xs text-slate-500 mt-1">{employee?.phone?.replace(/(\d{3})\d+(\d{3})/, '$1****$2')}</p>
+                            </div>
+                            <div>
+                                <input
+                                    type="text"
+                                    value={otp}
+                                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-white text-center text-3xl tracking-[0.6em] font-mono focus:outline-none focus:ring-2 transition-all"
+                                    style={{ '--tw-ring-color': brandColor } as any}
+                                    placeholder="------"
+                                    maxLength={6}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                            {error && <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-sm text-red-400">{error}</div>}
+                            <button
+                                type="submit"
+                                disabled={loading || otp.length < 6}
+                                className="w-full py-3 rounded-xl font-semibold text-white transition-all hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
+                                style={{ background: `linear-gradient(135deg, ${brandColor}, ${brandColor}cc)` }}
+                            >
+                                {loading ? 'Verifying...' : 'Verify Code →'}
+                            </button>
+                            <div className="flex items-center justify-between pt-1">
+                                <button type="button" onClick={() => setStep('choice')} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">← Back</button>
+                                <button type="button" onClick={handleSendOTP} disabled={loading} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Resend code</button>
+                            </div>
+                        </form>
+                    )}
+
+                    {step === 'masterpass' && (
+                        <form onSubmit={handleMasterPassVerify} className="space-y-4">
+                            <div className="text-center mb-2">
+                                <div className="h-12 w-12 rounded-full bg-indigo-500/20 flex items-center justify-center mx-auto mb-3">
+                                    <span className="text-xl">🔑</span>
+                                </div>
+                                <p className="text-sm text-slate-300">Enter your master password</p>
+                            </div>
+                            <div>
+                                <input
+                                    type="password"
+                                    value={masterpass}
+                                    onChange={e => { setMasterpass(e.target.value); setError(''); }}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition-all text-sm"
+                                    style={{ '--tw-ring-color': brandColor } as any}
+                                    placeholder="Enter master password"
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                            {error && <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-sm text-red-400">{error}</div>}
+                            <button
+                                type="submit"
+                                disabled={loading || !masterpass}
+                                className="w-full py-3 rounded-xl font-semibold text-white transition-all hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
+                                style={{ background: `linear-gradient(135deg, ${brandColor}, ${brandColor}cc)` }}
+                            >
+                                {loading ? 'Verifying...' : 'Confirm →'}
+                            </button>
+                            <button type="button" onClick={() => setStep('choice')} className="w-full text-center text-xs text-slate-500 hover:text-slate-300 pt-1 transition-colors">← Back</button>
+                        </form>
                     )}
 
                     <div className="mt-8 pt-5 border-t border-white/5 text-center text-xs text-slate-600">

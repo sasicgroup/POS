@@ -457,11 +457,6 @@ export default function SuperAdminSMSPage() {
                             <Save className="h-4 w-4" /> {savingConfig ? 'Saving...' : 'Save Settings'}
                         </button>
                     </div>
-
-                    <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-4 text-xs text-amber-400/80 space-y-1">
-                        <p className="font-medium text-amber-400">📝 Note on SQL Migration</p>
-                        <p>Run <code className="bg-white/10 px-1 py-0.5 rounded">SUPABASE_SUPER_ADMIN_SMS.sql</code> to add the required columns and logs table. This must be done before saving settings.</p>
-                    </div>
                 </div>
             )}
 
