@@ -43,10 +43,10 @@ export default function PublicHomepage() {
             <nav className="border-b border-white/5 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
                 <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="font-bold text-xl text-white flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: primary_color }}>
-                            {content.company_name.charAt(0).toUpperCase()}
+                        <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: primary_color || '#4f46e5' }}>
+                            {(content.company_name || 'Store').charAt(0).toUpperCase()}
                         </div>
-                        {content.company_name}
+                        {content.company_name || 'Store Management'}
                     </div>
                     <div className="flex gap-4">
                         <Link href="/super-admin/login" className="text-sm text-slate-400 hover:text-white transition-colors py-2 px-3">
@@ -139,10 +139,10 @@ export default function PublicHomepage() {
                 <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
                     <div>
                         <div className="font-bold text-xl text-white flex items-center gap-2 mb-4">
-                            <div className="h-8 w-8 rounded-lg flex items-center justify-center shadow-lg" style={{ backgroundColor: primary_color }}>
-                                {content.company_name.charAt(0).toUpperCase()}
+                            <div className="h-8 w-8 rounded-lg flex items-center justify-center shadow-lg" style={{ backgroundColor: primary_color || '#4f46e5' }}>
+                                {(content.company_name || 'Store').charAt(0).toUpperCase()}
                             </div>
-                            {content.company_name}
+                            {content.company_name || 'Store Management'}
                         </div>
                         <p className="text-slate-400 mb-6 max-w-sm">{content.tagline}</p>
                     </div>
