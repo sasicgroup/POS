@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSuperAdmin } from '@/lib/super-admin-context';
 import { supabase } from '@/lib/supabase';
@@ -9,15 +9,13 @@ import { supabase } from '@/lib/supabase';
 // It resolves the business from the slug, then renders the regular login form
 // scoped to that business_id
 
-export default function SlugLoginPage({ params }: { params: { slug: string } }) {
-    const { slug } = params;
+export default function SlugLoginPage({ params }: { params: Promise<{ slug: string }> }) {
+    const { slug } = use(params);
     const router = useRouter();
 
     const [step, setStep] = useState<'credentials' | 'otp' | 'masterpass' | 'choice'>('credentials');
     const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
-    const [otp, setOtp] = useState('');
-    const [masterpass, setMasterpass] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [availableMethods, setAvailableMethods] = useState<string[]>([]);
@@ -25,42 +23,51 @@ export default function SlugLoginPage({ params }: { params: { slug: string } }) 
     const [businessError, setBusinessError] = useState('');
     const [businessLoaded, setBusinessLoaded] = useState(false);
 
-    // Resolve business on first render
-    useState(() => {
+    // Resolve business on mount
+    useEffect(() => {
         const resolve = async () => {
-            const { data, error } = await supabase
+            const { data, error: dbError } = await supabase
                 .from('businesses')
                 .select('*')
                 .eq('slug', slug)
                 .single();
 
-            if (error || !data) {
+            if (dbError || !data) {
                 setBusinessError('Business not found. Please check your URL.');
-            } else if (!data.is_active) {
-                setBusinessError('This business account is currently suspended. Please contact support.');
-            } else {
-                // Check subscription expiry
-                const now = new Date();
-                if (data.subscription_end && data.plan !== 'forever') {
-                    const end = new Date(data.subscription_end);
-                    const graceEnd = new Date(end);
-                    graceEnd.setDate(graceEnd.getDate() + (data.grace_period_days || 7));
-                    if (now > graceEnd) {
-                        setBusinessError('This account\'s subscription has expired. Please contact the platform administrator to renew.');
-                        setBusinessLoaded(true);
-                        setBusiness(data);
-                        return;
-                    }
-                }
-                setBusiness(data);
-                // Store business_id for the auth context to use
-                localStorage.setItem('sms_business_id', data.id);
-                localStorage.setItem('sms_business_slug', data.slug);
+                setBusinessLoaded(true);
+                return;
             }
+
+            if (!data.is_active) {
+                setBusinessError('This business account is currently suspended. Please contact support.');
+                setBusinessLoaded(true);
+                setBusiness(data);
+                return;
+            }
+
+            // Check subscription expiry
+            const now = new Date();
+            if (data.subscription_end && data.plan !== 'forever') {
+                const end = new Date(data.subscription_end);
+                const graceEnd = new Date(end);
+                graceEnd.setDate(graceEnd.getDate() + (data.grace_period_days || 7));
+                if (now > graceEnd) {
+                    setBusinessError('This account\'s subscription has expired. Please contact the platform administrator to renew.');
+                    setBusinessLoaded(true);
+                    setBusiness(data);
+                    return;
+                }
+            }
+
+            setBusiness(data);
+            // Store business_id for the auth context to use
+            localStorage.setItem('sms_business_id', data.id);
+            localStorage.setItem('sms_business_slug', data.slug);
             setBusinessLoaded(true);
         };
+
         resolve();
-    });
+    }, [slug]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
