@@ -14,8 +14,8 @@ import JsBarcode from 'jsbarcode';
 
 export default function InventoryPage() {
     const { activeStore, hasPermission } = useAuth();
-    const params = useParams() as { slug: string };
-    const { slug } = params;
+    const params = useParams();
+    const slug = (params?.slug as string) || '';
     const {
         products,
         isLoading,

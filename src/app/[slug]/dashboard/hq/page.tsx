@@ -11,8 +11,8 @@ import { useEffect, useState } from 'react';
 export default function HQDashboardPage() {
     const { user, stores, switchStore, activeStore } = useAuth();
     const { businesses } = useSuperAdmin();
-    const params = useParams() as { slug: string };
-    const { slug } = params;
+    const params = useParams();
+    const slug = (params?.slug as string) || '';
     const [isLoading, setIsLoading] = useState(true);
     const [stats, setStats] = useState({
         totalRevenue: 0,

@@ -13,8 +13,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 export default function BundlesPage() {
     const { activeStore, hasPermission } = useAuth();
     const { showToast } = useToast();
-    const params = useParams() as { slug: string };
-    const { slug } = params;
+    const params = useParams();
+    const slug = (params?.slug as string) || '';
     const [bundles, setBundles] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);

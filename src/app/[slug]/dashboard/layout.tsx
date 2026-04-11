@@ -87,8 +87,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     const router = useRouter();
     const pathname = usePathname();
-    const params = useParams() as { slug: string };
-    const { slug } = params;
+    const params = useParams();
+    const slug = (params?.slug as string) || '';
 
     // Refs for click outside detection
     const storeMenuRef = useRef<HTMLDivElement>(null);

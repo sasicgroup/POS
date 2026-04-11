@@ -70,8 +70,8 @@ interface Payment {
 export default function InstallmentsPage() {
     const { activeStore, user, hasPermission } = useAuth();
     const { showToast } = useToast();
-    const params = useParams() as { slug: string };
-    const { slug } = params;
+    const params = useParams();
+    const slug = (params?.slug as string) || '';
 
     if (!activeStore) return null;
     if (!hasPermission('manage_installments')) {

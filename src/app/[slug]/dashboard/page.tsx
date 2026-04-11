@@ -28,8 +28,8 @@ import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
     const { activeStore, isLoading, hasPermission } = useAuth();
-    const params = useParams() as { slug: string };
-    const { slug } = params;
+    const params = useParams();
+    const slug = (params?.slug as string) || '';
 
     const [stats, setStats] = useState({
         revenue: 0,
