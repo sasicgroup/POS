@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSuperAdmin } from '@/lib/super-admin-context';
-import { supabase } from '@/lib/supabase';
 import {
     MessageSquare, Send, Settings, Bell, History,
     CheckCircle2, XCircle, Clock, AlertTriangle, Phone,
@@ -76,9 +75,11 @@ export default function SuperAdminSMSPage() {
     };
 
     const loadSettings = async () => {
-        const { data } = await supabase.from('global_settings').select('super_admin_sms_config').maybeSingle();
-        if (data?.super_admin_sms_config) {
-            const cfg = data.super_admin_sms_config;
+        const res = await fetch('/api/super-admin/global-settings', { credentials: 'include' });
+        if (!res.ok) return;
+        const { settings } = await res.json();
+        const cfg = settings?.super_admin_sms_config;
+        if (cfg) {
             if (cfg.smsConfig) setSmsConfig(cfg.smsConfig);
             if (cfg.intervals) setIntervals(cfg.intervals);
         }
@@ -86,30 +87,39 @@ export default function SuperAdminSMSPage() {
 
     const saveSettings = async () => {
         setSavingConfig(true);
-        await supabase.from('global_settings').update({
-            super_admin_sms_config: { smsConfig, intervals }
-        }).neq('id', '00000000-0000-0000-0000-000000000000'); // update all rows (usually 1)
+        await fetch('/api/super-admin/global-settings', {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                patch: { super_admin_sms_config: { smsConfig, intervals } },
+            }),
+        });
         setSavingConfig(false);
         showToast('SMS settings saved!');
     };
 
     const saveIntervals = async () => {
         setSavingIntervals(true);
-        await supabase.from('global_settings').update({
-            super_admin_sms_config: { smsConfig, intervals }
-        }).neq('id', '00000000-0000-0000-0000-000000000000');
+        await fetch('/api/super-admin/global-settings', {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                patch: { super_admin_sms_config: { smsConfig, intervals } },
+            }),
+        });
         setSavingIntervals(false);
         showToast('Reminder settings saved!');
     };
 
     const loadLogs = async () => {
         setLoadingLogs(true);
-        const { data } = await supabase
-            .from('super_admin_sms_logs')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(50);
-        if (data) setLogs(data);
+        const res = await fetch('/api/super-admin/sms-logs', { credentials: 'include' });
+        if (res.ok) {
+            const { logs } = await res.json();
+            if (logs) setLogs(logs);
+        }
         setLoadingLogs(false);
     };
 
@@ -134,11 +144,20 @@ export default function SuperAdminSMSPage() {
             const data = await res.json();
             const success = data.code === '2000' || data.code === 2000;
 
-            // Log to DB
-            await supabase.from('super_admin_sms_logs').insert({
-                phone: normalizedPhone, message, status: success ? 'sent' : 'failed',
-                business_id: businessId, business_name: businessName,
-                reminder_type: reminderType, sent_by: superAdmin?.id, created_at: new Date().toISOString()
+            await fetch('/api/super-admin/sms-logs', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    phone: normalizedPhone,
+                    message,
+                    status: success ? 'sent' : 'failed',
+                    business_id: businessId,
+                    business_name: businessName,
+                    reminder_type: reminderType,
+                    sent_by: superAdmin?.id,
+                    created_at: new Date().toISOString(),
+                }),
             });
             return success;
         } catch {

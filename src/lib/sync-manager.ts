@@ -202,6 +202,7 @@ class SyncManager {
         // Payload should contain: { activeStoreId, saleData, userId, timestamp }
         console.log('[SyncManager] Syncing offline sale:', payload);
         const { activeStoreId, saleData, userId } = payload;
+        const businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
 
         try {
             // 1. Handle Customer (if provided)
@@ -307,6 +308,7 @@ class SyncManager {
                                 console.warn(`[SyncManager] ⚠️ STOCK CONFLICT: ${product.name}`);
                                 conflictNotifications.push({
                                     store_id: activeStoreId,
+                                    ...(businessId ? { business_id: businessId } : {}),
                                     title: '⚠️ Stock Conflict Detected',
                                     message: `Offline sale synced for "${product.name}" but stock was insufficient. Server had ${currentServerStock}, sale was for ${requestedQuantity}. Stock adjusted to ${Math.max(0, newStock)}.`,
                                     type: 'warning',

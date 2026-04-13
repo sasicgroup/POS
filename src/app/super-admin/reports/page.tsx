@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSuperAdmin } from '@/lib/super-admin-context';
-import { supabase } from '@/lib/supabase';
 import { TrendingUp, DollarSign, Building2, Calendar, ArrowUpRight, ArrowDownRight, RefreshCw, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
@@ -27,12 +26,9 @@ export default function PlatformReportsPage() {
         else if (period === '3m') start.setMonth(now.getMonth() - 3);
         else start.setFullYear(now.getFullYear() - 1);
 
-        // Fetch all sales across all businesses
-        const { data: sales } = await supabase
-            .from('sales')
-            .select('total_amount, created_at, store_id')
-            .gte('created_at', start.toISOString())
-            .neq('status', 'Refunded');
+        const rep = await fetch(`/api/super-admin/reports?period=${period}`, { credentials: 'include' });
+        const repJson = rep.ok ? await rep.json() : { sales: [] };
+        const sales = repJson.sales as { total_amount?: number; created_at: string; store_id?: string }[] | null;
 
         if (sales) {
             const totalRevenue = sales.reduce((a, s) => a + (s.total_amount || 0), 0);

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import '../styles/globals.css'
 import { Providers } from './providers'
 import { PWARegister } from '@/components/PWARegister'
+import BroadcastManager from '@/components/BroadcastManager'
 
 export const metadata: Metadata = {
     title: 'Store Management System',
@@ -33,7 +34,10 @@ export default function RootLayout({
         <html lang="en" suppressHydrationWarning>
             <body className="antialiased bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 min-h-screen" suppressHydrationWarning>
                 <PWARegister />
-                <Providers>{children}</Providers>
+                <Providers>
+                    <BroadcastManager />
+                    {children}
+                </Providers>
             </body>
         </html>
     )

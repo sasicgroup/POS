@@ -1,6 +1,7 @@
 -- Create notifications table
 CREATE TABLE IF NOT EXISTS public.notifications (
     id uuid default uuid_generate_v4() primary key,
+    business_id uuid references public.businesses(id) on delete cascade,
     store_id uuid references public.stores(id) on delete cascade,
     type text not null, -- 'order' | 'low_stock' | 'report' | 'custom'
     title text not null,

@@ -28,42 +28,59 @@ interface NotificationsContextType {
 const NotificationsContext = createContext<NotificationsContextType | undefined>(undefined);
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-    const { activeStore } = useAuth();
+    const { activeStore, businessId } = useAuth();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        if (activeStore?.id) {
+        if (activeStore?.id || businessId) {
             fetchNotifications();
             subscribeToNotifications();
         } else {
             setNotifications([]);
             setIsLoading(false);
         }
-    }, [activeStore?.id]);
+    }, [activeStore?.id, businessId]);
 
     const fetchNotifications = async () => {
-        if (!activeStore?.id) return;
+        // We now prioritize businessId for wider context or activeStore.id for specific context
+        if (!businessId && !activeStore?.id) return;
 
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('notifications')
                 .select('*')
-                .eq('store_id', activeStore.id)
                 .order('created_at', { ascending: false })
                 .limit(50);
 
+            if (activeStore?.id) {
+                query = query.eq('store_id', activeStore.id);
+            } else if (businessId) {
+                // Only filter by business_id if we have it and no store is active
+                query = query.eq('business_id', businessId);
+            }
+
+            const { data, error } = await query;
+
             if (error) {
-                // Ignore "relation does not exist" error if migration hasn't run yet
-                if (error.code !== '42P01') {
-                    console.error('[Notifications] Error fetching:', error);
+                if (error.code === '42703' && !activeStore?.id) {
+                    console.warn('[Notifications] business_id column missing; skipping unscoped fetch to avoid cross-tenant leakage. Run SUPABASE_ISOLATION_REINFORCEMENT.sql.');
+                    setNotifications([]);
+                } else if (error.code === '42P01') {
+                    console.warn('[Notifications] Table does not exist yet.');
+                    setNotifications([]);
+                } else if (error.code === 'PGRST116') {
+                    console.warn('[Notifications] RLS policy denying access - this is expected during initial setup.');
+                    setNotifications([]);
+                } else {
+                    console.error('[Notifications] Error fetching:', error.message || error);
                 }
             } else if (data) {
                 setNotifications(data);
             }
         } catch (err) {
-            console.error('[Notifications] Unexpected error:', err);
+            console.error('[Notifications] Unexpected error:', (err instanceof Error ? err.message : err));
         } finally {
             setIsLoading(false);
         }
@@ -144,12 +161,13 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     const createNotification = async (notification: Omit<Notification, 'id' | 'store_id' | 'created_at' | 'is_read'>) => {
         if (!activeStore?.id) return;
 
-        const { error } = await supabase
-            .from('notifications')
-            .insert({
-                store_id: activeStore.id,
-                ...notification
-            });
+        const row: Record<string, unknown> = {
+            store_id: activeStore.id,
+            ...notification
+        };
+        if (businessId) row.business_id = businessId;
+
+        const { error } = await supabase.from('notifications').insert(row as any);
 
         if (error) {
             console.error('[Notifications] Error creating notification:', error);

@@ -3,22 +3,35 @@
 import { useEffect, useState } from 'react';
 import { useSuperAdmin, Business, computeSubscriptionStatus } from '@/lib/super-admin-context';
 import Link from 'next/link';
-import { Building2, Plus, Search, CheckCircle2, Clock, XCircle, Eye, Edit, ToggleLeft, ToggleRight, RefreshCw, ChevronDown, Filter } from 'lucide-react';
+import { Building2, Plus, Search, CheckCircle2, Clock, XCircle, Eye, Edit, ToggleLeft, ToggleRight, RefreshCw, ChevronDown, Filter, Trash2 } from 'lucide-react';
 
 const STATUS_FILTERS = ['all', 'active', 'grace', 'expired', 'suspended'];
 const PLAN_FILTERS = ['all', 'monthly', 'yearly', 'forever', 'trial'];
 
 export default function BusinessesPage() {
-    const { businesses, loadBusinesses, toggleBusinessActive, startViewAs } = useSuperAdmin();
+    const { businesses, loadBusinesses, toggleBusinessActive, startViewAs, deleteBusiness } = useSuperAdmin();
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [planFilter, setPlanFilter] = useState('all');
     const [loading, setLoading] = useState(false);
+    const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         setLoading(true);
         loadBusinesses().finally(() => setLoading(false));
     }, []);
+
+    const handleDeleteBusiness = async () => {
+        if (!deleteConfirm) return;
+        setDeleting(true);
+        const result = await deleteBusiness(deleteConfirm.id);
+        setDeleting(false);
+        setDeleteConfirm(null);
+        if (!result.success) {
+            alert(`Failed to delete: ${result.message}`);
+        }
+    };
 
     const filtered = businesses.filter(b => {
         const matchSearch = !search ||
@@ -140,7 +153,7 @@ export default function BusinessesPage() {
                                                     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.color}`}>
                                                         <Icon className="h-3 w-3" />
                                                         {cfg.label}
-                                                        {biz.days_remaining !== null && biz.subscription_status !== 'forever' && biz.days_remaining >= 0
+                                                        {biz.days_remaining !== null && biz.days_remaining !== undefined && biz.subscription_status !== 'forever' && biz.days_remaining >= 0
                                                             ? ` · ${biz.days_remaining}d`
                                                             : ''}
                                                     </span>
@@ -174,11 +187,18 @@ export default function BusinessesPage() {
                                                         onClick={() => toggleBusinessActive(biz.id, !biz.is_active)}
                                                         title={biz.is_active ? 'Suspend this business' : 'Reactivate this business'}
                                                         className={`p-1.5 rounded-lg transition-all ${biz.is_active
-                                                            ? 'text-slate-400 hover:text-red-400 hover:bg-red-500/10'
+                                                            ? 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10'
                                                             : 'text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10'
                                                             }`}
                                                     >
                                                         {biz.is_active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeleteConfirm({ id: biz.id, name: biz.name })}
+                                                        title="Delete this business permanently"
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
                                                     </button>
                                                 </div>
                                             </td>
@@ -190,6 +210,52 @@ export default function BusinessesPage() {
                     </div>
                 )}
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {deleteConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="h-10 w-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                                <Trash2 className="h-5 w-5 text-red-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Delete Business</h3>
+                                <p className="text-sm text-slate-400">This action is permanent</p>
+                            </div>
+                        </div>
+                        <p className="text-slate-300 text-sm mb-2">
+                            Are you sure you want to permanently delete <strong className="text-white">{deleteConfirm.name}</strong>?
+                        </p>
+                        <p className="text-red-400/80 text-xs mb-6">
+                            This will remove all stores, employees, sales, products, and customer data associated with this business. This cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setDeleteConfirm(null)}
+                                disabled={deleting}
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/5 transition-all disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteBusiness}
+                                disabled={deleting}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {deleting ? (
+                                    <>
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        Deleting...
+                                    </>
+                                ) : (
+                                    'Delete Forever'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

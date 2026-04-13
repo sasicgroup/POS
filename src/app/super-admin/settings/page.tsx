@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSuperAdmin } from '@/lib/super-admin-context';
-import { supabase } from '@/lib/supabase';
 import { ShieldCheck, Plus, Trash2, Eye, EyeOff, Save, User, Mail, Lock, Check, X } from 'lucide-react';
 
 interface SuperAdminUser {
@@ -45,8 +44,11 @@ export default function SuperAdminSettingsPage() {
 
     const loadAdmins = async () => {
         setLoading(true);
-        const { data } = await supabase.from('super_admins').select('*').order('created_at', { ascending: true });
-        if (data) setAdmins(data);
+        const res = await fetch('/api/super-admin/admins', { credentials: 'include' });
+        if (res.ok) {
+            const { admins } = await res.json();
+            if (admins) setAdmins(admins);
+        }
         setLoading(false);
     };
 
@@ -54,28 +56,29 @@ export default function SuperAdminSettingsPage() {
         if (!superAdmin) return;
         setSavingProfile(true);
 
-        // Validate current password first
-        const { data: me } = await supabase.from('super_admins').select('password_hash').eq('id', superAdmin.id).single();
-        if (me?.password_hash !== profileForm.current_password) {
-            showToast('Current password is incorrect', 'error');
-            setSavingProfile(false);
-            return;
-        }
-
-        const updates: any = { name: profileForm.name, email: profileForm.email };
         if (profileForm.new_password) {
             if (profileForm.new_password !== profileForm.confirm_password) {
                 showToast('New passwords do not match', 'error');
                 setSavingProfile(false);
                 return;
             }
-            updates.password_hash = profileForm.new_password;
         }
 
-        const { error } = await supabase.from('super_admins').update(updates).eq('id', superAdmin.id);
+        const res = await fetch(`/api/super-admin/admins/${superAdmin.id}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: profileForm.name,
+                email: profileForm.email,
+                current_password: profileForm.current_password,
+                ...(profileForm.new_password ? { new_password: profileForm.new_password } : {}),
+            }),
+        });
+        const data = await res.json();
         setSavingProfile(false);
-        if (error) {
-            showToast('Failed to update profile: ' + error.message, 'error');
+        if (!res.ok) {
+            showToast(data.error || 'Failed to update profile', 'error');
         } else {
             showToast('Profile updated successfully!');
             setProfileForm(p => ({ ...p, current_password: '', new_password: '', confirm_password: '' }));
@@ -86,15 +89,20 @@ export default function SuperAdminSettingsPage() {
     const handleAddAdmin = async () => {
         if (!newAdmin.name || !newAdmin.email || !newAdmin.password) return;
         setAddingAdmin(true);
-        const { error } = await supabase.from('super_admins').insert({
-            name: newAdmin.name,
-            email: newAdmin.email,
-            password_hash: newAdmin.password,
-            is_active: true,
+        const res = await fetch('/api/super-admin/admins', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: newAdmin.name,
+                email: newAdmin.email,
+                password: newAdmin.password,
+            }),
         });
+        const data = await res.json();
         setAddingAdmin(false);
-        if (error) {
-            showToast('Failed to add admin: ' + error.message, 'error');
+        if (!res.ok) {
+            showToast('Failed to add admin: ' + (data.error || res.statusText), 'error');
         } else {
             showToast('Super admin added successfully!');
             setNewAdmin({ name: '', email: '', password: '' });
@@ -105,17 +113,26 @@ export default function SuperAdminSettingsPage() {
 
     const handleToggleAdmin = async (id: string, isActive: boolean) => {
         if (id === superAdmin?.id) { showToast('Cannot deactivate yourself', 'error'); return; }
-        await supabase.from('super_admins').update({ is_active: !isActive }).eq('id', id);
-        showToast(`Admin ${isActive ? 'deactivated' : 'activated'}`);
-        loadAdmins();
+        const res = await fetch(`/api/super-admin/admins/${id}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: !isActive }),
+        });
+        if (res.ok) {
+            showToast(`Admin ${isActive ? 'deactivated' : 'activated'}`);
+            loadAdmins();
+        }
     };
 
     const handleDeleteAdmin = async (id: string) => {
         if (id === superAdmin?.id) { showToast('Cannot delete yourself', 'error'); return; }
         if (!confirm('Are you sure you want to permanently delete this admin?')) return;
-        await supabase.from('super_admins').delete().eq('id', id);
-        showToast('Admin deleted');
-        loadAdmins();
+        const res = await fetch(`/api/super-admin/admins/${id}`, { method: 'DELETE', credentials: 'include' });
+        if (res.ok) {
+            showToast('Admin deleted');
+            loadAdmins();
+        }
     };
 
     const inputClass = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all";
@@ -275,11 +292,6 @@ export default function SuperAdminSettingsPage() {
                 )}
             </div>
 
-            {/* ── Security Info ─────────────────────────────────────── */}
-            <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 text-xs text-slate-500 space-y-1">
-                <p className="font-medium text-slate-400">Security Note</p>
-                <p>Passwords are stored as plaintext in this MVP build. For production, implement bcrypt hashing via a server-side API route before going live.</p>
-            </div>
         </div>
     );
 }

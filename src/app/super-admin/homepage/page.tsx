@@ -1,8 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useSuperAdmin } from '@/lib/super-admin-context';
-import { supabase } from '@/lib/supabase';
+import { useState, useEffect } from 'react';
 import { Globe, Monitor, Smartphone, Save, Eye, RefreshCw, Check, Palette, Type, Phone, MessageSquare, Zap, Building2, Star } from 'lucide-react';
 
 interface HomePageContent {
@@ -60,16 +58,35 @@ export default function HomepageEditorPage() {
 
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
+    useEffect(() => {
+        (async () => {
+            const res = await fetch('/api/super-admin/global-settings', { credentials: 'include' });
+            if (res.ok) {
+                const { settings } = await res.json();
+                if (settings?.homepage_content) {
+                    setContent(prev => ({ ...DEFAULT_CONTENT, ...settings.homepage_content }));
+                }
+            }
+        })();
+    }, []);
+
     const set = (field: keyof HomePageContent, value: any) => setContent(p => ({ ...p, [field]: value }));
 
     const saveContent = async () => {
         setSaving(true);
-        const { error } = await supabase.from('global_settings').update({
-            homepage_content: content
-        }).neq('id', '00000000-0000-0000-0000-000000000000');
+        const res = await fetch('/api/super-admin/global-settings', {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ patch: { homepage_content: content } }),
+        });
         setSaving(false);
-        if (error) showToast('Error saving: ' + error.message);
-        else showToast('Homepage saved!');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast('Error saving: ' + (err.error || res.statusText));
+        } else {
+            showToast('Homepage saved!');
+        }
     };
 
     const inputClass = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all";

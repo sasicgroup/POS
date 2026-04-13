@@ -43,6 +43,7 @@ export interface SMSConfig {
 }
 
 import { supabase } from '@/lib/supabase';
+import { deductSMSCredit } from './sms-wallet';
 
 // Local cache
 let smsConfig: SMSConfig = {
@@ -260,7 +261,7 @@ export const getSMSHistory = async (storeId: string, page: number = 1, limit: nu
 
 // --- Notification Functions ---
 
-export async function sendDirectMessage(phone: string, message: string, channels: ('sms' | 'whatsapp')[] = ['sms', 'whatsapp'], storeId?: string) {
+export async function sendDirectMessage(phone: string, message: string, channels: ('sms' | 'whatsapp')[] = ['sms', 'whatsapp'], storeId?: string, businessId?: string) {
     const config = getSMSConfig();
 
     console.log(`[SMS] Direct Message to ${phone} via ${channels.join(', ')}`);
@@ -290,6 +291,17 @@ export async function sendDirectMessage(phone: string, message: string, channels
     if (channels.includes('sms')) {
         let success = false;
         try {
+            // Check & Deduct credit if platform-managed
+            if (businessId) {
+                const segments = Math.ceil(message.length / 160); // Standard SMS segmenting
+                const wallet = await deductSMSCredit(businessId, segments);
+                if (!wallet.success) {
+                    console.error('[SMS] Delivery cancelled:', wallet.error);
+                    await logSMS(phone, `[FAIL: ${wallet.error}] ` + message, 'sms', 'failed', storeId);
+                    return;
+                }
+            }
+
             success = await sendMNotifySMS(config, phone, message);
             await logSMS(phone, message, 'sms', success ? 'sent' : 'failed', storeId);
         } catch (error: any) {
@@ -387,8 +399,8 @@ export const sendNotification = async (type: 'welcome' | 'sale' | 'installment',
         console.log(`[SMS] Sending ${type} to customer: ${data.customerPhone}`);
 
         if (msg) {
-            if (customer.sms) await sendDirectMessage(data.customerPhone, msg, ['sms'], storeId);
-            if (customer.whatsapp) await sendDirectMessage(data.customerPhone, msg, ['whatsapp'], storeId);
+            if (customer.sms) await sendDirectMessage(data.customerPhone, msg, ['sms'], storeId, data.businessId);
+            if (customer.whatsapp) await sendDirectMessage(data.customerPhone, msg, ['whatsapp'], storeId, data.businessId);
         }
     }
 
@@ -406,8 +418,8 @@ export const sendNotification = async (type: 'welcome' | 'sale' | 'installment',
         }
 
         if (msg) {
-            if (owner.sms) await sendDirectMessage(data.ownerPhone, msg, ['sms'], storeId);
-            if (owner.whatsapp) await sendDirectMessage(data.ownerPhone, msg, ['whatsapp'], storeId);
+            if (owner.sms) await sendDirectMessage(data.ownerPhone, msg, ['sms'], storeId, data.businessId);
+            if (owner.whatsapp) await sendDirectMessage(data.ownerPhone, msg, ['whatsapp'], storeId, data.businessId);
         }
     }
 

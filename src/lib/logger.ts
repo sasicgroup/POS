@@ -39,17 +39,38 @@ export const logActivity = async (
         const safeUserId = effectiveUserId && isUUID(effectiveUserId) ? effectiveUserId : null;
         const safeStoreId = effectiveStoreId && isUUID(effectiveStoreId) ? effectiveStoreId : null;
 
-        const { error } = await supabase.from('activity_logs').insert({
+        // Get Business ID
+        let businessId = null;
+        if (typeof window !== 'undefined') {
+            businessId = localStorage.getItem('sms_business_id');
+        }
+
+        const logData: any = {
             action,
             details,
             user_id: safeUserId,
             store_id: safeStoreId
-        });
+        };
+        
+        if (businessId && isUUID(businessId)) {
+            logData.business_id = businessId;
+        }
+
+        const { error } = await supabase.from('activity_logs').insert(logData);
 
         if (error) {
-            console.error('Failed to log activity:', error);
+            // Fallback: If business_id column is missing, retry without it
+            if (error.code === '42703' && logData.business_id) {
+                delete logData.business_id;
+                const { error: retryError } = await supabase.from('activity_logs').insert(logData);
+                if (retryError) {
+                    console.error('Failed to log activity (fallback):', retryError.message, retryError.details);
+                }
+            } else {
+                console.error('Failed to log activity:', error.message, error.code, error.details);
+            }
         }
-    } catch (e) {
-        console.error('Logging error:', e);
+    } catch (e: any) {
+        console.error('Logging error:', e?.message || e);
     }
 };

@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
-// We prioritize the Service Role Key to bypass RLS for fetching settings
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://cwieywlveahchulsswnq.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// ✅ SECURITY: Use Service Role Key (server-only) to bypass RLS for fetching settings
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Missing Supabase server credentials');
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(request: Request) {
     try {
@@ -75,16 +79,31 @@ export async function POST(request: Request) {
             }
 
             const senderId = config.hubtel.senderId || 'SASIC';
-            const url = `https://smsc.hubtel.com/v1/messages/send?clientsecret=${config.hubtel.clientSecret}&clientid=${config.hubtel.clientId}&from=${encodeURIComponent(senderId)}&to=${simplePhone}&content=${encodeURIComponent(message)}`;
-
+            const apiUrl = 'https://smsc.hubtel.com/v1/messages/send';
+            
             console.log('[API] Hubtel request:', { to: simplePhone, from: senderId, messageLength: message.length });
 
             try {
-                const res = await fetch(url);
+                // ✅ SECURITY: Pass credentials in Authorization header instead of URL
+                const authHeader = `Basic ${Buffer.from(`${config.hubtel.clientId}:${config.hubtel.clientSecret}`).toString('base64')}`;
+                
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': authHeader
+                    },
+                    body: JSON.stringify({
+                        from: senderId,
+                        to: simplePhone,
+                        content: message
+                    })
+                });
+                
                 providerResponse = await res.json();
                 console.log('[API] Hubtel response:', providerResponse);
 
-                // Hubtel returns status code 200 and ResponseCode "0000" on success
+                // Hubtel returns status code 200/201 and ResponseCode "0000" on success
                 if (res.ok && (providerResponse.ResponseCode === '0000' || providerResponse.Status === 0)) {
                     success = true;
                     console.log('[API] ✅ Hubtel SMS sent successfully');
@@ -102,7 +121,7 @@ export async function POST(request: Request) {
             }
         }
         else if (config.provider === 'mnotify' && config.mnotify?.apiKey) {
-            const url = `https://api.mnotify.com/api/sms/quick?key=${config.mnotify.apiKey}`;
+            const apiUrl = 'https://api.mnotify.com/api/sms/quick';
             const sender = config.mnotify.senderId || 'SASIC';
 
             // Format phone number for mNotify (requires international format)
@@ -125,16 +144,19 @@ export async function POST(request: Request) {
             console.log('[API] mNotify payload:', { recipient: formattedPhone, sender, messageLength: message.length });
 
             try {
-                const res = await fetch(url, {
+                // ✅ SECURITY: Pass API key in header instead of URL query parameter
+                const res = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${config.mnotify.apiKey}`
+                    },
                     body: JSON.stringify(payload)
                 });
                 providerResponse = await res.json();
                 console.log('[API] mNotify response:', providerResponse);
 
                 // mNotify returns { code: "2000", message: "SMS sent successfully" } on success
-                // or { code: "4000", message: "Error message" } on failure
                 if (providerResponse.code === '2000' || providerResponse.code === 2000) {
                     success = true;
                     console.log('[API] ✅ mNotify SMS sent successfully');

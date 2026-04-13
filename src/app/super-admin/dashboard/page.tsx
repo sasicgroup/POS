@@ -14,7 +14,7 @@ export default function SuperAdminDashboard() {
     const active = businesses.filter(b => b.subscription_status === 'active' || b.subscription_status === 'forever').length;
     const grace = businesses.filter(b => b.subscription_status === 'grace').length;
     const expired = businesses.filter(b => b.subscription_status === 'expired' || !b.is_active).length;
-    const expiringSoon = businesses.filter(b => b.days_remaining !== null && b.days_remaining <= 7 && b.days_remaining >= 0).length;
+    const expiringSoon = businesses.filter(b => b.days_remaining !== null && b.days_remaining !== undefined && b.days_remaining <= 7 && b.days_remaining >= 0).length;
 
     const recentBusinesses = [...businesses].slice(0, 5);
 

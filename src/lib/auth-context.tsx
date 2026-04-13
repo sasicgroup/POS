@@ -3,12 +3,31 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import { fetchPublicBusiness } from '@/lib/public-business';
 import { loadSMSConfigFromDB, sendDirectMessage } from '@/lib/sms';
 import { logActivity } from '@/lib/logger';
+import { useToast } from '@/lib/toast-context';
+
+/** Resolves tenant UUID from /{slug}/… URL and localStorage; keeps sms_business_* in sync. */
+async function resolveTenantBusinessIdFromRoute(): Promise<string | null> {
+    if (typeof window === 'undefined') return null;
+    const currentSlug = window.location.pathname.split('/')[1] || null;
+    let resolved = localStorage.getItem('sms_business_id');
+    if (currentSlug && !['dashboard', 'login', 'super-admin'].includes(currentSlug)) {
+        const bRow = await fetchPublicBusiness({ slug: currentSlug });
+        if (bRow && bRow.id) {
+            resolved = String(bRow.id);
+            localStorage.setItem('sms_business_id', resolved);
+            localStorage.setItem('sms_business_slug', currentSlug);
+        }
+    }
+    return resolved;
+}
 
 // Define Store Type
 export interface Store {
     id?: any; // Added ID
+    business_id?: string; // ✅ Add business_id for data isolation validation
     name: string;
     location: string;
     phone?: string; // Store contact phone
@@ -143,6 +162,7 @@ export interface User {
     work_days?: string[];
     two_factor_method?: 'sms' | 'masterpass';
     master_password?: string;
+    business_id?: string; // ✅ Add business_id for data isolation validation
 }
 
 interface AuthContextType {
@@ -172,26 +192,49 @@ interface AuthContextType {
     globalSettings: GlobalSettings;
     updateGlobalSettings: (settings: Partial<GlobalSettings>) => Promise<void>;
     updateStoreOrder: (updates: { id: any; sort_order: number }[]) => Promise<void>;
+    updateUser: (updates: Partial<User>) => void;
+    businessId: string | null;
 }
 
 export interface GlobalSettings {
     appName: string;
     appLogo?: string;
     primaryColor?: string;
+    ownerName?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const { showToast } = useToast();
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [activeStore, setActiveStore] = useState<Store | null>(null);
     const [stores, setStores] = useState<Store[]>([]);
-    const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({ appName: 'SASIC STORES', primaryColor: '#4f46e5' });
+    const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({ appName: '', primaryColor: '#4f46e5' });
+    const [businessId, setBusinessId] = useState<string | null>(null);
 
     useEffect(() => {
         const initAuth = async () => {
             try {
+                // ✅ Load and validate ViewAsSession if present
+                const viewAsStr = localStorage.getItem('sms_viewas_session');
+                let viewAsSession: any = null;
+                if (viewAsStr) {
+                    try {
+                        viewAsSession = JSON.parse(viewAsStr);
+                        // Validate viewAsSession has required fields
+                        if (!viewAsSession?.business_id || !viewAsSession?.business_slug) {
+                            console.warn('[Auth] Invalid viewAsSession format. Clearing.');
+                            localStorage.removeItem('sms_viewas_session');
+                            viewAsSession = null;
+                        }
+                    } catch (e) {
+                        console.warn('[Auth] Failed to parse viewAsSession', e);
+                        localStorage.removeItem('sms_viewas_session');
+                    }
+                }
+
                 // Load User
                 const storedUser = localStorage.getItem('sms_user');
                 let currentUser: User | null = null;
@@ -205,14 +248,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     return;
                 }
 
-                // Load Global Settings
-                const { data: gSettings } = await supabase.from('global_settings').select('*').single();
-                if (gSettings) {
-                    setGlobalSettings({
-                        appName: gSettings.app_name,
-                        appLogo: gSettings.app_logo,
-                        primaryColor: gSettings.primary_color
-                    });
+                // Load Business Branding/Settings
+                const currentSlug = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : null;
+                let businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
+                let businessSlug = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_slug') : null;
+
+                // Sync: If URL slug doesn't match stored slug, we must refresh context FIRST
+                if (currentSlug && currentSlug !== businessSlug && !['dashboard', 'login', 'super-admin'].includes(currentSlug)) {
+                    console.log(`[Auth] Slug mismatch: URL=${currentSlug}, Storage=${businessSlug}. Fetching correct business...`);
+                    const bData = await fetchPublicBusiness({ slug: currentSlug });
+                    if (bData && bData.id) {
+                        businessId = String(bData.id);
+                        businessSlug = String(bData.slug);
+                        if (typeof localStorage !== 'undefined') {
+                            localStorage.setItem('sms_business_id', businessId);
+                            localStorage.setItem('sms_business_slug', businessSlug);
+                        }
+                    }
+                }
+
+                // ✅ Security: Validate user's business_id matches CORRECT business context
+                if (currentUser.business_id && businessId && currentUser.business_id !== businessId && currentUser.id !== 'owner-1') {
+                    console.error('[Auth] User business_id mismatch! User belongs to:', currentUser.business_id, 'but URL requires:', businessId);
+                    // Clear auth to prevent data leakage across businesses
+                    localStorage.removeItem('sms_user');
+                    localStorage.removeItem('sms_viewas_session');
+                    setUser(null);
+                    setIsLoading(false);
+                    return;
+                }
+
+                // If user has business_id but context doesn't, set it
+                if (currentUser.business_id && !businessId) {
+                    businessId = currentUser.business_id;
+                    localStorage.setItem('sms_business_id', businessId);
+                }
+
+                if (businessId) {
+                    const businessData = await fetchPublicBusiness({ id: businessId });
+
+                    if (businessData) {
+                        setBusinessId(businessId);
+                        setGlobalSettings({
+                            appName: (businessData.app_name as string) || 'Business Portal',
+                            appLogo: (businessData.logo_url as string) || '',
+                            primaryColor: (businessData.primary_color as string) || '#4f46e5',
+                            ownerName: undefined
+                        });
+                    }
                 }
 
                 // Load Stores based on User Access
@@ -236,13 +319,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Fetch Stores
                 if (accessIds.length > 0) {
                     const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
-                    if (userStores) validStores = userStores;
+                    if (userStores) {
+                        validStores = userStores;
+                        // Tenant isolation: ignore store rows that do not belong to the URL/session business
+                        if (businessId) {
+                            validStores = validStores.filter((s: any) => s.business_id === businessId);
+                        }
+                    }
                 } else {
                     if (currentUser.id === 'owner-1' || currentUser.role === 'owner') {
-                        // Filter by business_id if available (supports view-as and multi-tenant isolation)
-                        const businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
+                        // Filter by business_id derived from the current slug to ensure strict isolation
+                        const currentSlug = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : null;
+                        let bId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
+
+                        // Priority: If we are in a slugged route, fetch THAT business's stores
+                        if (currentSlug && !['dashboard', 'login', 'super-admin'].includes(currentSlug)) {
+                            const bData = await fetchPublicBusiness({ slug: currentSlug });
+                            if (bData && bData.id) bId = String(bData.id);
+                        }
+
                         let query = supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
-                        if (businessId) query = (query as any).eq('business_id', businessId);
+                        if (bId) {
+                            query = (query as any).eq('business_id', bId);
+                        } else {
+                            // If no business context, return nothing for safety (prevents data leaks)
+                            query = (query as any).eq('id', '00000000-0000-0000-0000-000000000000');
+                        }
                         const { data: all } = await query;
                         if (all) validStores = all;
                     }
@@ -310,6 +412,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let validStores: any[] = [];
         let accessIds: any[] = [];
 
+        const resolvedBusinessId = await resolveTenantBusinessIdFromRoute();
+        if (resolvedBusinessId) setBusinessId(resolvedBusinessId);
+
         if (loggedUser.id !== 'owner-1' && loggedUser.role !== 'owner') {
             const { data: accessData } = await supabase.from('employee_access').select('store_id').eq('employee_id', loggedUser.id);
             if (accessData) accessIds = accessData.map(a => a.store_id);
@@ -319,12 +424,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (accessIds.length > 0) {
             const { data: userStores } = await supabase.from('stores').select('*').in('id', accessIds).neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
-            if (userStores) validStores = userStores;
+            if (userStores) {
+                validStores = userStores;
+                if (resolvedBusinessId) {
+                    validStores = validStores.filter((s: any) => s.business_id === resolvedBusinessId);
+                }
+            }
         } else if (loggedUser.id === 'owner-1' || loggedUser.role === 'owner') {
-            // Filter by business_id if available (supports view-as and multi-tenant isolation)
-            const businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
             let query = supabase.from('stores').select('*').neq('status', 'deleted').order('sort_order', { ascending: true }).order('created_at', { ascending: true });
-            if (businessId) query = (query as any).eq('business_id', businessId);
+            if (resolvedBusinessId) {
+                query = (query as any).eq('business_id', resolvedBusinessId);
+            } else {
+                query = (query as any).eq('id', '00000000-0000-0000-0000-000000000000');
+            }
             const { data: all } = await query;
             if (all) validStores = all;
         }
@@ -357,9 +469,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setUser(loggedUser);
+        // ✅ Store business_id with user for later validation
+        if (resolvedBusinessId) {
+            loggedUser.business_id = resolvedBusinessId;
+        }
         localStorage.setItem('sms_user', JSON.stringify(loggedUser));
         setUser(loggedUser);
-        localStorage.setItem('sms_user', JSON.stringify(loggedUser));
 
         // Log Login (Only if not just init) - Actually this is initAuth, maybe skip logging here or log 'SESSION_RESTORED'
         // logActivity('SESSION_RESTORED', {}, loggedUser.id, mappedStores?.[0]?.id);
@@ -370,16 +485,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const login = async (username: string, pin: string): Promise<{ success: boolean; status: 'SUCCESS' | 'CHOICE_REQUIRED' | 'OTP_REQUIRED' | 'MASTERPASS_REQUIRED' | 'LOCKED' | 'INVALID_CREDENTIALS' | 'OUTSIDE_SHIFT' | 'ERROR'; message?: string; tempUser?: User; availableMethods?: string[] }> => {
         setIsLoading(true);
         try {
-            // 1. Find Employee by Username (Case Insensitive)
-            // Check 'username' OR 'name' (legacy fallback)
-            let query = supabase.from('employees').select('*').ilike('username', username).is('deleted_at', null).limit(1);
-            let { data: employees, error } = await query;
+            const tenantBusinessId = await resolveTenantBusinessIdFromRoute();
+            const cleanUsername = username.trim();
 
-
+            // 1. Find Employee by Username (Case Insensitive), scoped to tenant when known
+            let query = supabase.from('employees').select('*').ilike('username', cleanUsername).is('deleted_at', null);
+            if (tenantBusinessId) query = (query as any).eq('business_id', tenantBusinessId);
+            let { data: employees, error } = await query.limit(1);
 
             if (error || !employees || employees.length === 0) {
-                // Try searching by name just in case (optional, remove if strict)
-                const { data: byName, error: nameError } = await supabase.from('employees').select('*').ilike('name', username).is('deleted_at', null).limit(1);
+                let nameQ = supabase.from('employees').select('*').ilike('name', cleanUsername).is('deleted_at', null);
+                if (tenantBusinessId) nameQ = (nameQ as any).eq('business_id', tenantBusinessId);
+                const { data: byName } = await nameQ.limit(1);
                 if (byName && byName.length > 0) employees = byName;
                 else return { success: false, status: 'INVALID_CREDENTIALS', message: 'User not found' };
             }
@@ -475,14 +592,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const verifyOTP = async (username: string, code: string): Promise<boolean> => {
-        // 1. Get user (re-fetch to be safe) - use ilike for case-insensitive match
-        const { data: employees } = await supabase.from('employees').select('*').ilike('username', username).single();
+        const tenantBid = await resolveTenantBusinessIdFromRoute();
+        const cleanUsername = username.trim();
+        let empQuery = supabase.from('employees').select('*').ilike('username', cleanUsername);
+        if (tenantBid) empQuery = (empQuery as any).eq('business_id', tenantBid);
+        const { data: employees } = await empQuery.maybeSingle();
         if (!employees) {
             console.error('[OTP] User not found for username:', username);
             return false;
         }
-
-        // console.log('[OTP] Verifying code for:', employees.username);
 
         // 2. Validate Code & Expiry
         if (employees.otp_code === code) {
@@ -518,8 +636,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const verifyMasterpass = async (username: string, password: string): Promise<boolean> => {
-        // Check User's Master Password
-        const { data: employee } = await supabase.from('employees').select('master_password, id, name, username, role, pin, phone, otp_enabled, two_factor_method, store_id').ilike('username', username).single();
+        const tenantBid = await resolveTenantBusinessIdFromRoute();
+        const cleanUsername = username.trim();
+        let mpQuery = supabase.from('employees').select('master_password, id, name, username, role, pin, phone, otp_enabled, two_factor_method, store_id').ilike('username', cleanUsername);
+        if (tenantBid) mpQuery = (mpQuery as any).eq('business_id', tenantBid);
+        const { data: employee } = await mpQuery.maybeSingle();
 
         if (employee && employee.master_password === password) {
             const userObj: User = {
@@ -541,7 +662,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const resendOTP = async (username: string): Promise<boolean> => {
-        const { data: employee } = await supabase.from('employees').select('*').ilike('username', username).single();
+        const tenantBid = await resolveTenantBusinessIdFromRoute();
+        const cleanUsername = username.trim();
+        let rsQuery = supabase.from('employees').select('*').ilike('username', cleanUsername);
+        if (tenantBid) rsQuery = (rsQuery as any).eq('business_id', tenantBid);
+        const { data: employee } = await rsQuery.maybeSingle();
         if (!employee || !employee.phone) {
             console.error('[OTP Resend] User not found or no phone');
             return false;
@@ -575,8 +700,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 if (result.success) {
                     console.log('[OTP Resend] ✅ SMS sent successfully');
+                    showToast('success', 'A new OTP has been sent to your phone');
                 } else {
                     console.error('[OTP Resend] ❌ SMS send failed:', result.error);
+                    showToast('error', `Failed to send SMS: ${result.error}`);
                 }
             } catch (err) {
                 console.error('[OTP Resend] ❌ Failed to resend OTP via API:', err);
@@ -607,13 +734,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = () => {
         if (user) logActivity('LOGOUT', {}, user.id, activeStore?.id);
         setUser(null);
+        setBusinessId(null);
         localStorage.removeItem('sms_user');
+        localStorage.removeItem('sms_active_store_id');
+        localStorage.removeItem('sms_business_id');
+        localStorage.removeItem('sms_business_slug');
         window.location.href = '/';
     };
 
     const switchStore = (storeId: any) => {
         const found = stores.find(s => s.id === storeId);
         if (found) {
+            // ✅ Cross-business validation: Ensure store belongs to current business context
+            if (businessId && found.business_id && found.business_id !== businessId) {
+                console.error('[Auth] Cannot switch to store from different business!', {
+                    attemptedStore: storeId,
+                    attemptedBusiness: found.business_id,
+                    currentBusiness: businessId
+                });
+                return;
+            }
             setActiveStore(found);
             localStorage.setItem('sms_active_store_id', found.id);
             if (found.id) loadSMSConfigFromDB(found.id);
@@ -640,14 +780,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .from('employees')
             .select('*')
             .eq('store_id', activeStore.id)
-            .is('deleted_at', null); // Exclude deleted employees
+            .neq('status', 'deleted'); // Exclude soft-deleted employees
 
         // 2. Get employees linked via employee_access (Multi-Store Mode)
         const { data: accessEmployees } = await supabase
             .from('employee_access')
             .select('employee_id, role, employees!inner(*)')
             .eq('store_id', activeStore.id)
-            .is('employees.deleted_at', null); // Exclude deleted employees
+            .neq('employees.status', 'deleted'); // Exclude soft-deleted employees
 
         let mergedMembers: User[] = [];
 
@@ -711,6 +851,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             pin: member.pin,
             role: member.role, // Default role
             store_id: activeStore.id, // Set home store
+            business_id: businessId, // Multi-tenant isolation
             otp_enabled: member.otp_enabled !== undefined ? member.otp_enabled : true, // Default true
             shift_start: member.shift_start,
             shift_end: member.shift_end,
@@ -742,24 +883,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!activeStore?.id) return;
 
         // Update basic info
-        if (updates.name || updates.pin || updates.username || updates.phone || updates.otp_enabled !== undefined || updates.shift_start || updates.shift_end || updates.work_days || updates.master_password) {
-            const updateData: any = {
-                name: updates.name,
-                username: updates.username,
-                phone: updates.phone,
-                pin: updates.pin,
-                otp_enabled: updates.otp_enabled,
-                shift_start: updates.shift_start,
-                shift_end: updates.shift_end,
-                work_days: updates.work_days
-            };
+        if (updates.name !== undefined || updates.pin !== undefined || updates.username !== undefined || updates.phone !== undefined || updates.otp_enabled !== undefined || updates.shift_start !== undefined || updates.shift_end !== undefined || updates.work_days !== undefined || updates.master_password !== undefined) {
+            const updateData: any = {};
+            if (updates.name !== undefined) updateData.name = updates.name;
+            if (updates.username !== undefined) updateData.username = updates.username;
+            if (updates.phone !== undefined) updateData.phone = updates.phone;
+            if (updates.pin !== undefined) updateData.pin = updates.pin;
+            if (updates.otp_enabled !== undefined) updateData.otp_enabled = updates.otp_enabled;
+            if (updates.shift_start !== undefined) updateData.shift_start = updates.shift_start;
+            if (updates.shift_end !== undefined) updateData.shift_end = updates.shift_end;
+            if (updates.work_days !== undefined) updateData.work_days = updates.work_days;
+            if (updates.master_password !== undefined && updates.master_password !== '') updateData.master_password = updates.master_password;
 
-            // Only include master_password if it's provided (not empty)
-            if (updates.master_password) {
-                updateData.master_password = updates.master_password;
+            if (Object.keys(updateData).length > 0) {
+                const { error: updateError } = await supabase.from('employees').update(updateData).eq('id', id);
+                if (updateError) {
+                    console.error("Failed to update employee basic info:", updateError);
+                    throw updateError;
+                }
             }
-
-            await supabase.from('employees').update(updateData).eq('id', id);
         }
 
         // Update Role for this store
@@ -772,15 +914,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 .maybeSingle();
 
             if (existingAccess) {
-                await supabase.from('employee_access')
+                const { error: roleUpdateError } = await supabase.from('employee_access')
                     .update({ role: updates.role })
                     .eq('id', existingAccess.id);
+                if (roleUpdateError) throw roleUpdateError;
             } else {
-                await supabase.from('employee_access').insert({
+                const { error: roleInsertError } = await supabase.from('employee_access').insert({
                     employee_id: id,
                     store_id: activeStore.id,
                     role: updates.role
                 });
+                if (roleInsertError) throw roleInsertError;
             }
         }
 
@@ -790,19 +934,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const removeTeamMember = async (id: any) => {
-        if (!activeStore?.id) return;
+        if (!activeStore?.id || !businessId) throw new Error('No active store or business');
 
         // 1. Remove store access
-        await supabase.from('employee_access')
+        const { error: accessError } = await supabase.from('employee_access')
             .delete()
             .eq('employee_id', id)
             .eq('store_id', activeStore.id);
 
-        // 2. Soft-delete from main employees table
-        // This ensures they stop showing up in the "Direct Employees" section of the store they were created in
-        await supabase.from('employees')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', id);
+        if (accessError) console.warn('[removeTeamMember] access cleanup:', accessError.message);
+
+        // 2. Soft-delete: set status to 'deleted' (deleted_at column doesn't exist in schema)
+        const { error: deleteError } = await supabase.from('employees')
+            .update({ status: 'deleted' })
+            .eq('id', id)
+            .eq('business_id', businessId);
+
+        if (deleteError) {
+            console.error('[removeTeamMember] Failed:', deleteError.message);
+            throw new Error(deleteError.message);
+        }
 
         await logActivity('DELETE_EMPLOYEE', { target_user_id: id }, user?.id, activeStore?.id);
 
@@ -889,30 +1040,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         await logActivity('DELETE_STORE', { store_id: storeId }, user?.id, storeId);
-        if (activeStore?.id === storeId) {
-            setActiveStore(stores.find(s => s.id !== storeId) || null);
-        }
-
-        await logActivity('DELETE_STORE', { store_id: storeId }, user?.id, storeId);
     };
 
     const updateGlobalSettings = async (settings: Partial<GlobalSettings>) => {
+        const businessId = typeof localStorage !== 'undefined' ? localStorage.getItem('sms_business_id') : null;
+        if (!businessId) throw new Error("No business context found");
+
         const update: any = {};
         if (settings.appName) update.app_name = settings.appName;
-        if (settings.appLogo) update.app_logo = settings.appLogo;
+        if (settings.appLogo !== undefined) update.logo_url = settings.appLogo;
         if (settings.primaryColor) update.primary_color = settings.primaryColor;
 
-        const { error } = await supabase.from('global_settings').update(update).eq('id', 1).select();
+        const { error } = await supabase
+            .from('businesses')
+            .update(update)
+            .eq('id', businessId);
 
-        if (error) {
-            // Fallback insert if not exists (though migration handles it, good for robustness)
-            if (error.details?.includes('0 rows')) {
-                await supabase.from('global_settings').insert({ id: 1, ...update });
-            } else {
-                console.error("Failed to update global settings", error);
-                return;
-            }
-        }
+        if (error) throw error;
 
         setGlobalSettings(prev => ({ ...prev, ...settings }));
     };
@@ -1023,7 +1167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const newStore: Store = { id: tempId, name, location, currency: 'GHS' };
         setStores(prev => [...prev, newStore]);
         setActiveStore(newStore);
-        const { data } = await supabase.from('stores').insert([{ name, location }]).select().single();
+        const { data } = await supabase.from('stores').insert([{ name, location, business_id: businessId }]).select().single();
         if (data) {
             // Map the fresh DB data to matching Store interface
             const mappedStore: Store = {
@@ -1064,16 +1208,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const hasPermission = (permission: string) => {
         if (!user) return false;
 
-        // 1. Super-admin (Primary Account) bypasses all
-        if (user.id === 'owner-1') return true;
+        // 1. Platform Super-admin (Primary Account) or Business owner role bypass
+        if (user.id === 'owner-1' || user.role === 'owner') return true;
 
-        // 2. Strict Access: Deny granular permissions if no active store selected
+        // 2. Granular checks require an active store
         if (!activeStore) return false;
 
-        // 3. User is an Owner of THIS store - bypass granular permission checks
-        if (user.role === 'owner') return true;
-
-        // 4. Get permissions from store config
+        // 3. Get permissions from store config
         const currentPermissions = activeStore.rolePermissions || DEFAULT_PERMISSIONS;
         const role = user.role || 'staff';
         const roleData = currentPermissions[role] || (DEFAULT_PERMISSIONS as any)[role] || {};
@@ -1100,6 +1241,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         console.error("Failed to update permissions", error);
         return false;
+    };
+
+    const updateUser = (updates: Partial<User>) => {
+        if (!user) return;
+        const updatedUser = { ...user, ...updates };
+        setUser(updatedUser);
+        localStorage.setItem('sms_user', JSON.stringify(updatedUser));
     };
 
     return (
@@ -1129,7 +1277,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             deleteStore,
             globalSettings,
             updateGlobalSettings,
-            updateStoreOrder
+            updateStoreOrder,
+            updateUser,
+            businessId
         }}>
             {children}
         </AuthContext.Provider>

@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSuperAdmin } from '@/lib/super-admin-context';
 import Link from 'next/link';
-import { ShieldCheck, LayoutDashboard, Building2, LogOut, Settings, ChevronRight, MessageSquare, BarChart2, Globe, Bell, FileText } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, Building2, LogOut, Settings, ChevronRight, MessageSquare, BarChart2, Globe, Bell, FileText, Activity, Megaphone, Search, Send } from 'lucide-react';
+import GlobalSearch from './components/GlobalSearch';
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
     const { superAdmin, logout, isLoading } = useSuperAdmin();
@@ -30,9 +31,14 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 
     const navItems = [
         { label: 'Dashboard', href: '/super-admin/dashboard', icon: LayoutDashboard },
+        { label: 'Analytics', href: '/super-admin/analytics', icon: BarChart2 },
+        { label: 'Infrastructure Map', href: '/super-admin/performance', icon: Globe },
         { label: 'Businesses', href: '/super-admin/businesses', icon: Building2 },
-        { label: 'Reports', href: '/super-admin/reports', icon: BarChart2 },
-        { label: 'SMS & Notifications', href: '/super-admin/sms', icon: MessageSquare },
+        { label: 'Audit Logs', href: '/super-admin/audit', icon: Activity },
+        { label: 'Support & Tickets', href: '/super-admin/support', icon: Bell },
+        { label: 'Broadcasts', href: '/super-admin/broadcasts', icon: Megaphone },
+        { label: 'Direct Marketing', href: '/super-admin/marketing', icon: Send },
+        { label: 'SMS & Billing', href: '/super-admin/sms', icon: MessageSquare },
         { label: 'Homepage Editor', href: '/super-admin/homepage', icon: Globe },
         { label: 'Settings', href: '/super-admin/settings', icon: Settings },
     ];
@@ -96,12 +102,17 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             {/* Main content */}
             <main className="flex-1 ml-64 min-h-screen">
                 {/* Breadcrumb header */}
-                <header className="h-16 border-b border-white/5 bg-slate-900/50 backdrop-blur-sm flex items-center px-8 gap-2 text-sm text-slate-500 sticky top-0 z-20">
-                    <ShieldCheck className="h-4 w-4 text-indigo-500" />
-                    <ChevronRight className="h-3 w-3" />
-                    <span className="text-slate-300">
-                        {navItems.find(n => pathname.startsWith(n.href))?.label || 'Super Admin'}
-                    </span>
+                <header className="h-16 border-b border-white/5 bg-slate-900/50 backdrop-blur-sm flex items-center px-8 gap-8 sticky top-0 z-20">
+                    <div className="flex items-center gap-2 text-sm text-slate-500 whitespace-nowrap min-w-max">
+                        <ShieldCheck className="h-4 w-4 text-indigo-500" />
+                        <ChevronRight className="h-3 w-3" />
+                        <span className="text-slate-300">
+                            {navItems.find(n => pathname.startsWith(n.href))?.label || 'Super Admin'}
+                        </span>
+                    </div>
+
+                    {/* Global God Mode Search */}
+                    <GlobalSearch />
                 </header>
                 <div className="p-8">
                     {children}

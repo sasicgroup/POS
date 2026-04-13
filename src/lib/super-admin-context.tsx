@@ -1,7 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { logAdminAction } from './admin-logger';
+
+import { useToast } from './toast-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,6 +17,9 @@ export interface Business {
     primary_color?: string;
     app_name?: string;
     plan: 'monthly' | 'yearly' | 'forever' | 'trial';
+    plan_id?: string; // e.g. 'starter', 'pro', 'enterprise'
+    custom_price_monthly?: number;
+    custom_price_yearly?: number;
     subscription_start?: string;
     subscription_end?: string | null;
     grace_period_days: number;
@@ -23,15 +28,32 @@ export interface Business {
     custom_subdomain?: string;
     created_at: string;
     notes?: string;
-    // Computed
     subscription_status?: 'active' | 'grace' | 'expired' | 'forever';
     days_remaining?: number | null;
+    feature_flags?: Record<string, boolean>;
+    sms_balance?: number;
 }
 
 export interface SuperAdmin {
     id: string;
     name: string;
     email: string;
+}
+
+/**
+ * SaaS Feature Gating Engine
+ * Deterministically merges Plan-level defaults with Business-level manual overrides.
+ */
+export function getActiveFeatures(business: Business, plans: any[] = []) {
+    const plan = plans.find(p => p.id === (business.plan_id || 'starter'));
+    const baseFeatures = plan?.included_features || {};
+    const manualOverrides = business.feature_flags || {};
+
+    // Final merge (Manual overrides take precedence)
+    return {
+        ...baseFeatures,
+        ...manualOverrides
+    };
 }
 
 export interface ViewAsSession {
@@ -53,7 +75,8 @@ interface SuperAdminContextType {
     updateBusiness: (id: string, data: Partial<Business>) => Promise<{ success: boolean; message?: string }>;
     renewSubscription: (id: string, plan: string, endDate: string | null, note?: string) => Promise<{ success: boolean }>;
     toggleBusinessActive: (id: string, isActive: boolean) => Promise<void>;
-    startViewAs: (business: Business, mode: 'read_only' | 'full_access') => void;
+    deleteBusiness: (id: string) => Promise<{ success: boolean; message?: string }>;
+    startViewAs: (business: Business, mode: 'read_only' | 'full_access') => Promise<void>;
     exitViewAs: () => void;
     getBusinessById: (id: string) => Promise<Business | null>;
 }
@@ -68,7 +91,6 @@ export interface CreateBusinessInput {
     primary_color?: string;
     app_name?: string;
     notes?: string;
-    // Owner account
     owner_name: string;
     owner_username: string;
     owner_pin: string;
@@ -119,50 +141,67 @@ function enrichBusiness(b: any): Business {
     return business;
 }
 
+async function saFetch(path: string, init?: RequestInit) {
+    return fetch(path, {
+        ...init,
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(init?.headers || {}),
+        },
+    });
+}
+
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 const SuperAdminContext = createContext<SuperAdminContextType | undefined>(undefined);
 
 export function SuperAdminProvider({ children }: { children: React.ReactNode }) {
+    const { showToast } = useToast();
     const [superAdmin, setSuperAdmin] = useState<SuperAdmin | null>(null);
     const [businesses, setBusinesses] = useState<Business[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [viewAsSession, setViewAsSession] = useState<ViewAsSession | null>(null);
 
-    // Restore session on mount
     useEffect(() => {
-        const stored = localStorage.getItem('sms_super_admin_session');
-        if (stored) {
-            try { setSuperAdmin(JSON.parse(stored)); } catch {}
-        }
         const vas = localStorage.getItem('sms_viewas_session');
         if (vas) {
-            try { setViewAsSession(JSON.parse(vas)); } catch {}
+            try { setViewAsSession(JSON.parse(vas)); } catch { /* ignore */ }
         }
-        setIsLoading(false);
+
+        (async () => {
+            const stored = localStorage.getItem('sms_super_admin_session');
+            if (stored) {
+                try { setSuperAdmin(JSON.parse(stored)); } catch { /* ignore */ }
+            }
+            const res = await saFetch('/api/super-admin/session');
+            if (res.ok) {
+                const { admin } = await res.json();
+                setSuperAdmin(admin);
+                localStorage.setItem('sms_super_admin_session', JSON.stringify(admin));
+            } else {
+                setSuperAdmin(null);
+                localStorage.removeItem('sms_super_admin_session');
+            }
+            setIsLoading(false);
+        })();
     }, []);
 
     const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('super_admins')
-                .select('*')
-                .ilike('email', email)
-                .eq('is_active', true)
-                .single();
-
-            if (error || !data) return { success: false, message: 'Invalid email or password.' };
-
-            // MVP: plaintext comparison — upgrade to bcrypt in production
-            if (data.password_hash !== password) return { success: false, message: 'Invalid email or password.' };
-
-            // Update last login
-            await supabase.from('super_admins').update({ last_login_at: new Date().toISOString() }).eq('id', data.id);
-
-            const admin: SuperAdmin = { id: data.id, name: data.name, email: data.email };
+            const res = await saFetch('/api/super-admin/login', {
+                method: 'POST',
+                body: JSON.stringify({ email, password }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                return { success: false, message: data.error || 'Login failed' };
+            }
+            const admin = data.admin as SuperAdmin;
             setSuperAdmin(admin);
             localStorage.setItem('sms_super_admin_session', JSON.stringify(admin));
+            await logAdminAction(admin.id, 'LOGIN', { email });
             return { success: true };
         } catch (e: any) {
             return { success: false, message: e.message };
@@ -171,7 +210,8 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
         }
     };
 
-    const logout = () => {
+    const logout = async () => {
+        await saFetch('/api/super-admin/logout', { method: 'POST' });
         setSuperAdmin(null);
         localStorage.removeItem('sms_super_admin_session');
         localStorage.removeItem('sms_viewas_session');
@@ -180,11 +220,10 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
     };
 
     const loadBusinesses = useCallback(async () => {
-        const { data, error } = await supabase
-            .from('businesses')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (data) setBusinesses(data.map(enrichBusiness));
+        const res = await saFetch('/api/super-admin/businesses');
+        if (!res.ok) return;
+        const { businesses: rows } = await res.json();
+        if (rows) setBusinesses(rows.map(enrichBusiness));
     }, []);
 
     useEffect(() => {
@@ -193,55 +232,19 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
 
     const createBusiness = async (input: CreateBusinessInput): Promise<{ success: boolean; message?: string; business?: Business }> => {
         try {
-            // 1. Create the business record
-            const { data: biz, error: bizErr } = await supabase
-                .from('businesses')
-                .insert({
-                    name: input.name,
+            const res = await saFetch('/api/super-admin/businesses', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ...input,
                     slug: input.slug.toLowerCase().replace(/\s+/g, '-'),
-                    owner_email: input.owner_email,
-                    owner_phone: input.owner_phone,
-                    plan: input.plan,
-                    subscription_start: new Date().toISOString(),
-                    subscription_end: input.subscription_end || null,
-                    primary_color: input.primary_color || '#4f46e5',
-                    app_name: input.app_name || input.name,
-                    notes: input.notes,
-                    is_active: true,
-                    created_by: superAdmin?.id
-                })
-                .select()
-                .single();
-
-            if (bizErr || !biz) throw bizErr || new Error('Failed to create business');
-
-            // 2. Create the owner employee account
-            const { error: empErr } = await supabase
-                .from('employees')
-                .insert({
-                    name: input.owner_name,
-                    username: input.owner_username,
-                    pin: input.owner_pin,
-                    role: 'owner',
-                    phone: input.owner_phone,
-                    business_id: biz.id,
-                    otp_enabled: false,
-                });
-
-            if (empErr) throw empErr;
-
-            // 3. Log the subscription creation
-            await supabase.from('business_subscription_logs').insert({
-                business_id: biz.id,
-                action: 'created',
-                plan: input.plan,
-                subscription_end: input.subscription_end,
-                note: 'Initial setup',
-                actioned_by: superAdmin?.id
+                }),
             });
-
+            const data = await res.json();
+            if (!res.ok) {
+                return { success: false, message: data.error || 'Failed to create business' };
+            }
             await loadBusinesses();
-            return { success: true, business: enrichBusiness(biz) };
+            return { success: true, business: enrichBusiness(data.business) };
         } catch (e: any) {
             return { success: false, message: e.message };
         }
@@ -249,8 +252,15 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
 
     const updateBusiness = async (id: string, data: Partial<Business>): Promise<{ success: boolean; message?: string }> => {
         try {
-            const { error } = await supabase.from('businesses').update(data).eq('id', id);
-            if (error) throw error;
+            const res = await saFetch(`/api/super-admin/businesses/${id}`, {
+                method: 'PATCH',
+                body: JSON.stringify(data),
+            });
+            const errBody = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                return { success: false, message: errBody.error || 'Update failed' };
+            }
+            if (superAdmin) await logAdminAction(superAdmin.id, 'UPDATE_BUSINESS', data, id);
             await loadBusinesses();
             return { success: true };
         } catch (e: any) {
@@ -260,22 +270,17 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
 
     const renewSubscription = async (id: string, plan: string, endDate: string | null, note?: string): Promise<{ success: boolean }> => {
         try {
-            await supabase.from('businesses').update({
-                plan,
-                subscription_end: endDate,
-                subscription_start: new Date().toISOString(),
-                is_active: true
-            }).eq('id', id);
-
-            await supabase.from('business_subscription_logs').insert({
-                business_id: id,
-                action: 'renewed',
-                plan,
-                subscription_end: endDate,
-                note: note || 'Manual renewal',
-                actioned_by: superAdmin?.id
+            const res = await saFetch(`/api/super-admin/businesses/${id}/subscription`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'renew',
+                    plan,
+                    subscription_end: endDate,
+                    note,
+                }),
             });
-
+            if (!res.ok) return { success: false };
+            if (superAdmin) await logAdminAction(superAdmin.id, 'RENEW_SUBSCRIPTION', { plan, endDate, note }, id);
             await loadBusinesses();
             return { success: true };
         } catch {
@@ -284,42 +289,54 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
     };
 
     const toggleBusinessActive = async (id: string, isActive: boolean) => {
-        await supabase.from('businesses').update({ is_active: isActive }).eq('id', id);
-        await supabase.from('business_subscription_logs').insert({
-            business_id: id,
-            action: isActive ? 'reactivated' : 'suspended',
-            note: `Manually ${isActive ? 'reactivated' : 'suspended'} by super admin`,
-            actioned_by: superAdmin?.id
+        await saFetch(`/api/super-admin/businesses/${id}/subscription`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'toggle', is_active: isActive }),
         });
+        if (superAdmin) await logAdminAction(superAdmin.id, 'TOGGLE_BUSINESS', { isActive }, id);
         await loadBusinesses();
     };
 
-    const startViewAs = async (business: Business, mode: 'read_only' | 'full_access') => {
-        // Fetch the owner employee of this business
-        const { data: owner } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('business_id', business.id)
-            .eq('role', 'owner')
-            .is('deleted_at', null)
-            .maybeSingle();
+    const deleteBusiness = async (id: string): Promise<{ success: boolean; message?: string }> => {
+        try {
+            const res = await saFetch(`/api/super-admin/businesses/${id}/delete`, {
+                method: 'DELETE',
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                return { success: false, message: data.error || 'Failed to delete business' };
+            }
+            if (superAdmin) await logAdminAction(superAdmin.id, 'DELETE_BUSINESS', { deleted: data.deleted }, id);
+            await loadBusinesses();
+            showToast(`Business "${data.deleted}" has been permanently deleted.`, 'success');
+            return { success: true };
+        } catch (e: any) {
+            return { success: false, message: e.message };
+        }
+    };
 
+    const startViewAs = async (business: Business, mode: 'read_only' | 'full_access') => {
+        const res = await saFetch(`/api/super-admin/businesses/${business.id}/owner`);
+        if (!res.ok) {
+            showToast('No owner account found for this business. Please create one first.', 'error');
+            return;
+        }
+        const { owner } = await res.json();
         if (!owner) {
-            alert('No owner account found for this business. Please create one first.');
+            showToast('No owner account found for this business. Please create one first.', 'error');
             return;
         }
 
-        // 1. Set the viewas session
         const session: ViewAsSession = {
             business_id: business.id,
             business_name: business.name,
             business_slug: business.slug,
             mode
         };
+        if (superAdmin) await logAdminAction(superAdmin.id, 'VIEW_AS', { mode }, business.id);
         setViewAsSession(session);
         localStorage.setItem('sms_viewas_session', JSON.stringify(session));
 
-        // 2. Inject the owner as a temporary sms_user (so auth-context loads their stores)
         const tempUser = {
             id: owner.id,
             name: owner.name,
@@ -328,27 +345,37 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
             pin: owner.pin,
             phone: owner.phone,
             otp_enabled: false,
+            business_id: business.id, // ✅ Add business_id to user object
         };
         localStorage.setItem('sms_user', JSON.stringify(tempUser));
         localStorage.setItem('sms_business_id', business.id);
-        localStorage.removeItem('sms_active_store_id'); // Force fresh store load
+        localStorage.setItem('sms_business_slug', business.slug);
+        localStorage.removeItem('sms_active_store_id');
 
-        // 3. Navigate to dashboard
+        // ✅ Validate slug format before redirect
+        if (!business.slug || business.slug.includes('/')) {
+            console.error('[ViewAs] Invalid business slug format:', business.slug);
+            showToast('Invalid business configuration. Cannot proceed.', 'error');
+            return;
+        }
+
         window.location.href = `/${business.slug}/dashboard`;
     };
 
     const exitViewAs = () => {
         setViewAsSession(null);
         localStorage.removeItem('sms_viewas_session');
-        localStorage.removeItem('sms_user');           // Remove temp owner session
+        localStorage.removeItem('sms_user');
         localStorage.removeItem('sms_active_store_id');
         localStorage.removeItem('sms_business_id');
         window.location.href = '/super-admin/dashboard';
     };
 
     const getBusinessById = async (id: string): Promise<Business | null> => {
-        const { data } = await supabase.from('businesses').select('*').eq('id', id).single();
-        return data ? enrichBusiness(data) : null;
+        const res = await saFetch(`/api/super-admin/businesses/${id}`);
+        if (!res.ok) return null;
+        const { business } = await res.json();
+        return business ? enrichBusiness(business) : null;
     };
 
     return (
@@ -356,7 +383,7 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
             superAdmin, businesses, isLoading, viewAsSession,
             login, logout, loadBusinesses,
             createBusiness, updateBusiness, renewSubscription,
-            toggleBusinessActive, startViewAs, exitViewAs, getBusinessById
+            toggleBusinessActive, deleteBusiness, startViewAs, exitViewAs, getBusinessById
         }}>
             {children}
         </SuperAdminContext.Provider>

@@ -5,17 +5,21 @@ import { InventoryProvider } from '../lib/inventory-context';
 import { ToastProvider } from '../lib/toast-context';
 import { SuperAdminProvider } from '../lib/super-admin-context';
 
+import { NotificationsProvider } from '../lib/notifications-context';
+
 export function Providers({ children }: { children: React.ReactNode }) {
     return (
-        <SuperAdminProvider>
-            <AuthProvider>
-                <ToastProvider>
-                    <InventoryProvider>
-                        {children}
-                    </InventoryProvider>
-                </ToastProvider>
-            </AuthProvider>
-        </SuperAdminProvider>
+        <ToastProvider>
+            <SuperAdminProvider>
+                <AuthProvider>
+                    <NotificationsProvider>
+                        <InventoryProvider>
+                            {children}
+                        </InventoryProvider>
+                    </NotificationsProvider>
+                </AuthProvider>
+            </SuperAdminProvider>
+        </ToastProvider>
     );
 }
 

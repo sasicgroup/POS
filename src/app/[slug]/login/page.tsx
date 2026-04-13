@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSuperAdmin } from '@/lib/super-admin-context';
+import { fetchPublicBusiness } from '@/lib/public-business';
 import { supabase } from '@/lib/supabase';
 
 // This page handles slug-based login: /{slug}/login
@@ -28,20 +29,24 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
 
     // Resolve business on mount
     useEffect(() => {
-        const resolve = async () => {
-            const { data, error: dbError } = await supabase
-                .from('businesses')
-                .select('*')
-                .eq('slug', slug)
-                .single();
+        // Check if already logged in to this business
+        const storedBusinessSlug = localStorage.getItem('sms_business_slug');
+        const storedUser = localStorage.getItem('sms_user');
+        if (storedBusinessSlug === slug && storedUser) {
+            router.push(`/${slug}/dashboard`);
+            return;
+        }
 
-            if (dbError || !data) {
+        const resolve = async () => {
+            const data = await fetchPublicBusiness({ slug });
+
+            if (!data || !data.id) {
                 setBusinessError('Business not found. Please check your URL.');
                 setBusinessLoaded(true);
                 return;
             }
 
-            if (!data.is_active) {
+            if (data.is_active === false) {
                 setBusinessError('This business account is currently suspended. Please contact support.');
                 setBusinessLoaded(true);
                 setBusiness(data);
@@ -50,10 +55,10 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
 
             // Check subscription expiry
             const now = new Date();
-            if (data.subscription_end && data.plan !== 'forever') {
-                const end = new Date(data.subscription_end);
+            if (data.subscription_end && String(data.plan) !== 'forever') {
+                const end = new Date(String(data.subscription_end));
                 const graceEnd = new Date(end);
-                graceEnd.setDate(graceEnd.getDate() + (data.grace_period_days || 7));
+                graceEnd.setDate(graceEnd.getDate() + Number(data.grace_period_days ?? 7));
                 if (now > graceEnd) {
                     setBusinessError('This account\'s subscription has expired. Please contact the platform administrator to renew.');
                     setBusinessLoaded(true);
@@ -64,8 +69,8 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
 
             setBusiness(data);
             // Store business_id for the auth context to use
-            localStorage.setItem('sms_business_id', data.id);
-            localStorage.setItem('sms_business_slug', data.slug);
+            localStorage.setItem('sms_business_id', String(data.id));
+            localStorage.setItem('sms_business_slug', String(data.slug));
             setBusinessLoaded(true);
         };
 
@@ -161,9 +166,10 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
             pin: emp.pin,
             phone: emp.phone,
             otp_enabled: emp.otp_enabled,
+            business_id: String(business.id), // ✅ Add business_id for data isolation
         };
         localStorage.setItem('sms_user', JSON.stringify(userObj));
-        localStorage.setItem('sms_business_id', business.id);
+        localStorage.setItem('sms_business_id', String(business.id));
         router.push(`/${slug}/dashboard`);
     };
 
