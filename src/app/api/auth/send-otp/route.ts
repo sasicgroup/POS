@@ -1,19 +1,22 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Client
-// ✅ SECURITY: Use Service Role Key (server-only) to bypass RLS for fetching settings
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export const dynamic = 'force-dynamic';
 
-if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Missing Supabase server credentials');
+function getSupabase() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Missing Supabase server credentials');
+    }
+
+    return createClient(supabaseUrl, supabaseServiceKey);
 }
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(request: Request) {
     try {
+        const supabase = getSupabase();
         const body = await request.json();
         const { phone, message, storeId } = body;
 
