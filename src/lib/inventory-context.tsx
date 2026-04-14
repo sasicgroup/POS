@@ -84,7 +84,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const [activeCategories, setActiveCategories] = useState<string[]>(['All']);
     // Pagination state
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20); // Reverted to 20 for scan-only mode
+    const [pageSize, setPageSize] = useState(20); // Reverted to 20 for scan-only mode (reduce egress)
     const [totalCount, setTotalCount] = useState(0);
 
     // Initial Count Check
@@ -302,7 +302,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (activeStore?.id) {
-            fetchProducts(page, pageSize, debouncedSearchQuery);
+            // Scan-only mode: only fetch if there is a search query or if explicit manual load is requested
+            if (debouncedSearchQuery && debouncedSearchQuery.trim()) {
+                fetchProducts(page, pageSize, debouncedSearchQuery);
+            } else {
+                // When search is cleared, don't show all products (reduce egress)
+                setProducts([]);
+                setIsLoading(false);
+            }
         } else {
             setProducts([]);
             setIsLoading(false);
@@ -401,20 +408,34 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     const updateProduct = async (product: any) => {
         if (!activeStore?.id) return;
+        
+        const updateData = {
+            name: product.name,
+            category: product.category,
+            price: product.price,
+            stock: product.stock !== undefined ? product.stock : 0,
+            sku: product.sku,
+            barcode: product.barcode || product.sku,
+            image: product.image,
+            video: product.video,
+            status: product.status,
+            cost_price: product.costPrice || 0,
+            earnable_points: product.earnablePoints || 0,
+            points_value: product.pointsValue || 0,
+            estimated_profit: product.estimatedProfit || 0
+        };
+
         const { data, error } = await supabase
             .from('products')
-            .update({
-                ...product,
-                cost_price: product.costPrice,
-                earnable_points: product.earnablePoints,
-                points_value: product.pointsValue
-            })
+            .update(updateData)
             .eq('id', product.id)
             .eq('store_id', activeStore.id)
             .eq('business_id', businessId);
 
         if (!error) {
             setProducts(products.map(p => p.id === product.id ? { ...p, ...product } : p));
+        } else {
+            console.error("Update Product Error:", error);
         }
     };
 
@@ -571,7 +592,16 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             await supabase.from('sale_items').insert(saleItems);
 
             for (const item of saleData.items) {
-                const newStock = Math.max(0, item.stock - item.quantity);
+                // Fetch latest stock from DB to ensure accuracy and prevent accidental zeroing
+                const { data: currentProduct } = await supabase
+                    .from('products')
+                    .select('stock')
+                    .eq('id', item.id)
+                    .single();
+
+                const dbStock = currentProduct?.stock ?? item.stock ?? 0;
+                const newStock = Math.max(0, dbStock - item.quantity);
+
                 await supabase.from('products')
                     .update({ stock: newStock })
                     .eq('id', item.id)
@@ -741,7 +771,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         if (!activeStore?.id) return [];
         if (populateGlobalState) setIsLoading(true);
         try {
-            const { data, error } = await supabase.from('products').select('*').eq('store_id', activeStore.id);
+            let query = supabase.from('products').select('*').eq('store_id', activeStore.id);
+            if (businessId) {
+                query = query.eq('business_id', businessId);
+            }
+            const { data, error } = await query;
             if (error) throw error;
             if (data) {
                 const mapped = data.map((p: any) => ({ ...p, costPrice: p.cost_price || 0, earnablePoints: p.earnable_points || 0, pointsValue: p.points_value || 0 }));

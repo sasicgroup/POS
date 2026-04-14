@@ -78,7 +78,7 @@ interface RestockItem {
 }
 
 function AiInsightsContent() {
-    const { activeStore, hasPermission } = useAuth();
+    const { activeStore, hasPermission, businessId } = useAuth();
     const { updateProduct } = useInventory();
     const { showToast } = useToast();
     const router = useRouter();

@@ -31,14 +31,16 @@ export async function deductSMSCredit(businessId: string, messageCount: number =
       return { success: false, error: 'Insufficient SMS balance' };
     }
 
-    // 3. Deduct balance
-    const newBalance = currentBalance - totalCost;
+    const newBalance = Math.max(0, currentBalance - totalCost);
     const { error: updateError } = await supabase
       .from('businesses')
       .update({ sms_balance: newBalance })
       .eq('id', businessId);
 
-    if (updateError) return { success: false, error: 'Update failed' };
+    if (updateError) {
+      console.error('[SMS Wallet] Update failed:', updateError);
+      return { success: false, error: 'Failed to update balance' };
+    }
 
     // 4. Log transaction
     await supabase.from('sms_transactions').insert({

@@ -11,7 +11,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function BundlesPage() {
-    const { activeStore, hasPermission } = useAuth();
+    const { activeStore, hasPermission, businessId } = useAuth();
     const { showToast } = useToast();
     const params = useParams();
     const slug = (params?.slug as string) || '';

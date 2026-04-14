@@ -37,20 +37,7 @@ export default function TasksNotesPage() {
     const { activeStore, user, hasPermission, businessId } = useAuth();
     const { showToast } = useToast();
 
-    if (!activeStore) return null;
-    if (!hasPermission('access_tasks')) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
-                    <ShieldAlert className="w-12 h-12 text-rose-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                    You do not have permission to access tasks and notes.
-                </p>
-            </div>
-        );
-    }
+
 
     const [activeTab, setActiveTab] = useState<'tasks' | 'notes'>('tasks');
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -77,29 +64,69 @@ export default function TasksNotesPage() {
         }
     }, [activeStore?.id]);
 
+    if (!activeStore) return null;
+    if (!hasPermission('access_tasks')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to access tasks and notes.
+                </p>
+            </div>
+        );
+    }
+
     const fetchTasks = async () => {
         if (!activeStore) return;
         let query = supabase.from('tasks').select('*').eq('store_id', activeStore.id);
-        if (businessId) query = query.eq('business_id', businessId);
         
-        const { data, error } = await query.order('created_at', { ascending: false });
-        if (error) {
-            console.error('Error info:', error);
-        } else if (data) setTasks(data);
+        // Try including business_id if it exists
+        if (businessId) {
+            const { data, error } = await query.eq('business_id', businessId).order('created_at', { ascending: false });
+            if (error) {
+                if (error.code === '42703') { // Column missing fallback
+                    const { data: fallback, error: err2 } = await supabase.from('tasks').select('*').eq('store_id', activeStore.id).order('created_at', { ascending: false });
+                    if (!err2 && fallback) setTasks(fallback);
+                } else {
+                    console.error('Error fetching tasks:', error.message);
+                }
+            } else if (data) {
+                setTasks(data);
+            }
+        } else {
+            const { data, error } = await query.order('created_at', { ascending: false });
+            if (!error && data) setTasks(data);
+        }
     };
 
     const fetchNotes = async () => {
         if (!activeStore) return;
         let query = supabase.from('notes').select('*').eq('store_id', activeStore.id);
-        if (businessId) query = query.eq('business_id', businessId);
-
-        const { data, error } = await query.order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
-        if (!error && data) setNotes(data);
+        
+        if (businessId) {
+            const { data, error } = await query.eq('business_id', businessId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+            if (error) {
+                if (error.code === '42703') { // Column missing fallback
+                    const { data: fallback, error: err2 } = await supabase.from('notes').select('*').eq('store_id', activeStore.id).order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+                    if (!err2 && fallback) setNotes(fallback);
+                } else {
+                    console.error('Error fetching notes:', error.message);
+                }
+            } else if (data) {
+                setNotes(data);
+            }
+        } else {
+            const { data, error } = await query.order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+            if (!error && data) setNotes(data);
+        }
     };
 
     const fetchEmployees = async () => {
         if (!activeStore) return;
-        let query = supabase.from('employees').select('id, name').eq('store_id', activeStore.id);
+        let query = supabase.from('employees').select('id, name').eq('store_id', activeStore.id).is('deleted_at', null);
         if (businessId) query = query.eq('business_id', businessId);
         
         const { data, error } = await query;
@@ -112,17 +139,31 @@ export default function TasksNotesPage() {
 
         try {
             if (editingTask) {
-                const { error } = await supabase.from('tasks').update(taskForm).eq('id', editingTask.id).eq('business_id', businessId);
-                if (error) throw error;
+                let query = supabase.from('tasks').update(taskForm).eq('id', editingTask.id);
+                if (businessId) query = query.eq('business_id', businessId);
+                
+                const { error } = await query;
+                if (error) {
+                    if (error.code === '42703') { // Fallback retry
+                        await supabase.from('tasks').update(taskForm).eq('id', editingTask.id);
+                    } else throw error;
+                }
                 showToast('success', 'Task updated');
             } else {
-                const { error } = await supabase.from('tasks').insert({
+                const insertData: any = {
                     ...taskForm,
                     store_id: activeStore.id,
-                    business_id: businessId,
                     created_by: user.name
-                });
-                if (error) throw error;
+                };
+                if (businessId) insertData.business_id = businessId;
+
+                const { error } = await supabase.from('tasks').insert(insertData);
+                if (error) {
+                    if (error.code === '42703') { // Fallback retry
+                        delete insertData.business_id;
+                        await supabase.from('tasks').insert(insertData);
+                    } else throw error;
+                }
                 showToast('success', 'Task created');
             }
             fetchTasks();
@@ -140,17 +181,31 @@ export default function TasksNotesPage() {
 
         try {
             if (editingNote) {
-                const { error } = await supabase.from('notes').update(noteForm).eq('id', editingNote.id).eq('business_id', businessId);
-                if (error) throw error;
+                let query = supabase.from('notes').update(noteForm).eq('id', editingNote.id);
+                if (businessId) query = query.eq('business_id', businessId);
+
+                const { error } = await query;
+                if (error) {
+                    if (error.code === '42703') { // Fallback retry
+                        await supabase.from('notes').update(noteForm).eq('id', editingNote.id);
+                    } else throw error;
+                }
                 showToast('success', 'Note updated');
             } else {
-                const { error } = await supabase.from('notes').insert({
+                const insertData: any = {
                     ...noteForm,
                     store_id: activeStore.id,
-                    business_id: businessId,
                     created_by: user.name
-                });
-                if (error) throw error;
+                };
+                if (businessId) insertData.business_id = businessId;
+
+                const { error } = await supabase.from('notes').insert(insertData);
+                if (error) {
+                    if (error.code === '42703') { // Fallback retry
+                        delete insertData.business_id;
+                        await supabase.from('notes').insert(insertData);
+                    } else throw error;
+                }
                 showToast('success', 'Note created');
             }
             fetchNotes();
@@ -167,8 +222,15 @@ export default function TasksNotesPage() {
 
         try {
             const table = deleteType === 'task' ? 'tasks' : 'notes';
-            const { error } = await supabase.from(table).delete().eq('id', deleteConfirmId).eq('business_id', businessId);
-            if (error) throw error;
+            let query = supabase.from(table).delete().eq('id', deleteConfirmId);
+            if (businessId) query = query.eq('business_id', businessId);
+            
+            const { error } = await query;
+            if (error) {
+                if (error.code === '42703') { // Fallback retry
+                    await supabase.from(table).delete().eq('id', deleteConfirmId);
+                } else throw error;
+            }
 
             showToast('success', `${deleteType === 'task' ? 'Task' : 'Note'} deleted`);
             if (deleteType === 'task') fetchTasks();
@@ -183,17 +245,29 @@ export default function TasksNotesPage() {
 
     const toggleTaskStatus = async (task: Task) => {
         const newStatus = task.status === 'completed' ? 'pending' : 'completed';
-        const { error } = await supabase.from('tasks').update({ status: newStatus }).eq('id', task.id).eq('business_id', businessId);
-        if (!error) {
-            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+        let query = supabase.from('tasks').update({ status: newStatus }).eq('id', task.id);
+        if (businessId) query = query.eq('business_id', businessId);
+        
+        const { error } = await query;
+        if (error) {
+            if (error.code === '42703') { // Fallback retry
+                await supabase.from('tasks').update({ status: newStatus }).eq('id', task.id);
+            } else return;
         }
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
     };
 
     const toggleNotePin = async (note: Note) => {
-        const { error } = await supabase.from('notes').update({ is_pinned: !note.is_pinned }).eq('id', note.id).eq('business_id', businessId);
-        if (!error) {
-            fetchNotes(); // re-fetch to resolve sorting
+        let query = supabase.from('notes').update({ is_pinned: !note.is_pinned }).eq('id', note.id);
+        if (businessId) query = query.eq('business_id', businessId);
+        
+        const { error } = await query;
+        if (error) {
+            if (error.code === '42703') { // Fallback retry
+                await supabase.from('notes').update({ is_pinned: !note.is_pinned }).eq('id', note.id);
+            } else return;
         }
+        fetchNotes(); // re-fetch to resolve sorting
     };
 
     // Filters

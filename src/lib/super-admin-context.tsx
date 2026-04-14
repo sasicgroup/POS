@@ -74,7 +74,7 @@ interface SuperAdminContextType {
     createBusiness: (data: CreateBusinessInput) => Promise<{ success: boolean; message?: string; business?: Business }>;
     updateBusiness: (id: string, data: Partial<Business>) => Promise<{ success: boolean; message?: string }>;
     renewSubscription: (id: string, plan: string, endDate: string | null, note?: string) => Promise<{ success: boolean }>;
-    toggleBusinessActive: (id: string, isActive: boolean) => Promise<void>;
+    toggleBusinessActive: (id: string, isActive: boolean) => Promise<{ success: boolean; message?: string }>;
     deleteBusiness: (id: string) => Promise<{ success: boolean; message?: string }>;
     startViewAs: (business: Business, mode: 'read_only' | 'full_access') => Promise<void>;
     exitViewAs: () => void;
@@ -288,13 +288,22 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
         }
     };
 
-    const toggleBusinessActive = async (id: string, isActive: boolean) => {
-        await saFetch(`/api/super-admin/businesses/${id}/subscription`, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'toggle', is_active: isActive }),
-        });
-        if (superAdmin) await logAdminAction(superAdmin.id, 'TOGGLE_BUSINESS', { isActive }, id);
-        await loadBusinesses();
+    const toggleBusinessActive = async (id: string, isActive: boolean): Promise<{ success: boolean; message?: string }> => {
+        try {
+            const res = await saFetch(`/api/super-admin/businesses/${id}/subscription`, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'toggle', is_active: isActive }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                return { success: false, message: data.error || 'Toggle failed' };
+            }
+            if (superAdmin) await logAdminAction(superAdmin.id, 'TOGGLE_BUSINESS', { isActive }, id);
+            await loadBusinesses();
+            return { success: true };
+        } catch (e: any) {
+            return { success: false, message: e.message };
+        }
     };
 
     const deleteBusiness = async (id: string): Promise<{ success: boolean; message?: string }> => {
@@ -308,7 +317,7 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
             }
             if (superAdmin) await logAdminAction(superAdmin.id, 'DELETE_BUSINESS', { deleted: data.deleted }, id);
             await loadBusinesses();
-            showToast(`Business "${data.deleted}" has been permanently deleted.`, 'success');
+            showToast('success', `Business "${data.deleted}" has been permanently deleted.`);
             return { success: true };
         } catch (e: any) {
             return { success: false, message: e.message };
@@ -318,12 +327,12 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
     const startViewAs = async (business: Business, mode: 'read_only' | 'full_access') => {
         const res = await saFetch(`/api/super-admin/businesses/${business.id}/owner`);
         if (!res.ok) {
-            showToast('No owner account found for this business. Please create one first.', 'error');
+            showToast('error', 'No owner account found for this business. Please create one first.');
             return;
         }
         const { owner } = await res.json();
         if (!owner) {
-            showToast('No owner account found for this business. Please create one first.', 'error');
+            showToast('error', 'No owner account found for this business. Please create one first.');
             return;
         }
 
@@ -355,7 +364,7 @@ export function SuperAdminProvider({ children }: { children: React.ReactNode }) 
         // ✅ Validate slug format before redirect
         if (!business.slug || business.slug.includes('/')) {
             console.error('[ViewAs] Invalid business slug format:', business.slug);
-            showToast('Invalid business configuration. Cannot proceed.', 'error');
+            showToast('error', 'Invalid business configuration. Cannot proceed.');
             return;
         }
 

@@ -27,35 +27,10 @@ import { useInventory } from '@/lib/inventory-context';
 import { RefreshCcw } from 'lucide-react';
 
 export default function LoyaltyPage() {
-    const { activeStore, hasPermission } = useAuth();
+    const { activeStore, hasPermission, businessId } = useAuth();
     const { refreshLoyaltyConfig, syncAllProductsToLoyalty, loyaltyConfig } = useInventory();
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState('overview');
-
-    if (!activeStore) return (
-        <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-            <div className="bg-indigo-50 p-6 rounded-full dark:bg-slate-800 mb-6">
-                <Award className="w-12 h-12 text-indigo-500" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Store Selected</h2>
-            <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                Please select a store from the dropdown menu in the header to view loyalty settings.
-            </p>
-        </div>
-    );
-
-    if (!hasPermission('access_loyalty')) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
-                    <ShieldAlert className="w-12 h-12 text-rose-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                    You do not have permission to access the Loyalty Program.
-                </p>
-            </div>
-        );
-    }
 
     // --- Redemption Logic State ---
     const [phone, setPhone] = useState('');
@@ -82,6 +57,187 @@ export default function LoyaltyPage() {
     const [resetPointsAmount, setResetPointsAmount] = useState('');
     const [isResettingPoints, setIsResettingPoints] = useState(false);
     const [resetSuccessMsg, setResetSuccessMsg] = useState('');
+
+    const [stats, setStats] = useState({
+        totalMembers: 0,
+        pointsIssued: 0,
+        pointsRedeemed: 0,
+        activeRate: '0%'
+    });
+
+    // Loyalty configuration state
+    const [settings, setSettings] = useState({
+        enabled: true,
+        pointsPerCurrency: 1,
+        redemptionRate: 0.05,
+        minRedemptionPoints: 100,
+        expiryMonths: 12
+    });
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
+    const [loyaltyLogs, setLoyaltyLogs] = useState<any[]>([]);
+
+    // Tiers State
+    const [tiers, setTiers] = useState<any[]>([]);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingTier, setEditingTier] = useState<any>(null);
+    const [isSavingTier, setIsSavingTier] = useState(false);
+
+    const [campaigns, setCampaigns] = useState<any[]>([]);
+    const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+
+    // Load products when tab changes to redeem
+    useEffect(() => {
+        const loadProducts = async () => {
+            if (!activeStore?.id) return;
+            const { data } = await supabase
+                .from('products')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .gt('stock', 0) // Only show products in stock
+                .order('name');
+
+            if (data) setProducts(data);
+        };
+
+        if (activeTab === 'redeem' && activeStore?.id) {
+            loadProducts();
+        }
+    }, [activeTab, activeStore]);
+
+    // Load Loyalty Settings & Stats
+    useEffect(() => {
+        const loadData = async () => {
+            if (!activeStore?.id) return;
+
+            // 1. Fetch Settings
+            const { data: settingsData, error: settingsError } = await supabase
+                .from('loyalty_programs')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .single();
+
+            if (settingsData) {
+                setSettings({
+                    enabled: settingsData.enabled,
+                    pointsPerCurrency: settingsData.points_per_currency,
+                    redemptionRate: settingsData.redemption_rate,
+                    minRedemptionPoints: settingsData.min_points_to_redeem,
+                    expiryMonths: settingsData.expiry_months ?? 12
+                });
+            } else if (!settingsData && !settingsError) {
+                // Initialize if missing
+                await supabase.from('loyalty_programs').insert({
+                    store_id: activeStore.id,
+                    points_per_currency: 1,
+                    redemption_rate: 0.05,
+                    min_points_to_redeem: 100,
+                    expiry_months: 12,
+                    enabled: true
+                });
+            }
+
+            // 2. Fetch Tiers
+            const { data: tiersData } = await supabase
+                .from('loyalty_tiers')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .order('min_points', { ascending: true });
+
+            if (tiersData && tiersData.length > 0) {
+                // Map DB fields to State fields
+                const mappedTiers = tiersData.map(t => ({
+                    id: t.id,
+                    name: t.name,
+                    minPoints: t.min_points,
+                    benefits: t.benefits || []
+                }));
+                setTiers(mappedTiers);
+            } else {
+                // Seed Default Tiers
+                const defaultTiers = [
+                    { name: 'Bronze', min_points: 0, benefits: ['Earn 1x Points'] },
+                    { name: 'Silver', min_points: 1000, benefits: ['Earn 1.2x Points', 'Birthday Gift'] },
+                    { name: 'Gold', min_points: 5000, benefits: ['Earn 1.5x Points', 'Free Delivery', 'Priority Support'] },
+                ];
+
+                // Insert sequentially
+                for (const tier of defaultTiers) {
+                    await supabase.from('loyalty_tiers').insert({
+                        store_id: activeStore.id,
+                        ...tier
+                    });
+                }
+
+                // Refetch to get IDs
+                const { data: stringTiers } = await supabase
+                    .from('loyalty_tiers')
+                    .select('*')
+                    .eq('store_id', activeStore.id)
+                    .order('min_points', { ascending: true });
+
+                if (stringTiers) {
+                    setTiers(stringTiers.map(t => ({
+                        id: t.id,
+                        name: t.name,
+                        minPoints: t.min_points,
+                        benefits: t.benefits || []
+                    })));
+                }
+            }
+
+            // 3. Fetch Stats Components
+            // Customers Count
+            const { count: customersCount } = await supabase
+                .from('customers')
+                .select('*', { count: 'exact', head: true })
+                .eq('store_id', activeStore.id);
+
+            // Loyalty Logs Aggregation
+            const { data: logs } = await supabase
+                .from('loyalty_logs')
+                .select('*, customer:customers(name)') // Fetch Customer Name
+                .eq('store_id', activeStore.id);
+
+            let issued = 0;
+            let redeemed = 0;
+
+            if (logs) {
+                logs.forEach(log => {
+                    if (log.type === 'earned') issued += log.points;
+                    if (log.type === 'redeemed') redeemed += Math.abs(log.points);
+                });
+            }
+
+            setStats({
+                totalMembers: customersCount || 0,
+                pointsIssued: issued,
+                pointsRedeemed: redeemed,
+                activeRate: '0%'
+            });
+
+            // Set Logs for History Tab
+            if (logs) {
+                setLoyaltyLogs(logs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+            }
+        };
+        loadData();
+    }, [activeStore]);
+
+    // Load campaigns from DB
+    useEffect(() => {
+        const loadCampaigns = async () => {
+            if (activeStore?.id) {
+                const { data } = await supabase
+                    .from('loyalty_campaigns')
+                    .select('*')
+                    .eq('store_id', activeStore.id)
+                    .gte('end_date', new Date().toISOString()) // Active campaigns only
+                    .order('created_at', { ascending: false });
+                if (data) setCampaigns(data);
+            }
+        };
+        loadCampaigns();
+    }, [activeStore?.id]);
 
     const handleSearch = async () => {
         if (!activeStore?.id || !phone) return;
@@ -253,6 +409,34 @@ export default function LoyaltyPage() {
         }
     };
 
+    const handleSaveSettings = async () => {
+        if (!activeStore?.id) return;
+        setIsSavingSettings(true);
+        try {
+            const updatePayload: any = {
+                    enabled: settings.enabled,
+                    points_per_currency: settings.pointsPerCurrency,
+                    redemption_rate: settings.redemptionRate,
+                    min_points_to_redeem: settings.minRedemptionPoints,
+                    expiry_months: settings.expiryMonths
+                };
+            let settingsQuery = supabase
+                .from('loyalty_programs')
+                .update(updatePayload)
+                .eq('store_id', activeStore.id);
+            if (businessId) settingsQuery = settingsQuery.eq('business_id', businessId);
+            const { error } = await settingsQuery;
+
+            if (error) throw error;
+            showToast('success', 'Loyalty program settings updated!');
+        } catch (e: any) {
+            console.error(e);
+            showToast('error', e.message || 'Failed to save settings');
+        } finally {
+            setIsSavingSettings(false);
+        }
+    };
+
     // Load Products for Redemption
     const loadProducts = async () => {
         if (!activeStore?.id) return;
@@ -266,214 +450,37 @@ export default function LoyaltyPage() {
         if (data) setProducts(data);
     };
 
-    // Load products when tab changes to redeem
-    useEffect(() => {
-        if (activeTab === 'redeem' && activeStore?.id) {
-            loadProducts();
-        }
-    }, [activeTab, activeStore]);
-
     // Filtered products for dropdown
     const filteredProducts = products.filter(p =>
         p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
         p.sku?.toLowerCase().includes(productSearch.toLowerCase())
     );
 
+    if (!activeStore) return (
+        <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+            <div className="bg-indigo-50 p-6 rounded-full dark:bg-slate-800 mb-6">
+                <Award className="w-12 h-12 text-indigo-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Store Selected</h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                Please select a store from the dropdown menu in the header to view loyalty settings.
+            </p>
+        </div>
+    );
 
-    const [stats, setStats] = useState({
-        totalMembers: 0,
-        pointsIssued: 0,
-        pointsRedeemed: 0,
-        activeRate: '0%'
-    });
-
-    // Loyalty configuration state
-    const [settings, setSettings] = useState({
-        enabled: true,
-        pointsPerCurrency: 1,
-        redemptionRate: 0.05,
-        minRedemptionPoints: 100,
-        expiryMonths: 12
-    });
-    const [isSavingSettings, setIsSavingSettings] = useState(false);
-    const { showToast } = useToast();
-
-    // Load Loyalty Settings & Stats
-    useEffect(() => {
-        const loadData = async () => {
-            if (!activeStore?.id) return;
-
-            // 1. Fetch Settings
-            const { data: settingsData, error: settingsError } = await supabase
-                .from('loyalty_programs')
-                .select('*')
-                .eq('store_id', activeStore.id)
-                .single();
-
-            if (settingsData) {
-                setSettings({
-                    enabled: settingsData.enabled,
-                    pointsPerCurrency: settingsData.points_per_currency,
-                    redemptionRate: settingsData.redemption_rate,
-                    minRedemptionPoints: settingsData.min_points_to_redeem,
-                    expiryMonths: settingsData.expiry_months ?? 12
-                });
-            } else if (!settingsData && !settingsError) {
-                // Initialize if missing
-                await supabase.from('loyalty_programs').insert({
-                    store_id: activeStore.id,
-                    points_per_currency: 1,
-                    redemption_rate: 0.05,
-                    min_points_to_redeem: 100,
-                    expiry_months: 12,
-                    enabled: true
-                });
-            }
-
-            // 2. Fetch Tiers
-            const { data: tiersData } = await supabase
-                .from('loyalty_tiers')
-                .select('*')
-                .eq('store_id', activeStore.id)
-                .order('min_points', { ascending: true });
-
-            if (tiersData && tiersData.length > 0) {
-                // Map DB fields to State fields
-                const mappedTiers = tiersData.map(t => ({
-                    id: t.id,
-                    name: t.name,
-                    minPoints: t.min_points,
-                    benefits: t.benefits || []
-                }));
-                setTiers(mappedTiers);
-            } else {
-                // Seed Default Tiers
-                const defaultTiers = [
-                    { name: 'Bronze', min_points: 0, benefits: ['Earn 1x Points'] },
-                    { name: 'Silver', min_points: 1000, benefits: ['Earn 1.2x Points', 'Birthday Gift'] },
-                    { name: 'Gold', min_points: 5000, benefits: ['Earn 1.5x Points', 'Free Delivery', 'Priority Support'] },
-                ];
-
-                // Insert sequentially
-                for (const tier of defaultTiers) {
-                    await supabase.from('loyalty_tiers').insert({
-                        store_id: activeStore.id,
-                        ...tier
-                    });
-                }
-
-                // Refetch to get IDs
-                const { data: stringTiers } = await supabase
-                    .from('loyalty_tiers')
-                    .select('*')
-                    .eq('store_id', activeStore.id)
-                    .order('min_points', { ascending: true });
-
-                if (stringTiers) {
-                    setTiers(stringTiers.map(t => ({
-                        id: t.id,
-                        name: t.name,
-                        minPoints: t.min_points,
-                        benefits: t.benefits || []
-                    })));
-                }
-            }
-
-            // 3. Fetch Stats Components
-            // Customers Count
-            const { count: customersCount } = await supabase
-                .from('customers')
-                .select('*', { count: 'exact', head: true })
-                .eq('store_id', activeStore.id);
-
-            // Loyalty Logs Aggregation
-            const { data: logs } = await supabase
-                .from('loyalty_logs')
-                .select('*, customer:customers(name)') // Fetch Customer Name
-                .eq('store_id', activeStore.id);
-
-            let issued = 0;
-            let redeemed = 0;
-
-            if (logs) {
-                logs.forEach(log => {
-                    if (log.type === 'earned') issued += log.points;
-                    if (log.type === 'redeemed') redeemed += Math.abs(log.points);
-                });
-            }
-
-            setStats({
-                totalMembers: customersCount || 0,
-                pointsIssued: issued,
-                pointsRedeemed: redeemed,
-                activeRate: '0%'
-            });
-
-            // Set Logs for History Tab
-            if (logs) {
-                setLoyaltyLogs(logs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-            }
-        };
-        loadData();
-    }, [activeStore]);
-
-    const [loyaltyLogs, setLoyaltyLogs] = useState<any[]>([]); // New State
-
-
-
-    const handleSaveSettings = async () => {
-        if (!activeStore?.id) return;
-        setIsSavingSettings(true);
-
-        const { error } = await supabase
-            .from('loyalty_programs')
-            .upsert({
-                store_id: activeStore.id,
-                points_per_currency: settings.pointsPerCurrency,
-                redemption_rate: settings.redemptionRate,
-                min_points_to_redeem: settings.minRedemptionPoints,
-                expiry_months: settings.expiryMonths,
-                enabled: settings.enabled
-            }, { onConflict: 'store_id' });
-
-        if (error) {
-            console.error('Failed to save settings:', error);
-            showToast('error', 'Failed to save loyalty settings');
-        } else {
-            await refreshLoyaltyConfig();
-            showToast('success', 'Loyalty settings saved!');
-        }
-        setIsSavingSettings(false);
-    };
-
-    // Tiers State
-    const [tiers, setTiers] = useState<any[]>([]);
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingTier, setEditingTier] = useState<any>(null);
-    const [isSavingTier, setIsSavingTier] = useState(false);
-
-    const [campaigns, setCampaigns] = useState<any[]>([]);
-    const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
-
-    // Load campaigns from DB
-    useEffect(() => {
-        const loadCampaigns = async () => {
-            if (activeStore?.id) {
-                const { data } = await supabase
-                    .from('loyalty_campaigns')
-                    .select('*')
-                    .eq('store_id', activeStore.id)
-                    .gte('end_date', new Date().toISOString()) // Active campaigns only
-                    .order('created_at', { ascending: false });
-                if (data) setCampaigns(data);
-            }
-        };
-        loadCampaigns();
-    }, [activeStore?.id]);
-
-
-
-    if (!activeStore) return null;
+    if (!hasPermission('access_loyalty')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to access the Loyalty Program.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

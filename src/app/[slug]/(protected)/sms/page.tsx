@@ -24,7 +24,7 @@ import { supabase } from '@/lib/supabase';
 import { useEffect } from 'react';
 
 export default function CommunicationPage() {
-    const { activeStore, user, hasPermission } = useAuth();
+    const { activeStore, user, hasPermission, businessId } = useAuth();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'compose' | 'templates' | 'automations' | 'history'>('compose');
     const [selectedChannel, setSelectedChannel] = useState<'sms' | 'whatsapp'>('sms');

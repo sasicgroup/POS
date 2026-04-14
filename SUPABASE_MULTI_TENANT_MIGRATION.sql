@@ -71,7 +71,7 @@ ALTER TABLE employees ADD COLUMN IF NOT EXISTS business_id UUID REFERENCES busin
 -- 6a: Insert a default super admin (you)
 -- Change email and password_hash before running!
 INSERT INTO super_admins (name, email, password_hash, is_active)
-VALUES ('Super Admin', 'admin@sasicgroup.com', 'changeme123', true)
+VALUES ('Super Admin', 'superadmin@sasicgroup.com', 'Dell1525@@', true)
 ON CONFLICT (email) DO NOTHING;
 
 -- 6b: Create the default "Sasic Group" business from your existing stores

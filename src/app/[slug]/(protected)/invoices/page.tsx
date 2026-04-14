@@ -17,24 +17,9 @@ interface jsPDFWithAutoTable extends jsPDF {
 }
 
 export default function InvoiceGenerator() {
-    const { user, activeStore, hasPermission } = useAuth();
+    const { user, activeStore, hasPermission, businessId } = useAuth();
     const { products } = useInventory();
     const { showToast } = useToast();
-
-    if (!activeStore) return null;
-    if (!hasPermission('manage_invoices')) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
-                    <ShieldAlert className="w-12 h-12 text-rose-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                    You do not have permission to manage or generate invoices.
-                </p>
-            </div>
-        );
-    }
 
     // Invoice Meta
     const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -66,6 +51,21 @@ export default function InvoiceGenerator() {
     const [taxRate, setTaxRate] = useState(0);
     const [notes, setNotes] = useState('Thank you for your business!');
     const [terms, setTerms] = useState('Payment is due within 15 days.');
+
+    if (!activeStore) return null;
+    if (!hasPermission('manage_invoices')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to manage or generate invoices.
+                </p>
+            </div>
+        );
+    }
 
     const calculateSubtotal = () => items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const calculateTax = () => calculateSubtotal() * (taxRate / 100);

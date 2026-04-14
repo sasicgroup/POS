@@ -128,11 +128,16 @@ export default function SalesPage() {
         // Fetch Loyalty Config
         const loadLoyalty = async () => {
             if (!activeStore?.id) return;
-            const { data, error } = await supabase
+            let query = supabase
                 .from('loyalty_programs')
                 .select('*')
-                .eq('store_id', activeStore.id)
-                .single();
+                .eq('store_id', activeStore.id);
+
+            if (businessId) {
+                query = query.eq('business_id', businessId);
+            }
+
+            const { data, error } = await query.maybeSingle();
 
 
             if (data) {
@@ -157,11 +162,16 @@ export default function SalesPage() {
     // Parked orders helper function and effects
     const fetchParkedOrders = async () => {
         if (!activeStore) return;
-        const { data } = await supabase
+        let query = supabase
             .from('parked_orders')
             .select('*')
-            .eq('store_id', activeStore.id)
-            .order('created_at', { ascending: false });
+            .eq('store_id', activeStore.id);
+
+        if (businessId) {
+            query = query.eq('business_id', businessId);
+        }
+
+        const { data } = await query.order('created_at', { ascending: false });
         if (data) setParkedOrders(data);
     };
 
@@ -609,6 +619,7 @@ export default function SalesPage() {
                     id: item.id,
                     quantity: item.quantity,
                     price: item.price,
+                    stock: item.stock, // Essential for stock deduction logic
                     earnablePoints: item.earnablePoints,
                     pointsValue: item.pointsValue
                 })),
@@ -738,7 +749,8 @@ export default function SalesPage() {
                             amountLeft: balance,
                             customerPhone: customerPhone,
                             customerName: customerName,
-                            storeId: activeStore.id
+                            storeId: activeStore.id,
+                            businessId: businessId
                         });
                     } else {
                         await sendNotification('sale', {
@@ -746,14 +758,14 @@ export default function SalesPage() {
                             amount: grandTotal,
                             customerPhone: customerPhone,
                             customerName: customerName,
-                            ownerPhone: user?.phone,
                             items: cart.length,
                             pointsEarned: pointsEarned,
                             pointsUsed: redeemPoints ? pointsToRedeem : 0,
                             pointsBalance: finalPoints,
                             totalPoints: finalPoints,
                             staffName: user?.name,
-                            storeId: activeStore.id
+                            storeId: activeStore.id,
+                            businessId: businessId
                         });
                     }
                 }

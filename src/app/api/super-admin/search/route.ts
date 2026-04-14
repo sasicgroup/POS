@@ -10,7 +10,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ results: [] });
     }
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const adminSession = cookieStore.get('super_admin_session');
 
     if (!adminSession) {

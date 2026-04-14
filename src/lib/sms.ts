@@ -291,8 +291,11 @@ export async function sendDirectMessage(phone: string, message: string, channels
     if (channels.includes('sms')) {
         let success = false;
         try {
-            // Check & Deduct credit if platform-managed
-            if (businessId) {
+            // Check & Deduct credit if platform-managed (Skip if user provides their own API keys)
+            const hasOwnCredentials = (config.provider === 'mnotify' && config.mnotify?.apiKey) || 
+                                     (config.provider === 'hubtel' && config.hubtel?.clientId);
+
+            if (businessId && !hasOwnCredentials) {
                 const segments = Math.ceil(message.length / 160); // Standard SMS segmenting
                 const wallet = await deductSMSCredit(businessId, segments);
                 if (!wallet.success) {
@@ -405,7 +408,26 @@ export const sendNotification = async (type: 'welcome' | 'sale' | 'installment',
     }
 
     // --- Owner Notifications ---
-    if (data.ownerPhone) {
+    let targetOwnerPhones: string[] = [];
+
+    // Prioritize dynamically fetching all active owners for this business
+    if (data.businessId || storeId) {
+        let query = supabase.from('employees').select('phone').eq('role', 'owner').is('deleted_at', null).not('phone', 'is', null);
+        if (data.businessId) query = query.eq('business_id', data.businessId);
+
+        const { data: owners } = await query;
+        if (owners && owners.length > 0) {
+            // Extract unique phones
+            targetOwnerPhones = Array.from(new Set(owners.map(o => o.phone).filter(p => !!p)));
+        }
+    }
+
+    // Fallback if no owners found but legacy parameter passed
+    if (targetOwnerPhones.length === 0 && data.ownerPhone) {
+        targetOwnerPhones.push(data.ownerPhone);
+    }
+
+    if (targetOwnerPhones.length > 0) {
         let msg = '';
         if (type === 'sale') {
             const template = config.templates.ownerSale || "New sale: GHS {Amount} by {Name}.";
@@ -418,8 +440,10 @@ export const sendNotification = async (type: 'welcome' | 'sale' | 'installment',
         }
 
         if (msg) {
-            if (owner.sms) await sendDirectMessage(data.ownerPhone, msg, ['sms'], storeId, data.businessId);
-            if (owner.whatsapp) await sendDirectMessage(data.ownerPhone, msg, ['whatsapp'], storeId, data.businessId);
+            for (const phone of targetOwnerPhones) {
+                if (owner.sms) await sendDirectMessage(phone, msg, ['sms'], storeId, data.businessId);
+                if (owner.whatsapp) await sendDirectMessage(phone, msg, ['whatsapp'], storeId, data.businessId);
+            }
         }
     }
 
@@ -429,7 +453,7 @@ export const sendNotification = async (type: 'welcome' | 'sale' | 'installment',
 
 
 
-export const sendLowStockAlert = async (product: { name: string; stock: number }, storeId: string, ownerPhone: string) => {
+export const sendLowStockAlert = async (product: { name: string; stock: number }, storeId: string, ownerPhone: string, businessId?: string) => {
     const config = getSMSConfig();
     const { automations } = config;
 
@@ -450,11 +474,30 @@ export const sendLowStockAlert = async (product: { name: string; stock: number }
 
     console.log(`[LowStockAlert] Sending alert for ${product.name} (stock: ${product.stock})`);
 
-    if (automations.lowStockAlert.sms) {
-        await sendDirectMessage(ownerPhone, message, ['sms'], storeId);
+    // Fetch all owner phones for this business
+    let ownerPhones: string[] = [];
+    if (businessId) {
+        const { data: owners } = await supabase
+            .from('employees')
+            .select('phone')
+            .eq('business_id', businessId)
+            .eq('role', 'owner')
+            .is('deleted_at', null)
+            .not('phone', 'is', null);
+        if (owners && owners.length > 0) {
+            ownerPhones = Array.from(new Set(owners.map(o => o.phone).filter(p => !!p)));
+        }
     }
-    if (automations.lowStockAlert.whatsapp) {
-        await sendDirectMessage(ownerPhone, message, ['whatsapp'], storeId);
+    // Fallback to passed ownerPhone
+    if (ownerPhones.length === 0 && ownerPhone) ownerPhones.push(ownerPhone);
+
+    for (const phone of ownerPhones) {
+        if (automations.lowStockAlert.sms) {
+            await sendDirectMessage(phone, message, ['sms'], storeId);
+        }
+        if (automations.lowStockAlert.whatsapp) {
+            await sendDirectMessage(phone, message, ['whatsapp'], storeId);
+        }
     }
 };
 

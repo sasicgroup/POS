@@ -13,7 +13,7 @@ import { getOptimizedImageUrl } from '@/lib/utils/image-utils';
 import JsBarcode from 'jsbarcode';
 
 export default function InventoryPage() {
-    const { activeStore, hasPermission } = useAuth();
+    const { activeStore, hasPermission, businessId } = useAuth();
     const params = useParams();
     const slug = (params?.slug as string) || '';
     const {
@@ -959,7 +959,7 @@ export default function InventoryPage() {
                         <form onSubmit={handleAddProduct} className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product Name</label>
-                                <input required type="text" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
+                                <input required type="text" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.name ?? ''} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product Image</label>
@@ -1090,20 +1090,20 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Cost Price (GHS)</label>
-                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.costPrice} onChange={e => {
+                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.costPrice ?? ''} onChange={e => {
                                         setNewProduct({
                                             ...newProduct,
-                                            costPrice: parseFloat(e.target.value) || 0
+                                            costPrice: e.target.value ? parseFloat(e.target.value) : 0
                                         });
                                     }} />
                                     <p className="text-xs text-slate-500 mt-1">For profit calc</p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Selling Price (GHS)</label>
-                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.price} onChange={e => {
+                                    <input required type="number" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.price ?? ''} onChange={e => {
                                         setNewProduct({
                                             ...newProduct,
-                                            price: parseFloat(e.target.value) || 0
+                                            price: e.target.value ? parseFloat(e.target.value) : 0
                                         });
                                     }} />
                                 </div>
@@ -1112,15 +1112,15 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800 pt-4">
                                 <div>
                                     <label className="block text-sm font-medium text-indigo-600 dark:text-indigo-400">Earnable Points</label>
-                                    <input type="number" className="mt-1 w-full rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-900/30 dark:bg-indigo-900/10 dark:text-white" value={newProduct.earnablePoints} onChange={e => setNewProduct({ ...newProduct, earnablePoints: parseInt(e.target.value) || 0 })} />
+                                    <input type="number" className="mt-1 w-full rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-900/30 dark:bg-indigo-900/10 dark:text-white" value={newProduct.earnablePoints ?? ''} onChange={e => setNewProduct({ ...newProduct, earnablePoints: e.target.value ? parseInt(e.target.value) : 0 })} />
                                     <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-bold">Points user earns per unit</p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-rose-600 dark:text-rose-400">Points Value (GHS Cost)</label>
-                                    <input type="number" step="0.01" className="mt-1 w-full rounded-lg border border-rose-100 bg-rose-50/30 px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 dark:border-rose-900/30 dark:bg-rose-900/10 dark:text-white" value={newProduct.pointsValue} onChange={e => {
+                                    <input type="number" step="0.01" className="mt-1 w-full rounded-lg border border-rose-100 bg-rose-50/30 px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 dark:border-rose-900/30 dark:bg-rose-900/10 dark:text-white" value={newProduct.pointsValue ?? ''} onChange={e => {
                                         setNewProduct({
                                             ...newProduct,
-                                            pointsValue: parseFloat(e.target.value) || 0
+                                            pointsValue: e.target.value ? parseFloat(e.target.value) : 0
                                         });
                                     }} />
                                     <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-bold">Cost of points to your profit</p>
@@ -1153,7 +1153,7 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Stock</label>
-                                    <input required type="number" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.stock} onChange={e => setNewProduct({ ...newProduct, stock: parseInt(e.target.value) })} />
+                                    <input required type="number" className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-800 dark:text-white" value={newProduct.stock ?? ''} onChange={e => setNewProduct({ ...newProduct, stock: e.target.value ? parseInt(e.target.value) : 0 })} />
                                 </div>
                             </div>
                             <div className="pt-4">
@@ -1405,7 +1405,7 @@ export default function InventoryPage() {
                                                     product.status === 'Low Stock' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
                                                         'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400'
                                                     }`}>
-                                                    {product.stock} Units
+                                                    {product.stock ?? 0} Units
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">

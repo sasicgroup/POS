@@ -9,7 +9,7 @@ import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function StocktakePage() {
-    const { activeStore, user } = useAuth();
+    const { activeStore, user, businessId } = useAuth();
     const { showToast } = useToast();
     const [stocktakes, setStocktakes] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);

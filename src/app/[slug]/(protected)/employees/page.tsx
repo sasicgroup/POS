@@ -57,7 +57,7 @@ interface Employee {
 }
 
 export default function EmployeesPage() {
-    const { activeStore, unlockAccount, hasPermission, businessId, removeTeamMember } = useAuth();
+    const { activeStore, user, unlockAccount, hasPermission, businessId, removeTeamMember } = useAuth();
     const { showToast } = useToast();
 
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -67,7 +67,7 @@ export default function EmployeesPage() {
 
     const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
     const [newEmployee, setNewEmployee] = useState<Partial<Employee>>({
-        name: '', username: '', phone: '', role: 'staff', pin: '', salary: 0, otp_enabled: true,
+        name: '', username: '', phone: '', role: 'owner', pin: '', salary: 0, otp_enabled: true,
         shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -117,13 +117,13 @@ export default function EmployeesPage() {
             .from('employees')
             .select('*')
             .eq('business_id', businessId)
-            .neq('status', 'deleted');
+            .is('deleted_at', null); // Use deleted_at, NOT status (no status column on employees table)
 
         if (error) {
             // Fallback: If business_id column doesn't exist yet, retry with store_id
             if (error.code === '42703' && activeStore?.id) {
                 console.warn('[Employees] business_id column missing, falling back to store_id');
-                const { data: fallbackData } = await supabase.from('employees').select('*').eq('store_id', activeStore.id);
+                const { data: fallbackData } = await supabase.from('employees').select('*').eq('store_id', activeStore.id).is('deleted_at', null);
                 if (fallbackData) setEmployees(fallbackData);
             } else {
                 console.error(error);
@@ -146,6 +146,7 @@ export default function EmployeesPage() {
             `)
             .eq('store_id', activeStore.id)
             .neq('status', 'Refunded');
+        if (businessId) query = query.eq('business_id', businessId);
 
         // Apply basic date filter at DB level to reduce load
         const now = new Date();
@@ -246,7 +247,7 @@ export default function EmployeesPage() {
                 setEmployees(prev => prev.map(e => e.id === editingId ? { ...e, ...newEmployee } : e) as any);
                 setIsAddEmployeeOpen(false);
                 setEditingId(null);
-                setNewEmployee({ name: '', username: '', phone: '', role: 'staff', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
+                setNewEmployee({ name: '', username: '', phone: '', role: 'owner', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
             }
         } else {
             // Insert
@@ -271,7 +272,7 @@ export default function EmployeesPage() {
             } else if (data) {
                 setEmployees(prev => [data, ...prev]);
                 setIsAddEmployeeOpen(false);
-                setNewEmployee({ name: '', username: '', phone: '', role: 'staff', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
+                setNewEmployee({ name: '', username: '', phone: '', role: 'owner', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
             }
         }
         setIsSubmitting(false);
@@ -310,10 +311,12 @@ export default function EmployeesPage() {
         setUnlockConfirmId(null);
     };
 
-    const filteredEmployees = employees.filter(e =>
-        e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.role.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredEmployees = employees.filter(e => {
+        const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            e.role.toLowerCase().includes(searchQuery.toLowerCase());
+        const isNotSelf = e.id !== user?.id; // Don't show current owner in the employee management list
+        return matchesSearch && isNotSelf;
+    });
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
@@ -341,7 +344,7 @@ export default function EmployeesPage() {
                         <button
                             onClick={() => {
                                 setEditingId(null);
-                                setNewEmployee({ name: '', username: '', phone: '', role: 'staff', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
+                                setNewEmployee({ name: '', username: '', phone: '', role: 'owner', pin: '', salary: 0, otp_enabled: true, shift_start: '', shift_end: '', work_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] });
                                 setIsAddEmployeeOpen(true);
                             }}
                             className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-500/30"

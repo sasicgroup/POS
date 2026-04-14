@@ -68,25 +68,10 @@ interface Payment {
 }
 
 export default function InstallmentsPage() {
-    const { activeStore, user, hasPermission } = useAuth();
+    const { activeStore, user, hasPermission, businessId } = useAuth();
     const { showToast } = useToast();
     const params = useParams();
     const slug = (params?.slug as string) || '';
-
-    if (!activeStore) return null;
-    if (!hasPermission('manage_installments')) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
-                    <ShieldAlert className="w-12 h-12 text-rose-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                    You do not have permission to manage installments.
-                </p>
-            </div>
-        );
-    }
 
     const [installments, setInstallments] = useState<Installment[]>([]);
     const [allCustomers, setAllCustomers] = useState<any[]>([]);
@@ -128,13 +113,29 @@ export default function InstallmentsPage() {
         }
     }, [activeStore?.id]);
 
+    if (!activeStore) return null;
+    if (!hasPermission('manage_installments')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to manage installments.
+                </p>
+            </div>
+        );
+    }
+
     const fetchCustomers = async () => {
         if (!activeStore?.id) return;
-        const { data } = await supabase
+        let query = supabase
             .from('customers')
             .select('*')
-            .eq('store_id', activeStore.id)
-            .order('name');
+            .eq('store_id', activeStore.id);
+        if (businessId) query = query.eq('business_id', businessId);
+        const { data } = await query.order('name');
         setAllCustomers(data || []);
     };
 
@@ -207,15 +208,16 @@ export default function InstallmentsPage() {
     const fetchInstallments = async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            let instQuery = supabase
                 .from('installments')
                 .select(`
                     *,
                     customer:customers(name, phone),
                     sales:sales(created_at)
                 `)
-                .eq('store_id', activeStore?.id)
-                .order('created_at', { ascending: false });
+                .eq('store_id', activeStore?.id);
+            if (businessId) instQuery = instQuery.eq('business_id', businessId);
+            const { data, error } = await instQuery.order('created_at', { ascending: false });
 
             if (error) throw error;
             setInstallments(data || []);
@@ -265,12 +267,14 @@ export default function InstallmentsPage() {
         setIsSubmitting(true);
         try {
             // 1. Insert Payment
-            const { data: payment, error: pError } = await supabase.from('installment_payments').insert({
+            const paymentPayload: any = {
                 installment_id: selectedInstallment.id,
                 amount: amount,
                 payment_method: paymentMethod,
                 recorded_by: user?.id
-            }).select().single();
+            };
+            if (businessId) paymentPayload.business_id = businessId;
+            const { data: payment, error: pError } = await supabase.from('installment_payments').insert(paymentPayload).select().single();
 
             if (pError) throw pError;
 

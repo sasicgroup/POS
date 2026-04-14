@@ -22,7 +22,7 @@ import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 export default function IncomeExpensesPage() {
-    const { activeStore, hasPermission } = useAuth();
+    const { activeStore, hasPermission, businessId } = useAuth();
     const { showToast } = useToast();
     const [expenses, setExpenses] = useState<any[]>([]);
     const [sales, setSales] = useState<any[]>([]);
@@ -57,16 +57,24 @@ export default function IncomeExpensesPage() {
         setLoading(true);
         try {
             // 1. Fetch Expenses
-            const { data: expensesData } = await supabase
-                .from('expenses')
-                .select('*')
-                .eq('store_id', activeStore?.id)
-                .order('date', { ascending: false });
+            let expensesData: any[] | null = null;
+            if (activeStore && businessId) {
+                const { data, error } = await supabase.from('expenses').select('*').eq('store_id', activeStore.id).eq('business_id', businessId).order('date', { ascending: false });
+                if (error && error.code === '42703') {
+                    const { data: fallback } = await supabase.from('expenses').select('*').eq('store_id', activeStore.id).order('date', { ascending: false });
+                    expensesData = fallback;
+                } else {
+                    expensesData = data;
+                }
+            } else {
+                const { data } = await supabase.from('expenses').select('*').eq('store_id', activeStore?.id).order('date', { ascending: false });
+                expensesData = data;
+            }
 
             if (expensesData) setExpenses(expensesData);
 
             // 2. Fetch Sales & Calculate Sales Income (Gross Profit)
-            const { data: salesData } = await supabase
+            let salesQuery = supabase
                 .from('sales')
                 .select(`
                     id,
@@ -79,8 +87,9 @@ export default function IncomeExpensesPage() {
                         product:products ( cost_price, name )
                     )
                 `)
-                .eq('store_id', activeStore?.id)
-                .order('created_at', { ascending: false });
+                .eq('store_id', activeStore?.id);
+            if (businessId) salesQuery = salesQuery.eq('business_id', businessId);
+            const { data: salesData } = await salesQuery.order('created_at', { ascending: false });
 
             if (salesData) {
                 let totalProfit = 0;
@@ -101,10 +110,12 @@ export default function IncomeExpensesPage() {
 
             // 3. Fetch Other Income
             // 4. Fetch Inventory Stats
-            const { data: invData } = await supabase
+            let invQuery = supabase
                 .from('products')
                 .select('price, cost_price, stock')
                 .eq('store_id', activeStore?.id);
+            if (businessId) invQuery = invQuery.eq('business_id', businessId);
+            const { data: invData } = await invQuery;
 
             if (invData) {
                 let totalV = 0;
@@ -131,15 +142,23 @@ export default function IncomeExpensesPage() {
         if (!formData.amount || !formData.category) return;
 
         const table = modalType === 'expense' ? 'expenses' : 'other_income';
-        const payload = {
+        const payload: any = {
             store_id: activeStore.id,
             [modalType === 'expense' ? 'category' : 'source']: formData.category,
             amount: parseFloat(formData.amount),
             description: formData.description,
             date: formData.date
         };
+        if (businessId) payload.business_id = businessId;
 
         const { error } = await supabase.from(table).insert(payload);
+        if (error && error.code === '42703') {
+            delete payload.business_id;
+            await supabase.from(table).insert(payload);
+        } else if (error) {
+            showToast('error', `Failed to add ${modalType}`);
+            return;
+        }
 
         if (!error) {
             setIsAddModalOpen(false);

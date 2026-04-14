@@ -93,7 +93,7 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
                 .is('deleted_at', null)
                 .limit(1);
 
-            // Fallback: try by name
+            // Fallback: try by name or phone
             if (!employees || employees.length === 0) {
                 const { data: byName } = await supabase
                     .from('employees')
@@ -102,7 +102,19 @@ export default function SlugLoginPage({ params }: { params: Promise<{ slug: stri
                     .ilike('name', username)
                     .is('deleted_at', null)
                     .limit(1);
-                if (byName) employees = byName;
+                if (byName && byName.length > 0) {
+                    employees = byName;
+                } else {
+                    // Fallback to phone
+                    const { data: byPhone } = await supabase
+                        .from('employees')
+                        .select('*')
+                        .eq('business_id', business.id)
+                        .eq('phone', username)
+                        .is('deleted_at', null)
+                        .limit(1);
+                    if (byPhone) employees = byPhone;
+                }
             }
 
             if (!employees || employees.length === 0) {

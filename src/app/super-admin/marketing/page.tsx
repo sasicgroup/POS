@@ -63,11 +63,11 @@ export default function MarketingCampaignsPage() {
             }
 
             // 3. Simulated SMS/Email logic (in real SaaS would trigger background worker)
-            showToast(`Campaign "${form.title}" initiated successfully via ${form.channel}`);
+            showToast('success', `Campaign "${form.title}" initiated successfully via ${form.channel}`);
             setForm({ title: '', message: '', channel: 'broadcast', target_plan: 'all' });
             loadCampaigns();
         } catch (e: any) {
-            showToast(e.message, 'error');
+            showToast('error', e.message);
         } finally {
             setSending(false);
         }

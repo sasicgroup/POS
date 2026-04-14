@@ -8,7 +8,8 @@ export type AdminAction =
   | 'RENEW_SUBSCRIPTION' 
   | 'SMS_CREDIT_ADD' 
   | 'CREATE_BROADCAST' 
-  | 'UPDATE_PLATFORM_SETTINGS';
+  | 'UPDATE_PLATFORM_SETTINGS'
+  | 'DELETE_BUSINESS';
 
 /**
  * Logs a Super Admin action for audit and compliance.

@@ -594,7 +594,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const verifyOTP = async (username: string, code: string): Promise<boolean> => {
         const tenantBid = await resolveTenantBusinessIdFromRoute();
         const cleanUsername = username.trim();
-        let empQuery = supabase.from('employees').select('*').ilike('username', cleanUsername);
+        let empQuery = supabase.from('employees').select('*').ilike('username', cleanUsername).is('deleted_at', null);
         if (tenantBid) empQuery = (empQuery as any).eq('business_id', tenantBid);
         const { data: employees } = await empQuery.maybeSingle();
         if (!employees) {
@@ -638,7 +638,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const verifyMasterpass = async (username: string, password: string): Promise<boolean> => {
         const tenantBid = await resolveTenantBusinessIdFromRoute();
         const cleanUsername = username.trim();
-        let mpQuery = supabase.from('employees').select('master_password, id, name, username, role, pin, phone, otp_enabled, two_factor_method, store_id').ilike('username', cleanUsername);
+        let mpQuery = supabase.from('employees').select('master_password, id, name, username, role, pin, phone, otp_enabled, two_factor_method, store_id').ilike('username', cleanUsername).is('deleted_at', null);
         if (tenantBid) mpQuery = (mpQuery as any).eq('business_id', tenantBid);
         const { data: employee } = await mpQuery.maybeSingle();
 
@@ -664,7 +664,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const resendOTP = async (username: string): Promise<boolean> => {
         const tenantBid = await resolveTenantBusinessIdFromRoute();
         const cleanUsername = username.trim();
-        let rsQuery = supabase.from('employees').select('*').ilike('username', cleanUsername);
+        let rsQuery = supabase.from('employees').select('*').ilike('username', cleanUsername).is('deleted_at', null);
         if (tenantBid) rsQuery = (rsQuery as any).eq('business_id', tenantBid);
         const { data: employee } = await rsQuery.maybeSingle();
         if (!employee || !employee.phone) {
@@ -733,13 +733,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const logout = () => {
         if (user) logActivity('LOGOUT', {}, user.id, activeStore?.id);
+        
+        // Preserve slug for redirect
+        let currentSlug = localStorage.getItem('sms_business_slug');
+        
+        // Fallback: If not in localStorage, check URL
+        if (!currentSlug && typeof window !== 'undefined') {
+            const urlSlug = window.location.pathname.split('/')[1];
+            if (urlSlug && !['dashboard', 'login', 'super-admin', ''].includes(urlSlug)) {
+                currentSlug = urlSlug;
+            }
+        }
+        
         setUser(null);
         setBusinessId(null);
         localStorage.removeItem('sms_user');
         localStorage.removeItem('sms_active_store_id');
         localStorage.removeItem('sms_business_id');
         localStorage.removeItem('sms_business_slug');
-        window.location.href = '/';
+        localStorage.removeItem('sms_viewas_session'); 
+        
+        if (currentSlug && !['dashboard', 'login', 'super-admin'].includes(currentSlug)) {
+            window.location.href = `/${currentSlug}/login`;
+        } else {
+            window.location.href = '/';
+        }
     };
 
     const switchStore = (storeId: any) => {
@@ -775,19 +793,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Skip for legacy/mock
         if (activeStore.id.toString().startsWith('store-')) return;
 
-        // 1. Get employees directly linked via store_id (Simple One-Store Mode)
-        const { data: directEmployees } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('store_id', activeStore.id)
-            .neq('status', 'deleted'); // Exclude soft-deleted employees
+        // Resolve the correct business_id for scoping
+        const currentBusinessId = businessId || activeStore.business_id;
+
+        // 1. Prefer fetching by business_id for full business visibility (owners see all staff)
+        // Fall back to store_id if business_id unavailable
+        let directEmployees: any[] | null = null;
+        if (currentBusinessId) {
+            const { data } = await supabase
+                .from('employees')
+                .select('*')
+                .eq('business_id', currentBusinessId)
+                .is('deleted_at', null); // Use deleted_at, NOT status (status column does not exist)
+            directEmployees = data;
+        } else {
+            const { data } = await supabase
+                .from('employees')
+                .select('*')
+                .eq('store_id', activeStore.id)
+                .is('deleted_at', null); // Use deleted_at, NOT status (status column does not exist)
+            directEmployees = data;
+        }
 
         // 2. Get employees linked via employee_access (Multi-Store Mode)
         const { data: accessEmployees } = await supabase
             .from('employee_access')
             .select('employee_id, role, employees!inner(*)')
-            .eq('store_id', activeStore.id)
-            .neq('employees.status', 'deleted'); // Exclude soft-deleted employees
+            .eq('store_id', activeStore.id);
 
         let mergedMembers: User[] = [];
 
@@ -898,7 +930,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (Object.keys(updateData).length > 0) {
                 const { error: updateError } = await supabase.from('employees').update(updateData).eq('id', id);
                 if (updateError) {
-                    console.error("Failed to update employee basic info:", updateError);
+                    console.error(`Failed to update employee basic info! Code: ${updateError?.code}, Message: ${updateError?.message}, Details: ${updateError?.details}`);
+                    console.error("Full updateError:", updateError);
                     throw updateError;
                 }
             }
@@ -944,9 +977,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (accessError) console.warn('[removeTeamMember] access cleanup:', accessError.message);
 
-        // 2. Soft-delete: set status to 'deleted' (deleted_at column doesn't exist in schema)
+        // 2. Soft-delete: use deleted_at column (status column does not exist)
         const { error: deleteError } = await supabase.from('employees')
-            .update({ status: 'deleted' })
+            .update({ deleted_at: new Date().toISOString() })
             .eq('id', id)
             .eq('business_id', businessId);
 

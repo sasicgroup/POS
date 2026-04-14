@@ -54,11 +54,15 @@ export default function SettingsPage() {
 
     const [isSaving, setIsSaving] = useState(false);
     const [profileData, setProfileData] = useState({ name: '', phone: '', username: '' });
+    const [allOwners, setAllOwners] = useState<any[]>([]);
+    const [editingOwnerId, setEditingOwnerId] = useState<string | null>(null);
+    const [ownerEditData, setOwnerEditData] = useState<{ name: string; phone: string; username: string }>({ name: '', phone: '', username: '' });
+    const [ownerSaveLoading, setOwnerSaveLoading] = useState(false);
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [editingMember, setEditingMember] = useState<any>(null);
     const [otpEnabled, setOtpEnabled] = useState(true);
     const [deleteMemberConfirm, setDeleteMemberConfirm] = useState<{ id: string, name: string } | null>(null);
-    const [newUser, setNewUser] = useState({ name: '', phone: '', pin: '', role: 'staff', master_password: '', username: '' });
+    const [newUser, setNewUser] = useState({ name: '', phone: '', pin: '', role: 'owner', master_password: '', username: '' });
     const [inviteLoading, setInviteLoading] = useState(false);
 
     const [storeToDelete, setStoreToDelete] = useState<any>(null);
@@ -146,6 +150,22 @@ export default function SettingsPage() {
         if (user) setProfileData({ name: user.name || '', phone: user.phone || '', username: user.username || '' });
     }, [activeStore, user, globalSettings]);
 
+    // Fetch all owner employees for multi-profile panel
+    useEffect(() => {
+        const fetchOwners = async () => {
+            if (!businessId) return;
+            const { data } = await supabase
+                .from('employees')
+                .select('id, name, phone, username, role, otp_enabled')
+                .eq('business_id', businessId)
+                .eq('role', 'owner')
+                .is('deleted_at', null)
+                .order('name');
+            if (data) setAllOwners(data);
+        };
+        if (activeTab === 'profile') fetchOwners();
+    }, [activeTab, businessId]);
+
     useEffect(() => {
         const fetchBalance = async () => {
             if (activeTab === 'sms') {
@@ -174,7 +194,7 @@ export default function SettingsPage() {
                 // My handler check: if (newUser.pin.length !== 4) ...
                 // I'll adjust the handler to allow empty PIN on edit.
             } else {
-                setNewUser({ name: '', phone: '', pin: '', role: 'staff', master_password: '', username: '' });
+                setNewUser({ name: '', phone: '', pin: '', role: 'owner', master_password: '', username: '' });
             }
         }
     }, [showInviteModal, editingMember]);
@@ -371,7 +391,7 @@ export default function SettingsPage() {
                 const updateData: any = {
                     name: newUser.name,
                     phone: newUser.phone,
-                    username: newUser.username ? newUser.username.trim() : newUser.phone, // Manual username or fallback to phone
+                    username: newUser.username ? newUser.username.trim() : null, // Manual username
                     role: newUser.role,
                     otp_enabled: otpEnabled
                 };
@@ -379,6 +399,12 @@ export default function SettingsPage() {
                 if (newUser.master_password) updateData.master_password = newUser.master_password;
 
                 await updateTeamMember(editingMember.id, updateData);
+
+                // Refresh owner list if the updated member is an owner
+                if (newUser.role === 'owner' && businessId) {
+                    const { data: owners } = await supabase.from('employees').select('id, name, phone, username, role, otp_enabled').eq('business_id', businessId).eq('role', 'owner').is('deleted_at', null).order('name');
+                    if (owners) setAllOwners(owners);
+                }
 
                 showToast('success', 'Member updated successfully');
                 setShowInviteModal(false);
@@ -388,7 +414,7 @@ export default function SettingsPage() {
                 await addTeamMember({
                     name: newUser.name,
                     phone: newUser.phone,
-                    username: newUser.username ? newUser.username.trim() : newUser.phone, // Default username to phone only if empty
+                    username: newUser.username ? newUser.username.trim() : null, // Default username
                     pin: newUser.pin,
                     role: newUser.role as any,
                     otp_enabled: otpEnabled,
@@ -400,10 +426,17 @@ export default function SettingsPage() {
 
                 showToast('success', 'Member added successfully');
                 setShowInviteModal(false);
+
+                // Refresh owner list if this new member is an owner
+                if (newUser.role === 'owner' && businessId) {
+                    const { data: owners } = await supabase.from('employees').select('id, name, phone, username, role, otp_enabled').eq('business_id', businessId).eq('role', 'owner').is('deleted_at', null).order('name');
+                    if (owners) setAllOwners(owners);
+                }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to save member:", error);
-            showToast('error', 'Failed to save member');
+            const errorMessage = error?.message || error?.details || 'Unknown database error occurred';
+            showToast('error', `Failed to save member: ${errorMessage}`);
         } finally {
             setInviteLoading(false);
         }
@@ -852,55 +885,209 @@ export default function SettingsPage() {
                     {/* PROFILE TAB */}
                     {
                         activeTab === 'profile' && (
-                            <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                                <div className="flex items-center gap-4 mb-8">
-                                    <div className="h-20 w-20 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-2xl font-bold text-indigo-600">
-                                        {profileData.name ? profileData.name.charAt(0) : <Users className="h-8 w-8" />}
+                            <div className="grid gap-6">
+                                {/* My Profile Card */}
+                                <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                                            <Users className="h-5 w-5 text-indigo-600" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">My Profile</h2>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">Update your personal details</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">{profileData.name || 'User Profile'}</h2>
-                                        <p className="text-slate-500 text-sm">Update your personal details</p>
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="h-14 w-14 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-xl font-bold text-indigo-600">
+                                            {profileData.name ? profileData.name.charAt(0).toUpperCase() : <Users className="h-6 w-6" />}
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-slate-900 dark:text-white">{profileData.name || 'You'}</p>
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-medium">Owner</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="grid md:grid-cols-2 gap-6 max-w-2xl">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Name</label>
-                                        <input type="text" value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" />
+                                    <div className="grid md:grid-cols-2 gap-6 max-w-2xl">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Name</label>
+                                            <input type="text" value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Username (for login)</label>
+                                            <input type="text" value={profileData.username} onChange={(e) => setProfileData({ ...profileData, username: e.target.value })} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none font-mono" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Phone <span className="text-xs text-slate-400 font-normal">(used for SMS alerts)</span></label>
+                                            <input type="tel" value={profileData.phone} onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" />
+                                        </div>
+                                        <div className="md:col-span-2 pt-4 flex gap-4">
+                                            <button onClick={async () => {
+                                                if (!user?.id) return;
+                                                const cleanUsername = profileData.username ? profileData.username.trim() : '';
+                                                const { error } = await supabase.from('employees').update({ name: profileData.name, phone: profileData.phone, username: cleanUsername }).eq('id', user.id);
+                                                if (error) { showToast('error', 'Failed to update profile'); }
+                                                else {
+                                                    updateUser({ name: profileData.name, phone: profileData.phone, username: cleanUsername });
+                                                    showToast('success', 'Profile updated');
+                                                }
+                                            }} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">
+                                                Update Profile
+                                            </button>
+                                            {!showChangePin ? (
+                                                <button onClick={() => setShowChangePin(true)} className="px-6 py-2 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 rounded-lg font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">Change PIN</button>
+                                            ) : (
+                                                <div className="flex items-center gap-2 animate-in fade-in">
+                                                    <input type="password" value={newPin} onChange={(e) => setNewPin(e.target.value)} placeholder="New PIN" className="w-32 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 outline-none" maxLength={6} />
+                                                    <button onClick={handleUpdatePin} className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg font-medium text-sm">Save</button>
+                                                    <button onClick={() => { setShowChangePin(false); setNewPin(''); }} className="p-2 hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Username</label>
-                                        <input type="text" value={profileData.username} onChange={(e) => setProfileData({ ...profileData, username: e.target.value })} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Phone</label>
-                                        <input type="tel" value={profileData.phone} onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none" />
-                                    </div>
-                                    <div className="md:col-span-2 pt-4 flex gap-4">
-                                        <button onClick={async () => {
-                                        if (!user?.id) return;
-                                        const cleanUsername = profileData.username ? profileData.username.trim() : '';
-                                        const { error } = await supabase.from('employees').update({ name: profileData.name, phone: profileData.phone, username: cleanUsername }).eq('id', user.id);
-                                        if (error) { showToast('error', 'Failed to update profile'); }
-                                        else {
-                                            updateUser({ name: profileData.name, phone: profileData.phone, username: cleanUsername });
-                                            showToast('success', 'Profile updated');
-                                        }
-                                    }} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors">
-                                        Update Profile
-                                    </button>
+                                </section>
 
-                                        {!showChangePin ? (
-                                            <button onClick={() => setShowChangePin(true)} className="px-6 py-2 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 rounded-lg font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">Change PIN</button>
+                                {/* All Owner Profiles */}
+                                {hasPermission('manage_employees') && (
+                                    <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                                                    <Users className="h-5 w-5 text-emerald-600" />
+                                                </div>
+                                                <div>
+                                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Owner Profiles</h2>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400">All owners receive sale & alert notifications</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => { setEditingMember(null); setShowInviteModal(true); setNewUser(prev => ({ ...prev, role: 'owner' })); }}
+                                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors shadow-sm shadow-emerald-500/30"
+                                            >
+                                                <Plus className="h-4 w-4" /> Add Owner
+                                            </button>
+                                        </div>
+
+                                        {allOwners.length === 0 ? (
+                                            <div className="text-center py-8 text-slate-400 dark:text-slate-600">
+                                                <Users className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                                                <p className="text-sm">No owner profiles found</p>
+                                            </div>
                                         ) : (
-                                            <div className="flex items-center gap-2 animate-in fade-in">
-                                                <input type="password" value={newPin} onChange={(e) => setNewPin(e.target.value)} placeholder="New PIN" className="w-32 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 outline-none" maxLength={6} />
-                                                <button onClick={handleUpdatePin} className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg font-medium text-sm">Save</button>
-                                                <button onClick={() => { setShowChangePin(false); setNewPin(''); }} className="p-2 hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                                            <div className="space-y-4">
+                                                {allOwners.map((owner) => (
+                                                    <div key={owner.id} className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                                                        {/* Owner card header */}
+                                                        <div className="flex items-center justify-between px-5 py-4 bg-slate-50 dark:bg-slate-800/50">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center font-bold text-indigo-700 dark:text-indigo-300">
+                                                                    {owner.name?.charAt(0)?.toUpperCase() || '?'}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-semibold text-slate-900 dark:text-white">{owner.name}</p>
+                                                                    <p className="text-xs text-slate-500">{owner.phone || 'No phone'}{owner.username ? ` · @${owner.username}` : ''}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {user?.id === owner.id && (
+                                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium">You</span>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (editingOwnerId === owner.id) {
+                                                                            setEditingOwnerId(null);
+                                                                        } else {
+                                                                            setEditingOwnerId(owner.id);
+                                                                            setOwnerEditData({ name: owner.name || '', phone: owner.phone || '', username: owner.username || '' });
+                                                                        }
+                                                                    }}
+                                                                    className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                                                >
+                                                                    {editingOwnerId === owner.id ? <X className="h-4 w-4 text-slate-500" /> : <Edit2 className="h-4 w-4 text-slate-500" />}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Inline edit form */}
+                                                        {editingOwnerId === owner.id && (
+                                                            <div className="p-5 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2">
+                                                                <div className="grid md:grid-cols-3 gap-4 mb-4">
+                                                                    <div className="space-y-1">
+                                                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Full Name</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={ownerEditData.name}
+                                                                            onChange={(e) => setOwnerEditData({ ...ownerEditData, name: e.target.value })}
+                                                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Phone <span className="text-emerald-600">(for SMS alerts)</span></label>
+                                                                        <input
+                                                                            type="tel"
+                                                                            value={ownerEditData.phone}
+                                                                            onChange={(e) => setOwnerEditData({ ...ownerEditData, phone: e.target.value })}
+                                                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                                                            placeholder="e.g. 054xxxxxxx"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Username (login)</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={ownerEditData.username}
+                                                                            onChange={(e) => setOwnerEditData({ ...ownerEditData, username: e.target.value })}
+                                                                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex gap-3 justify-end">
+                                                                    <button
+                                                                        onClick={() => setEditingOwnerId(null)}
+                                                                        className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                    <button
+                                                                        disabled={ownerSaveLoading}
+                                                                        onClick={async () => {
+                                                                            setOwnerSaveLoading(true);
+                                                                            const { error } = await supabase
+                                                                                .from('employees')
+                                                                                .update({
+                                                                                    name: ownerEditData.name,
+                                                                                    phone: ownerEditData.phone,
+                                                                                    username: ownerEditData.username ? ownerEditData.username.trim() : null
+                                                                                })
+                                                                                .eq('id', owner.id)
+                                                                                .eq('business_id', businessId);
+                                                                            setOwnerSaveLoading(false);
+                                                                            if (error) {
+                                                                                showToast('error', `Failed to update: ${error.message}`);
+                                                                            } else {
+                                                                                setAllOwners(prev => prev.map(o => o.id === owner.id ? { ...o, ...ownerEditData } : o));
+                                                                                if (user?.id === owner.id) updateUser({ name: ownerEditData.name, phone: ownerEditData.phone, username: ownerEditData.username });
+                                                                                setEditingOwnerId(null);
+                                                                                showToast('success', `${ownerEditData.name}'s profile updated`);
+                                                                            }
+                                                                        }}
+                                                                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+                                                                    >
+                                                                        {ownerSaveLoading ? 'Saving...' : 'Save Changes'}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
-                                    </div>
-                                </div>
-                            </section>
+
+                                        <p className="mt-4 text-xs text-slate-400 dark:text-slate-600 flex items-center gap-1">
+                                            <span className="text-emerald-500">●</span>
+                                            All owner phone numbers will receive sale & low-stock SMS alerts automatically.
+                                        </p>
+                                    </section>
+                                )}
+                            </div>
                         )
                     }
 

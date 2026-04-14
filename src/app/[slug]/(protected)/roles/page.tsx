@@ -12,7 +12,7 @@ export default function RolesPage() {
     const [activeTab, setActiveTab] = useState<'permissions' | 'access'>('permissions');
 
     // Permissions State
-    const [activeRoleSelector, setActiveRoleSelector] = useState('manager');
+    const [activeRoleSelector, setActiveRoleSelector] = useState('owner');
     const [rolePermissions, setRolePermissions] = useState<any>(DEFAULT_PERMISSIONS);
 
     // Load from store on mount/change
@@ -40,7 +40,7 @@ export default function RolesPage() {
         if (!businessId) return;
 
         // Fetch All Employees for THIS business
-        const { data: empData } = await supabase.from('employees').select('*').eq('business_id', businessId);
+        const { data: empData } = await supabase.from('employees').select('*').eq('business_id', businessId).is('deleted_at', null);
         if (empData) setEmployees(empData);
 
         // Fetch All Stores for THIS business

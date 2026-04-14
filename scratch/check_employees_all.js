@@ -4,7 +4,7 @@ const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZi
 const supabase = createClient(URL, KEY);
 
 async function checkEmployees() {
-    const { data: emps, error } = await supabase.from('employees').select('id, name, role, store_id, business_id').limit(5);
+    const { data: emps, error } = await supabase.from('employees').select('id, name, role, store_id, business_id').eq('business_id', '50a6e5c5-f09c-49ee-8b7e-90808fe95e74');
     console.log('Employees:', emps);
     console.log('Error:', error);
 }

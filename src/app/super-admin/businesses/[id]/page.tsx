@@ -103,11 +103,11 @@ export default function BusinessDetailPage({ params }: { params: Promise<{ id: s
         });
         setSaving(false);
         if (result.success) {
-            showToast('SaaS Configuration updated');
+            showToast('success', 'SaaS Configuration updated');
             setMode('view');
             loadData();
         } else {
-            showToast(`Error: ${result.message}`, 'error');
+            showToast('error', `Error: ${result.message}`);
         }
     };
 
@@ -118,12 +118,12 @@ export default function BusinessDetailPage({ params }: { params: Promise<{ id: s
         const result = await renewSubscription(business.id, renewPlan, endDate, renewNote);
         setSaving(false);
         if (result.success) {
-            showToast('Subscription renewed successfully!');
+            showToast('success', 'Subscription renewed successfully!');
             setMode('view');
             setRenewNote('');
             loadData();
         } else {
-            showToast('Failed to renew subscription', 'error');
+            showToast('error', 'Failed to renew subscription');
         }
     };
 
@@ -131,8 +131,10 @@ export default function BusinessDetailPage({ params }: { params: Promise<{ id: s
         if (!business) return;
         const res = await toggleBusinessActive(business.id, !business.is_active);
         if (res.success) {
-            showToast(`Business ${business.is_active ? 'suspended' : 'reactivated'}`);
+            showToast('success', `Business ${business.is_active ? 'suspended' : 'reactivated'}`);
             loadData();
+        } else {
+            showToast('error', res.message || 'Toggle failed');
         }
     };
 
@@ -140,14 +142,19 @@ export default function BusinessDetailPage({ params }: { params: Promise<{ id: s
     const handleDeposit = async () => {
         if (!business || !depositAmount) return;
         setSaving(true);
-        const res = await updateBusiness(business.id, { 
-            sms_balance: (parseFloat(business.sms_balance as any) || 0) + parseFloat(depositAmount) 
-        });
-        setSaving(false);
-        if (res.success) {
-            showToast(`Deposited GHS ${depositAmount} to wallet`);
-            setDepositAmount('');
-            loadData();
+        try {
+            const res = await updateBusiness(business.id, { 
+                sms_balance: (parseFloat(business.sms_balance as any) || 0) + parseFloat(depositAmount) 
+            });
+            if (res.success) {
+                showToast('success', `Deposited GHS ${depositAmount} to wallet`);
+                setDepositAmount('');
+                await loadData();
+            } else {
+                showToast('error', `Deposit failed: ${res.message}`);
+            }
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -160,7 +167,7 @@ export default function BusinessDetailPage({ params }: { params: Promise<{ id: s
         });
         setIsSyncing(false);
         if (res.success) {
-            showToast('Owner details synced with employee record');
+            showToast('success', 'Owner details synced with employee record');
             loadData();
         }
     };
@@ -176,10 +183,10 @@ export default function BusinessDetailPage({ params }: { params: Promise<{ id: s
             const desc = `${business.plan.toUpperCase()} Subscription Renewal (${editForm.plan_id})`;
             const { pdf } = await createAndSaveInvoice(business.id, amount, desc);
             pdf.save(`Invoice_${business.name}_${new Date().getTime()}.pdf`);
-            showToast('Invoice generated and downloaded');
+            showToast('success', 'Invoice generated and downloaded');
             loadData();
         } catch (e) {
-            showToast('Failed to generate invoice', 'error');
+            showToast('error', 'Failed to generate invoice');
         }
     };
 

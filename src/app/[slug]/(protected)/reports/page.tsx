@@ -10,27 +10,16 @@ import { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/lib/toast-context';
 
 export default function ReportsPage() {
     const { activeStore, hasPermission, businessId } = useAuth();
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState('financials');
     const [loading, setLoading] = useState(true);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
-    if (!activeStore) return null;
-    if (!hasPermission('access_reports')) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
-                    <ShieldAlert className="w-12 h-12 text-rose-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                    You do not have permission to view store reports.
-                </p>
-            </div>
-        );
-    }
+
 
     // Financial Data State
     const [hourlySalesData, setHourlySalesData] = useState<any[]>([]);
@@ -51,6 +40,21 @@ export default function ReportsPage() {
         }
     }, [activeStore, activeTab]);
 
+    if (!activeStore) return null;
+    if (!hasPermission('access_reports')) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center h-[60vh] animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-rose-50 p-6 rounded-full dark:bg-rose-900/20 mb-6">
+                    <ShieldAlert className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                    You do not have permission to view store reports.
+                </p>
+            </div>
+        );
+    }
+
     const fetchInventoryData = async () => {
         if (!activeStore) return;
         const storeId = activeStore.id;
@@ -62,7 +66,7 @@ export default function ReportsPage() {
                 .select('*')
                 .eq('store_id', storeId)
                 .gt('stock', 0);
-            
+
             if (businessId) productsQuery = productsQuery.eq('business_id', businessId);
             const { data: products } = await productsQuery;
 
@@ -74,9 +78,20 @@ export default function ReportsPage() {
                 .from('sale_items')
                 .select('product_id')
                 .gte('created_at', ninetyDaysAgo.toISOString());
-            
-            if (businessId) salesItemsQuery = salesItemsQuery.eq('business_id', businessId);
-            const { data: salesItems } = await salesItemsQuery;
+
+            let salesItems: any[] | null = null;
+            if (businessId) {
+                const { data, error } = await salesItemsQuery.eq('business_id', businessId);
+                if (error && error.code === '42703') {
+                    const { data: fallback } = await supabase.from('sale_items').select('product_id').gte('created_at', ninetyDaysAgo.toISOString());
+                    salesItems = fallback;
+                } else {
+                    salesItems = data;
+                }
+            } else {
+                const { data } = await salesItemsQuery;
+                salesItems = data;
+            }
 
             if (products && salesItems) {
                 const soldProductIds = new Set(salesItems.map(i => i.product_id));
@@ -93,8 +108,9 @@ export default function ReportsPage() {
                 });
                 setDeadStockData(dead);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error fetching inventory data", e);
+            showToast('error', 'Failed to load inventory health data');
         } finally {
             setLoading(false);
         }
@@ -119,18 +135,26 @@ export default function ReportsPage() {
                     customers ( name )
                 `)
                 .eq('store_id', storeId);
-            
+
             if (businessId) salesQuery = salesQuery.eq('business_id', businessId);
             const { data: sales, error: salesError } = await salesQuery.order('created_at', { ascending: false });
 
+            if (salesError) throw salesError;
+
             // 2. Fetch Expenses
-            let expensesQuery = supabase
-                .from('expenses')
-                .select('amount')
-                .eq('store_id', storeId);
-            
-            if (businessId) expensesQuery = expensesQuery.eq('business_id', businessId);
-            const { data: expensesData } = await expensesQuery;
+            let expensesData: any[] | null = null;
+            if (businessId) {
+                const { data, error } = await supabase.from('expenses').select('amount').eq('store_id', storeId).eq('business_id', businessId);
+                if (error && error.code === '42703') {
+                    const { data: fallback } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
+                    expensesData = fallback;
+                } else {
+                    expensesData = data;
+                }
+            } else {
+                const { data } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
+                expensesData = data;
+            }
 
             if (salesError || !sales) return;
 
@@ -200,8 +224,9 @@ export default function ReportsPage() {
             // Big Sales
             setRecentBigSales(sales.filter(s => Number(s.total_amount) > 500).slice(0, 10));
 
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
+            showToast('error', 'Failed to load financial reports');
         } finally {
             setLoading(false);
         }

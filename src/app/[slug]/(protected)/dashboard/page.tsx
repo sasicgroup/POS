@@ -57,7 +57,7 @@ export default function DashboardPage() {
         // Fetch Sales & Revenue (Total)
         let salesQuery = supabase.from('sales').select('*').eq('store_id', activeStore.id).neq('status', 'Refunded');
         if (businessId) salesQuery = salesQuery.eq('business_id', businessId);
-        
+
         const { data: sales } = await salesQuery;
         const totalRevenue = sales?.reduce((acc, curr) => acc + (curr.total_amount || 0), 0) || 0;
         const totalOrders = sales?.length || 0;
@@ -67,7 +67,7 @@ export default function DashboardPage() {
         // Fetch Customers Count
         let customerQuery = supabase.from('customers').select('*', { count: 'exact', head: true }).eq('store_id', activeStore.id);
         if (businessId) customerQuery = customerQuery.eq('business_id', businessId);
-        
+
         const { count: customerCount } = await customerQuery;
 
         // Fetch Recent Orders
