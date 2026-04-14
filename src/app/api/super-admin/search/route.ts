@@ -1,3 +1,5 @@
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { createServiceClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
